@@ -3,31 +3,43 @@ import {Show, createSignal} from 'solid-js'
 import {useNavigate} from '@solidjs/router'
 
 import {useWallet} from '../WalletContext'
-import {isValidCashInput} from '../lnurlcash'
-import {receiveCash} from '../receive'
+import {isValidNoteInput} from '../lnurlcash'
+import {receiveNote, secureReceivedNote} from '../receive'
 import {notify, NotifyKind, msatToSats} from '../helpers'
 import Scanner from '../components/Scanner'
 import RequireWallet from '../components/RequireWallet'
 
 const Scan: Component = () => {
-  const {addBearer, bearers} = useWallet()
+  const {addBearer, updateBearer, bearers} = useWallet()
   const navigate = useNavigate()
   const [busy, setBusy] = createSignal(false)
 
   const onScan = async (value: string) => {
     setBusy(true)
     try {
-      const received = await receiveCash(value, bearers())
-      await addBearer(received.url, received.amount, received.pending)
-      if (received.verified) {
+      const received = await receiveNote(value, bearers())
+      const bearer = await addBearer(received)
+      if (!received.verified) {
         notify(
-          `Added a bearer of ${msatToSats(received.amount)} sats.`,
+          'Note stored, but its service could not be reached - refresh it later.',
+          NotifyKind.LOADING
+        )
+        navigate('/')
+        return
+      }
+      // rotate immediately: whoever showed us this QR still knows the old
+      // secret until it is burned
+      try {
+        const url = await secureReceivedNote(received)
+        await updateBearer(bearer.id, {url})
+        notify(
+          `Received ${msatToSats(received.amount)} sats - secret rotated, previous copies are burned.`,
           NotifyKind.SUCCESS
         )
-      } else {
+      } catch {
         notify(
-          'Bearer stored, but its server could not be reached - refresh it later.',
-          NotifyKind.LOADING
+          `Received ${msatToSats(received.amount)} sats, but the service refused to rotate - the sender may still hold a spendable copy.`,
+          NotifyKind.ERROR
         )
       }
       navigate('/')
@@ -41,13 +53,14 @@ const Scan: Component = () => {
   return (
     <RequireWallet>
       <div id="scan" class="page">
-        <h2>Scan LNURLcash</h2>
+        <h2>Scan a bearer note</h2>
         <figure class="setup-card">
           <figcaption>
-            Point the camera at an <code>lnurlcash1...</code> QR code
+            Point the camera at a note QR (<code>lnurl1...</code> or{' '}
+            <code>lnurlw://...?k1=...</code>)
           </figcaption>
-          <Show when={!busy()} fallback={<p>Adding bearer...</p>}>
-            <Scanner onScan={onScan} accept={isValidCashInput} />
+          <Show when={!busy()} fallback={<p>Adding note...</p>}>
+            <Scanner onScan={onScan} accept={isValidNoteInput} />
           </Show>
         </figure>
       </div>

@@ -67,9 +67,10 @@ describe('bearer record encryption', () => {
   it('round-trips a bearer with the seed-derived AES key', async () => {
     const aesKey = await deriveBearerAesKey(deriveWalletLinkingKey(SEED))
     const bearer = {
-      url: 'https://cash.example.com/lnurlcash/s3cr3t',
+      url: 'https://mint.example.com/withdraw?k1=s3cr3t',
+      callback: 'https://mint.example.com/withdraw/cb',
       amount: 21000,
-      pending: false,
+      verified: true,
       createdAt: 1,
       updatedAt: 2
     }

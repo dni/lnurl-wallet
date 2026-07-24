@@ -10,13 +10,7 @@ import {
 } from 'solid-icons/io'
 
 import {useWallet, groupByServer} from '../WalletContext'
-import {
-  encodeCashToken,
-  resolveCashInput,
-  serverOf,
-  fetchCashStatus,
-  combineCash
-} from '../lnurlcash'
+import {serverOf, noteK1, withNewK1, mergeNotes} from '../lnurlcash'
 import {notify, NotifyKind, msatToSats} from '../helpers'
 import Hero from '../components/Hero'
 import BearerCard from '../components/BearerCard'
@@ -31,12 +25,15 @@ const Wallet: Component = () => {
   const selectedBearers = createMemo(() =>
     bearers().filter(b => selected().has(b.id))
   )
-  // combining only makes sense for 2+ bearers issued by the same server
+  // merging burns all selected notes in one callback request, so they must
+  // share a service - and each must have been verified (callback known)
   const combinable = createMemo(() => {
     const picked = selectedBearers()
     if (picked.length < 2) return false
     const server = serverOf(picked[0].url)
-    return picked.every(b => serverOf(b.url) === server)
+    return picked.every(
+      b => serverOf(b.url) === server && b.callback !== ''
+    )
   })
   const selectedTotal = createMemo(() =>
     selectedBearers().reduce((sum, b) => sum + b.amount, 0)
@@ -64,26 +61,28 @@ const Wallet: Component = () => {
     }
   }
 
+  // LUD-XX merge: one callback request with every selected k1 - all burned,
+  // one fresh note worth their sum comes back (value derived locally, as
+  // the spec's response intentionally carries no amounts)
   const combine = async () => {
     const picked = selectedBearers()
     if (!combinable()) return
     setCombining(true)
     try {
-      const [base, ...rest] = picked
-      const newToken = await combineCash(
-        base.url,
-        rest.map(b => encodeCashToken(b.url))
+      const [base] = picked
+      const newK1 = await mergeNotes(
+        base.callback,
+        picked.map(b => noteK1(b.url)!)
       )
-      const url = resolveCashInput(newToken)
-      if (!url) throw new Error('Server returned an unusable token.')
       for (const bearer of picked) removeBearer(bearer.id)
-      const status = await fetchCashStatus(url).catch(() => null)
-      await addBearer(url, status?.amount ?? selectedTotal())
+      await addBearer({
+        url: withNewK1(base.url, newK1),
+        callback: base.callback,
+        amount: selectedTotal(),
+        verified: true
+      })
       setSelected(new Set<string>())
-      notify(
-        `Combined ${picked.length} bearers into one.`,
-        NotifyKind.SUCCESS
-      )
+      notify(`Combined ${picked.length} notes into one.`, NotifyKind.SUCCESS)
     } catch (err) {
       notify((err as Error).message, NotifyKind.ERROR)
     } finally {
@@ -154,7 +153,8 @@ const Wallet: Component = () => {
                   when={combinable()}
                   fallback={
                     <span class="combine-hint">
-                      select 2+ bearers from the same server to combine
+                      select 2+ verified notes from the same service to
+                      combine
                     </span>
                   }
                 >

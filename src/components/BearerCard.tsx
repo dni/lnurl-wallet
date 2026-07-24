@@ -14,13 +14,15 @@ import {
 import type {Bearer} from '../storage'
 import {useWallet} from '../WalletContext'
 import {
-  encodeCashToken,
-  resolveCashInput,
+  toBech32Lnurl,
+  toLud17w,
+  noteK1,
   serverOf,
-  fetchCashStatus,
-  meltCash,
-  splitCash,
-  transferCash
+  withNewK1,
+  fetchNoteInfoSafe,
+  meltNotes,
+  splitNote,
+  rotateNote
 } from '../lnurlcash'
 import {
   copyToClipboard,
@@ -42,28 +44,47 @@ export type BearerCardProps = {
 
 const BearerCard: Component<BearerCardProps> = props => {
   const {updateBearer, removeBearer, addBearer} = useWallet()
-  // the QR is the bearer secret itself - keep it behind an overlay until
+  // the QR is the bearer note itself - keep it behind an overlay until
   // deliberately revealed, like lnurl_server's hideable QRs
   const [showQr, setShowQr] = createSignal(false)
   const [action, setAction] = createSignal<Action>(null)
   const [busy, setBusy] = createSignal(false)
   const [meltPr, setMeltPr] = createSignal('')
   const [splitSats, setSplitSats] = createSignal('')
-  // set once a transfer rotated the secret - the new token to hand over
+  // set once a transfer rotated the secret - the fresh note to hand over
   const [handover, setHandover] = createSignal<string | null>(null)
   const [confirmDelete, setConfirmDelete] = createSignal(false)
 
-  const token = () => encodeCashToken(props.bearer.url)
+  const token = () => toBech32Lnurl(props.bearer.url)
+  const k1 = () => noteK1(props.bearer.url) || ''
+  const hasCallback = () => props.bearer.callback !== ''
 
+  // informational GET - via the sha256(k1) hash lookup when the service
+  // supports it (the secret never leaves this device); when only the plain
+  // ?k1= form works, the secret has been on the wire, so rotate right after,
+  // per the spec's exposure guidance
   const refresh = async () => {
     setBusy(true)
     try {
-      const status = await fetchCashStatus(props.bearer.url)
+      const {info, secretExposed} = await fetchNoteInfoSafe(props.bearer.url)
+      let url = props.bearer.url
+      if (secretExposed) {
+        try {
+          url = withNewK1(url, await rotateNote(info.callback, k1()))
+        } catch {
+          notify(
+            'Service does not support rotation - your secret was transmitted, treat old copies of this note as exposed.',
+            NotifyKind.ERROR
+          )
+        }
+      }
       await updateBearer(props.bearer.id, {
-        amount: status.amount,
-        pending: status.pending === true
+        url,
+        callback: info.callback,
+        amount: info.maxWithdrawable,
+        verified: true
       })
-      notify('Bearer refreshed.', NotifyKind.SUCCESS)
+      notify('Note refreshed.', NotifyKind.SUCCESS)
     } catch (err) {
       notify((err as Error).message, NotifyKind.ERROR)
     } finally {
@@ -78,9 +99,9 @@ const BearerCard: Component<BearerCardProps> = props => {
     }
     setBusy(true)
     try {
-      await meltCash(props.bearer.url, meltPr())
+      await meltNotes(props.bearer.callback, [k1()], meltPr())
       removeBearer(props.bearer.id)
-      notify('Melted - the bearer has been paid out.', NotifyKind.SUCCESS)
+      notify('Melted - the note has been paid out.', NotifyKind.SUCCESS)
     } catch (err) {
       notify((err as Error).message, NotifyKind.ERROR)
     } finally {
@@ -95,23 +116,28 @@ const BearerCard: Component<BearerCardProps> = props => {
       return
     }
     if (msat >= props.bearer.amount) {
-      notify('Split amount must be below the bearer amount.', NotifyKind.ERROR)
+      notify('Split amount must be below the note value.', NotifyKind.ERROR)
       return
     }
     setBusy(true)
     try {
-      const tokens = await splitCash(props.bearer.url, msat)
-      // both returned tokens are fresh - the original secret is dead, so
-      // replace this bearer with the two new ones
+      const parts = await splitNote(props.bearer.callback, k1(), msat)
+      // the old secret is burned - replace this note with the two fresh
+      // ones; their values are derived from the operation, per the spec
       removeBearer(props.bearer.id)
-      for (const newToken of tokens) {
-        const url = resolveCashInput(newToken)
-        if (url) {
-          const status = await fetchCashStatus(url).catch(() => null)
-          await addBearer(url, status?.amount ?? 0, status?.pending === true)
-        }
-      }
-      notify('Split into two bearers.', NotifyKind.SUCCESS)
+      await addBearer({
+        url: withNewK1(props.bearer.url, parts.k1),
+        callback: props.bearer.callback,
+        amount: msat,
+        verified: true
+      })
+      await addBearer({
+        url: withNewK1(props.bearer.url, parts.change),
+        callback: props.bearer.callback,
+        amount: props.bearer.amount - msat,
+        verified: true
+      })
+      notify('Split into two notes.', NotifyKind.SUCCESS)
       setAction(null)
     } catch (err) {
       notify((err as Error).message, NotifyKind.ERROR)
@@ -123,13 +149,12 @@ const BearerCard: Component<BearerCardProps> = props => {
   const transfer = async () => {
     setBusy(true)
     try {
-      const newToken = await transferCash(props.bearer.url)
-      const url = resolveCashInput(newToken)
-      if (!url) throw new Error('Server returned an unusable token.')
-      // the old secret is invalid the moment the server rotates it - keep
-      // the fresh token stored until the holder confirms the handover
+      const newK1 = await rotateNote(props.bearer.callback, k1())
+      // the old secret is dead the moment the service rotates it - keep the
+      // fresh note stored until the holder confirms the handover
+      const url = withNewK1(props.bearer.url, newK1)
       await updateBearer(props.bearer.id, {url})
-      setHandover(newToken.toUpperCase())
+      setHandover(toBech32Lnurl(url))
     } catch (err) {
       notify((err as Error).message, NotifyKind.ERROR)
     } finally {
@@ -151,8 +176,8 @@ const BearerCard: Component<BearerCardProps> = props => {
           <span class="bearer-amount">
             {msatToSats(props.bearer.amount)} sats
           </span>
-          <Show when={props.bearer.pending}>
-            <span class="bearer-pending">pending</span>
+          <Show when={!props.bearer.verified}>
+            <span class="bearer-pending">unverified</span>
           </Show>
           <span class="bearer-server">{serverOf(props.bearer.url)}</span>
         </div>
@@ -162,7 +187,7 @@ const BearerCard: Component<BearerCardProps> = props => {
         <Show when={!showQr()}>
           <button
             class="qr-overlay"
-            title="Show QR code - it IS the bearer, anyone who scans it can spend it"
+            title="Show QR code - it IS the bearer note, anyone who scans it can spend it"
             onClick={() => setShowQr(true)}
           >
             <IoEyeSharp />
@@ -180,14 +205,14 @@ const BearerCard: Component<BearerCardProps> = props => {
       </div>
       <Show when={handover()}>
         <p class="warning">
-          Secret rotated - this QR is the new bearer. Hand it to the recipient;
-          your old copy is already invalid.
+          Secret rotated - this QR is the fresh note. Hand it to the
+          recipient; your old copy is already burned.
         </p>
         <div class="btns">
           <button
             onClick={() => {
               removeBearer(props.bearer.id)
-              notify('Bearer handed over and removed.', NotifyKind.SUCCESS)
+              notify('Note handed over and removed.', NotifyKind.SUCCESS)
             }}
           >
             Handed over - remove
@@ -198,14 +223,14 @@ const BearerCard: Component<BearerCardProps> = props => {
       <div class="btns">
         <button
           class="icon-btn"
-          title="Copy token"
+          title="Copy note (bech32 LNURL)"
           onClick={() => copyToClipboard(handover() ?? token())}
         >
           <IoCopySharp />
         </button>
         <button
           class="icon-btn"
-          title="Refresh amount from server"
+          title="Refresh value from the service (hash lookup - the secret stays local)"
           disabled={busy()}
           onClick={refresh}
         >
@@ -214,21 +239,24 @@ const BearerCard: Component<BearerCardProps> = props => {
         <div class="bearer-actions">
           <button
             class="icon-btn"
-            title="Melt - pay a bolt11 invoice with this bearer"
+            title="Melt - have the service pay a bolt11 invoice of exactly this note's value"
+            disabled={!hasCallback()}
             onClick={() => setAction(action() === 'melt' ? null : 'melt')}
           >
             <IoFlameSharp />
           </button>
           <button
             class="icon-btn"
-            title="Split into two bearers"
+            title="Split into two notes"
+            disabled={!hasCallback()}
             onClick={() => setAction(action() === 'split' ? null : 'split')}
           >
             <IoGitBranchSharp />
           </button>
           <button
             class="icon-btn"
-            title="Transfer - rotate the secret and hand it over"
+            title="Transfer - rotate the secret and hand the fresh note over"
+            disabled={!hasCallback()}
             onClick={() =>
               setAction(action() === 'transfer' ? null : 'transfer')
             }
@@ -244,16 +272,22 @@ const BearerCard: Component<BearerCardProps> = props => {
           </button>
         </div>
       </div>
+      <Show when={!hasCallback()}>
+        <p class="bearer-hint">
+          Not verified with its service yet - refresh to enable melt, split
+          and transfer.
+        </p>
+      </Show>
       <Show when={confirmDelete()}>
         <p class="warning">
-          Remove this bearer from the wallet? Without a backup (or the token
-          itself saved elsewhere) the funds behind it are gone.
+          Remove this note from the wallet? Without a backup (or the note
+          saved elsewhere) the sats behind it are gone.
         </p>
         <div class="btns">
           <button
             onClick={() => {
               removeBearer(props.bearer.id)
-              notify('Bearer removed.', NotifyKind.SUCCESS)
+              notify('Note removed.', NotifyKind.SUCCESS)
             }}
           >
             Remove
@@ -263,7 +297,10 @@ const BearerCard: Component<BearerCardProps> = props => {
       </Show>
       <Show when={action() === 'melt'}>
         <div class="form-item">
-          <label>Melt into a bolt11 invoice</label>
+          <label>
+            Melt into a bolt11 invoice of exactly{' '}
+            {msatToSats(props.bearer.amount)} sats (split first to melt less)
+          </label>
           <input
             type="text"
             placeholder="lnbc..."
@@ -299,18 +336,22 @@ const BearerCard: Component<BearerCardProps> = props => {
       <Show when={action() === 'transfer'}>
         <div class="form-item">
           <p class="bearer-hint">
-            Transfer rotates the bearer secret on the server: you get a fresh
-            token to hand over, and every old copy (including a stolen backup)
-            becomes worthless.
+            Transfer rotates the bearer secret on the service: you get a
+            fresh note to hand over, and every old copy (including a stolen
+            backup) is burned.
           </p>
           <div class="btns">
             <button disabled={busy()} onClick={transfer}>
-              Rotate &amp; get handover token
+              Rotate &amp; get handover note
             </button>
           </div>
         </div>
       </Show>
-      <p class="bearer-dates">updated {formatDate(props.bearer.updatedAt)}</p>
+      <p class="bearer-dates">
+        {toLud17w(props.bearer.url).split('?')[0]}
+        <br />
+        updated {formatDate(props.bearer.updatedAt)}
+      </p>
     </figure>
   )
 }

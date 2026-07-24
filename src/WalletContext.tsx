@@ -26,6 +26,13 @@ import {serverOf} from './lnurlcash'
 // 'unlocked': linking key (and thus the bearer AES key) in memory
 export type WalletState = 'none' | 'locked' | 'unlocked'
 
+export type NewBearer = {
+  url: string
+  callback: string
+  amount: number
+  verified: boolean
+}
+
 export type WalletContextType = {
   state: Accessor<WalletState>
   bearers: Accessor<Bearer[]>
@@ -35,7 +42,7 @@ export type WalletContextType = {
   unlock: (password?: string) => Promise<void>
   lock: () => void
   forgetWallet: () => void
-  addBearer: (url: string, amount: number, pending?: boolean) => Promise<Bearer>
+  addBearer: (note: NewBearer) => Promise<Bearer>
   updateBearer: (
     id: string,
     changes: Partial<Omit<Bearer, 'id'>>
@@ -106,17 +113,11 @@ export const WalletProvider = (props: {children: JSX.Element}) => {
     return aesKey
   }
 
-  const addBearer = async (
-    url: string,
-    amount: number,
-    pending = false
-  ): Promise<Bearer> => {
+  const addBearer = async (note: NewBearer): Promise<Bearer> => {
     const now = Date.now()
     const bearer: Bearer = {
       id: newBearerId(),
-      url,
-      amount,
-      pending,
+      ...note,
       createdAt: now,
       updatedAt: now
     }

@@ -1,41 +1,59 @@
 # LNURLwallet
 
-A **serverless** wallet for **LNURLcash** bearer tokens. It is a single
-static page - no backend, no database, no accounts - deployed straight to
-GitHub Pages. Everything it holds lives **encrypted** in your browser's
-local storage, and every network request goes directly from your browser to
-the LNURLcash server that issued a token.
+A **serverless** wallet for **LNURLcash** bearer notes
+([LUD-XX draft](https://github.com/lnurl/luds/blob/luds/XX.md)). It is a
+single static page - no backend, no database, no accounts - deployed
+straight to GitHub Pages. Everything it holds lives **encrypted** in your
+browser's local storage, and every network request goes directly from your
+browser to the LNURLcash service that issued a note.
 
 Built with the same stack as
 [lnurl_server](https://github.com/dni/lnurl_server)'s frontend: Vite,
 SolidJS, TypeScript, sass, `@scure`/`@noble` crypto, `solid-qr-code`,
-`solid-toast`, `solid-icons`.
+`solid-toast`, `solid-icons`. Works against any spec-compliant service,
+e.g. [lnurl-mint](https://github.com/dni/lnurl-mint).
 
-## LNURLcash
+## LNURLcash (LUD-XX)
 
-An LNURLcash token is a **bearer instrument**: in LUD-01 spirit it is a
-bech32-encoded URL prefixed `lnurlcash1`, whose path embeds a secret
-(`https://server/lnurlcash/{secret}`). Whoever knows the URL controls the
-sats behind it - like a banknote. The issuing server holds the actual sats
-and honors whoever presents the token.
+A bearer note is an ordinary [LUD-03](https://github.com/lnurl/luds/blob/luds/03.md)
+withdrawRequest link whose `k1` **is** the asset:
 
-The wallet speaks to servers with plain GETs on the token URL (errors follow
-the LNURL `{"status": "ERROR", "reason": ...}` convention):
+```
+lnurlw://mint.example/withdraw?k1=<secret>
+```
 
-| Operation | Request | Response |
-|-----------|---------|----------|
-| status    | `GET url` | `{"tag": "cashRequest", "amount": <msat>, "pending"?: bool}` |
-| melt      | `GET url?action=melt&pr={bolt11}` | `{"status": "OK"}` |
-| split     | `GET url?action=split&amount={msat}` | `{"tokens": [t1, t2]}` |
-| transfer  | `GET url?action=transfer` | `{"token": t}` (secret rotated) |
-| combine   | `GET url?action=combine&tokens={t2,t3,..}` | `{"token": t}` |
-| mint      | `GET {server}/lnurlcash/mint?amount={msat}` | `{"token": t, "pr": bolt11}` |
+Whoever knows the `k1` controls the sats behind it - like a banknote. No
+new endpoint, no new encoding: a wallet that doesn't know LNURLcash sees a
+normal withdraw link and can cash it out to a BOLT-11 invoice. A GET on the
+note's LNURL is purely **informational** (its `maxWithdrawable` is the
+note's value; it never burns); all mutating operations go to the
+`callback` from that withdrawRequest JSON:
 
-One wallet holds tokens from **any number of independent servers** side by
-side, grouped per server. Per bearer you can **melt** (have the server pay a
-bolt11 invoice), **split** (exchange for two fresh tokens), **transfer**
-(rotate the secret so every old copy becomes worthless, then hand the fresh
-token over), and **combine** selected same-server bearers into one.
+| Request | Result |
+|---------|--------|
+| `callback?k1=X&pr=<bolt11>` | **melt**: X burned, `pr` (of exactly its value) paid |
+| `callback?k1=X&k1=Y&pr=<bolt11>` | **merged melt**: all burned, `pr` of combined value paid |
+| `callback?k1=X` | **rotate**: X burned, `{"status":"OK","k1":X'}` same value |
+| `callback?k1=X&amount=<msat>` | **split**: X burned, response carries `k1` (amount) + `change` |
+| `callback?k1=X&k1=Y` | **merge**: all burned, one note worth the sum returned |
+
+**Minting**: a [LUD-06](https://github.com/lnurl/luds/blob/luds/06.md)
+payRequest advertising `withdrawLink` mints notes - the **payment
+preimage** of its paid invoice becomes a valid `k1` at that endpoint. This
+wallet has no Lightning node of its own, so you pay the invoice with any
+wallet and paste back the preimage it reveals; `withdrawLink?k1=<preimage>`
+is the note.
+
+The wallet follows the spec's security guidance:
+
+- Received (scanned/pasted) notes are **rotated immediately**, burning the
+  secret the previous holder still knows.
+- Value lookups use the optional `?id=sha256(k1)` hash form when the
+  service supports it, so the secret never goes on the wire for reads; when
+  only the plain `?k1=` GET works, the wallet rotates right after.
+- One wallet holds notes from **any number of independent mints** side by
+  side, grouped per service; combine (merge) works across selected
+  same-mint notes in a single request.
 
 ## Security model: encrypted with your linking key, in your local storage
 
@@ -45,34 +63,34 @@ token over), and **combine** selected same-server bearers into one.
 - From the seed a **linking key** is derived using the LUD-05 derivation
   (same scheme as lnurl_server) against the fixed domain `lnurlwallet`, so
   the identity is independent of where this page is hosted.
-- Every **bearer token is AES-256-GCM encrypted** with a key derived from
-  the linking key before it is written to local storage. Plaintext tokens
+- Every **bearer note is AES-256-GCM encrypted** with a key derived from
+  the linking key before it is written to local storage. Plaintext secrets
   never touch disk.
 - The **linking key itself is stored encrypted as well**: during setup you
   are asked for a password and the key is saved as AES-GCM ciphertext under
   a PBKDF2 (210k iterations, SHA-256) stretch of that password. Unlocking
   decrypts it into memory only. Opting out is possible but leaves the key
   readable to anyone using the browser profile.
-- The wallet sends nothing anywhere except the token operations you
-  trigger, straight to the issuing server.
+- The wallet sends nothing anywhere except the note operations you
+  trigger, straight to the issuing service.
 
 ## Backup & restore
 
-**Backup** downloads a single JSON file with all your bearer tokens exactly
+**Backup** downloads a single JSON file with all your bearer notes exactly
 as stored - **still encrypted**. If the linking key is password-encrypted,
 its ciphertext is included too (backup + password restores everything on a
 new device); a plaintext-stored linking key is never exported, the seed
 phrase is its recovery path.
 
-**Restore** merges a backup file's bearers into local storage, skipping ones
+**Restore** merges a backup file's notes into local storage, skipping ones
 already present. Ciphertexts become readable once the same seed (hence the
 same linking key) is active - restore the seed first or the file first,
 either order works.
 
-A backup protects against a lost device, not against theft of the token
-itself: the server settles for whoever presents a bearer first. Use
-**transfer** (secret rotation) after receiving a token so no previous holder
-retains a spendable copy.
+A backup protects against a lost device, not against theft of the note
+itself: the service settles for whoever presents a `k1` first. Rotation
+(the transfer action, and the automatic rotate-on-receive) is the tool
+against stale copies - after restoring an old backup, rotate what you hold.
 
 ## Development
 
@@ -83,6 +101,11 @@ npm test        # vitest (codec + crypto round-trips)
 npm run tsc     # typecheck
 npm run build   # static build in dist/
 ```
+
+For an end-to-end local loop, run [lnurl-mint](https://github.com/dni/lnurl-mint)
+(`uv run fastapi dev lnurl_mint/server.py`) and point the Mint page at
+`localhost:8000` - insecure hosts (localhost, 127.0.0.1, .onion) are
+resolved as http automatically.
 
 ## Deployment
 

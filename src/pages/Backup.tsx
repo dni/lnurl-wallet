@@ -62,7 +62,7 @@ const Backup: Component = () => {
         <figure class="setup-card">
           <h4>Download backup</h4>
           <p>
-            One JSON file with all {bearers().length} bearer token(s), exactly
+            One JSON file with all {bearers().length} bearer note(s), exactly
             as they sit in local storage: AES-GCM ciphertext, never plaintext.
             <Show
               when={savedKeyIsEncrypted()}

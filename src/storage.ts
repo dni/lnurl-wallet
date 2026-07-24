@@ -8,14 +8,16 @@ import {
   restoreLinkingKeyStored
 } from './keys'
 
-// One bearer token held by this wallet - the decrypted, in-memory shape.
-// `url` is the decoded token URL (the secret!); the displayable lnurlcash1
-// form is re-encoded from it on demand.
+// One bearer note held by this wallet - the decrypted, in-memory shape.
+// `url` is the note's withdraw LNURL with the secret as its k1 param (so it
+// IS the asset); the displayable bech32/lnurlw:// forms are re-encoded from
+// it on demand.
 export type Bearer = {
   id: string
   url: string
-  amount: number // msat, last known - refreshed against the server on demand
-  pending: boolean // minted but its invoice not yet paid
+  callback: string // the mutating callback from the withdrawRequest JSON, '' until first verified
+  amount: number // msat, last known (maxWithdrawable) - refreshed on demand
+  verified: boolean // false while the issuing service hasn't confirmed the note yet
   createdAt: number
   updatedAt: number
 }

@@ -1,57 +1,74 @@
 import type {Component} from 'solid-js'
 import {Show, createSignal} from 'solid-js'
+import {useNavigate} from '@solidjs/router'
 
 import {useWallet} from '../WalletContext'
+import type {PayRequestInfo} from '../lnurlcash'
 import {
-  mintCash,
-  resolveCashInput,
-  fetchCashStatus
+  resolveLnurlInput,
+  fetchPayRequest,
+  requestInvoice,
+  buildNoteUrl,
+  noteIdUrl,
+  fetchNoteInfo,
+  isPreimage
 } from '../lnurlcash'
 import {
   notify,
   NotifyKind,
+  msatToSats,
   satsToMsat,
   copyToClipboard
 } from '../helpers'
 import Qr from '../components/Qr'
 import RequireWallet from '../components/RequireWallet'
 
+// LUD-XX minting: pay a payRequest that advertises `withdrawLink` - the
+// payment preimage IS the bearer secret. This wallet has no node of its
+// own, so the invoice is paid externally and the preimage (which every
+// Lightning wallet reveals after a successful payment) is pasted back in.
 const Mint: Component = () => {
-  const {addBearer, updateBearer} = useWallet()
-  const [server, setServer] = createSignal('')
+  const {addBearer} = useWallet()
+  const navigate = useNavigate()
+  const [mintInput, setMintInput] = createSignal('')
+  const [payRequest, setPayRequest] = createSignal<PayRequestInfo | null>(null)
   const [amountSats, setAmountSats] = createSignal('')
-  const [busy, setBusy] = createSignal(false)
   const [invoice, setInvoice] = createSignal<string | null>(null)
-  const [mintedId, setMintedId] = createSignal<string | null>(null)
-  const [mintedUrl, setMintedUrl] = createSignal<string | null>(null)
-  const [settled, setSettled] = createSignal(false)
+  const [preimage, setPreimage] = createSignal('')
+  const [busy, setBusy] = createSignal(false)
 
-  const mint = async () => {
-    const msat = satsToMsat(amountSats())
-    if (!server().trim()) {
-      notify('Enter an LNURLcash server.', NotifyKind.ERROR)
-      return
+  // bech32 LNURL, Lightning Address, lnurlp:// or plain URL - a bare host
+  // is completed to https://<host>/pay, the lnurl-mint layout
+  const resolveMint = (): string | null => {
+    const trimmed = mintInput().trim()
+    if (!trimmed) return null
+    const resolved = resolveLnurlInput(trimmed)
+    if (resolved) return resolved
+    if (/^[a-z0-9.-]+(:\d+)?$/i.test(trimmed)) {
+      return `https://${trimmed}/pay`
     }
-    if (!amountSats() || !Number.isFinite(msat) || msat <= 0) {
-      notify('Enter an amount in sats.', NotifyKind.ERROR)
+    return null
+  }
+
+  const lookup = async () => {
+    const url = resolveMint()
+    if (!url) {
+      notify('Enter a mint LNURL, address or host.', NotifyKind.ERROR)
       return
     }
     setBusy(true)
     try {
-      const {token, pr} = await mintCash(server().trim(), msat)
-      const url = resolveCashInput(token)
-      if (!url) throw new Error('Server returned an unusable token.')
-      // stored right away (pending) so the token can't get lost even if this
-      // tab closes before the invoice is paid
-      const bearer = await addBearer(url, msat, true)
-      setMintedId(bearer.id)
-      setMintedUrl(url)
-      setInvoice(pr)
-      setSettled(false)
-      notify(
-        'Token minted and stored (pending) - pay the invoice to activate it.',
-        NotifyKind.SUCCESS
-      )
+      const info = await fetchPayRequest(url)
+      if (!info.withdrawLink) {
+        notify(
+          'This payRequest does not advertise lnurlcash minting (no withdrawLink).',
+          NotifyKind.ERROR
+        )
+        return
+      }
+      setPayRequest(info)
+      setInvoice(null)
+      setPreimage('')
     } catch (err) {
       notify((err as Error).message, NotifyKind.ERROR)
     } finally {
@@ -59,23 +76,56 @@ const Mint: Component = () => {
     }
   }
 
-  const checkPaid = async () => {
-    const url = mintedUrl()
-    const id = mintedId()
-    if (!url || !id) return
+  const getInvoice = async () => {
+    const info = payRequest()
+    if (!info) return
+    const msat = satsToMsat(amountSats())
+    if (!amountSats() || !Number.isFinite(msat) || msat <= 0) {
+      notify('Enter an amount in sats.', NotifyKind.ERROR)
+      return
+    }
+    if (msat < info.minSendable || msat > info.maxSendable) {
+      notify(
+        `Amount must be between ${msatToSats(info.minSendable)} and ${msatToSats(info.maxSendable)} sats.`,
+        NotifyKind.ERROR
+      )
+      return
+    }
     setBusy(true)
     try {
-      const status = await fetchCashStatus(url)
-      await updateBearer(id, {
-        amount: status.amount,
-        pending: status.pending === true
+      setInvoice(await requestInvoice(info.callback, msat))
+    } catch (err) {
+      notify((err as Error).message, NotifyKind.ERROR)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const claim = async () => {
+    const info = payRequest()
+    if (!info?.withdrawLink) return
+    if (!isPreimage(preimage())) {
+      notify('The preimage is 64 hex characters.', NotifyKind.ERROR)
+      return
+    }
+    setBusy(true)
+    try {
+      const url = buildNoteUrl(info.withdrawLink, preimage())
+      // verify via the hash lookup - the secret never goes on the wire, and
+      // the mint settles a freshly paid invoice on exactly this request
+      const idUrl = noteIdUrl(url)
+      const noteInfo = await fetchNoteInfo(idUrl!)
+      await addBearer({
+        url,
+        callback: noteInfo.callback,
+        amount: noteInfo.maxWithdrawable,
+        verified: true
       })
-      if (status.pending) {
-        notify('Still pending - invoice not paid yet.', NotifyKind.LOADING)
-      } else {
-        setSettled(true)
-        notify('Invoice paid - your LNURLcash is active!', NotifyKind.SUCCESS)
-      }
+      notify(
+        `Minted a bearer note of ${msatToSats(noteInfo.maxWithdrawable)} sats.`,
+        NotifyKind.SUCCESS
+      )
+      navigate('/')
     } catch (err) {
       notify((err as Error).message, NotifyKind.ERROR)
     } finally {
@@ -86,52 +136,73 @@ const Mint: Component = () => {
   return (
     <RequireWallet>
       <div id="mint" class="page">
-        <h2>Mint LNURLcash</h2>
+        <h2>Mint a bearer note</h2>
         <figure class="setup-card">
-          <label>LNURLcash server</label>
+          <label>Mint (LNURL, Lightning Address or host)</label>
           <input
             type="text"
-            placeholder="cash.example.com"
-            value={server()}
-            onInput={e => setServer(e.currentTarget.value)}
-          />
-          <label>Amount (sats)</label>
-          <input
-            type="number"
-            min="1"
-            placeholder="amount in sats"
-            value={amountSats()}
-            onInput={e => setAmountSats(e.currentTarget.value)}
+            placeholder="lnurl1... / mint@example.com / mint.example.com"
+            value={mintInput()}
+            onInput={e => setMintInput(e.currentTarget.value)}
+            onKeyDown={e => e.key === 'Enter' && lookup()}
           />
           <div class="btns">
-            <button disabled={busy()} onClick={mint}>
-              Mint
+            <button disabled={busy()} onClick={lookup}>
+              Look up mint
             </button>
           </div>
         </figure>
-        <Show when={invoice()}>
-          <figure class="setup-card">
-            <Show
-              when={!settled()}
-              fallback={
-                <p>
-                  Paid! The bearer is active and waiting in your wallet.
-                </p>
-              }
-            >
-              <figcaption>
-                Pay this invoice to activate your new bearer
-              </figcaption>
-              <Qr value={invoice()!.toUpperCase()} />
+        <Show when={payRequest()}>
+          {info => (
+            <figure class="setup-card">
+              <label>
+                Amount (sats, {msatToSats(info().minSendable)} -{' '}
+                {msatToSats(info().maxSendable)})
+              </label>
+              <input
+                type="number"
+                min="1"
+                placeholder="amount in sats"
+                value={amountSats()}
+                onInput={e => setAmountSats(e.currentTarget.value)}
+              />
               <div class="btns">
-                <button onClick={() => copyToClipboard(invoice()!)}>
-                  Copy invoice
-                </button>
-                <button disabled={busy()} onClick={checkPaid}>
-                  Check payment
+                <button disabled={busy()} onClick={getInvoice}>
+                  Get invoice
                 </button>
               </div>
-            </Show>
+            </figure>
+          )}
+        </Show>
+        <Show when={invoice()}>
+          <figure class="setup-card">
+            <figcaption>
+              1. Pay this invoice with any Lightning wallet
+            </figcaption>
+            <Qr value={invoice()!.toUpperCase()} />
+            <div class="btns">
+              <button onClick={() => copyToClipboard(invoice()!)}>
+                Copy invoice
+              </button>
+            </div>
+            <label>
+              2. Paste the payment preimage your wallet reveals after paying -
+              it IS the bearer secret
+            </label>
+            <input
+              type="text"
+              placeholder="payment preimage (64 hex characters)"
+              value={preimage()}
+              onInput={e => setPreimage(e.currentTarget.value)}
+            />
+            <div class="btns">
+              <button
+                disabled={busy() || !isPreimage(preimage())}
+                onClick={claim}
+              >
+                Claim note
+              </button>
+            </div>
           </figure>
         </Show>
       </div>

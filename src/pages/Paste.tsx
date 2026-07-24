@@ -8,8 +8,8 @@ import {
 } from 'solid-icons/io'
 
 import {useWallet} from '../WalletContext'
-import {isValidCashInput} from '../lnurlcash'
-import {receiveCash} from '../receive'
+import {isValidNoteInput} from '../lnurlcash'
+import {receiveNote, secureReceivedNote} from '../receive'
 import {
   notify,
   NotifyKind,
@@ -19,37 +19,49 @@ import {
 import RequireWallet from '../components/RequireWallet'
 
 const Paste: Component = () => {
-  const {addBearer, bearers} = useWallet()
+  const {addBearer, updateBearer, bearers} = useWallet()
   const navigate = useNavigate()
   let pasteRef: HTMLInputElement | null = null
   const [value, setValue] = createSignal('')
   const [busy, setBusy] = createSignal(false)
 
   // an empty field isn't "invalid" - just nothing to show feedback about yet
-  const isValid = createMemo(() => value() === '' || isValidCashInput(value()))
+  const isValid = createMemo(() => value() === '' || isValidNoteInput(value()))
 
   const handle = async () => {
     if (value() === '') return
-    if (!isValidCashInput(value())) {
-      notify('Not a valid LNURLcash token.', NotifyKind.ERROR)
+    if (!isValidNoteInput(value())) {
+      notify('Not a valid LNURLcash bearer note.', NotifyKind.ERROR)
       return
     }
     setBusy(true)
     try {
-      const received = await receiveCash(value(), bearers())
-      await addBearer(received.url, received.amount, received.pending)
-      if (received.verified) {
+      const received = await receiveNote(value(), bearers())
+      const bearer = await addBearer(received)
+      setValue('')
+      if (!received.verified) {
         notify(
-          `Added a bearer of ${msatToSats(received.amount)} sats.`,
-          NotifyKind.SUCCESS
-        )
-      } else {
-        notify(
-          'Bearer stored, but its server could not be reached - refresh it later.',
+          'Note stored, but its service could not be reached - refresh it later.',
           NotifyKind.LOADING
         )
+        navigate('/')
+        return
       }
-      setValue('')
+      // rotate immediately: whoever handed this note over still knows the
+      // old secret until it is burned
+      try {
+        const url = await secureReceivedNote(received)
+        await updateBearer(bearer.id, {url})
+        notify(
+          `Received ${msatToSats(received.amount)} sats - secret rotated, previous copies are burned.`,
+          NotifyKind.SUCCESS
+        )
+      } catch {
+        notify(
+          `Received ${msatToSats(received.amount)} sats, but the service refused to rotate - the sender may still hold a spendable copy.`,
+          NotifyKind.ERROR
+        )
+      }
       navigate('/')
     } catch (err) {
       notify((err as Error).message, NotifyKind.ERROR)
@@ -77,7 +89,7 @@ const Paste: Component = () => {
   return (
     <RequireWallet>
       <div id="paste" class="page">
-        <h2>Paste LNURLcash</h2>
+        <h2>Paste a bearer note</h2>
         <figure class="paste-widget">
           <div class="paste-input-row">
             <button
@@ -94,7 +106,7 @@ const Paste: Component = () => {
                 type="text"
                 class="paste-input"
                 classList={{invalid: value() !== '' && !isValid()}}
-                placeholder="lnurlcash1..."
+                placeholder="lnurl1... or lnurlw://...?k1=..."
                 value={value()}
                 onInput={e => setValue(e.currentTarget.value)}
                 onKeyDown={onKeydown}
@@ -121,7 +133,10 @@ const Paste: Component = () => {
             </button>
           </div>
           <Show when={value() !== '' && !isValid()}>
-            <p class="warning">Not a valid LNURLcash token.</p>
+            <p class="warning">
+              Not a valid LNURLcash bearer note (an LNURL-withdraw link
+              carrying a k1).
+            </p>
           </Show>
         </figure>
       </div>
