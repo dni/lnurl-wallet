@@ -1,0 +1,741 @@
+@use 'sass:color';
+
+// same design language as lnurl_server's frontend, shifted to a mint/teal
+// palette so wallet and server are instantly distinguishable
+$bg: #002222;
+$accent-base: #044;
+$transparency: 0.6;
+$font-color: #5fc;
+$font-size: 16px;
+$font: 'Noto Sans', sans-serif;
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  color: $font-color;
+  font-size: $font-size;
+  font-family: $font;
+  margin: 0;
+  padding: 42px;
+  padding-top: 64px;
+}
+
+.page {
+  // clears the fixed footer so page content never sits behind it
+  padding-bottom: 56px;
+}
+
+a {
+  color: $font-color;
+}
+
+footer {
+  position: fixed;
+  background-color: rgba($bg, 0.8);
+  color: white;
+  font-size: 0.9em;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  row-gap: 4px;
+  > a {
+    display: flex;
+    align-items: center;
+  }
+  a {
+    color: white;
+    text-decoration: none;
+    &:hover {
+      color: $font-color;
+    }
+  }
+}
+
+@media (max-width: 700px) {
+  body {
+    padding: 12px;
+    padding-top: 64px;
+  }
+  footer {
+    position: static;
+    font-size: 0.8em;
+  }
+  .page {
+    padding-bottom: 0;
+  }
+}
+
+h2 {
+  font-size: 1.3em;
+  margin-bottom: 0;
+}
+.page-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 10px;
+  h2 {
+    margin-bottom: 0;
+  }
+}
+h4 {
+  margin-bottom: 6px;
+}
+
+button {
+  background-color: rgba($accent-base, $transparency);
+  border-radius: 5px;
+  color: $font-color;
+  font-size: $font-size;
+  font-family: $font;
+  border: none;
+  padding: 6px 14px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  margin-right: 9px;
+  &:hover {
+    background-color: rgba(
+      color.adjust($accent-base, $lightness: -10%),
+      $transparency
+    );
+  }
+  &:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+  }
+}
+
+.btns {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  margin: 10px 0 0 0;
+}
+
+.form-item {
+  margin: 10px 0;
+}
+
+.warning {
+  color: #f80;
+  padding: 10px 14px;
+  margin: 10px 0;
+  border-radius: 5px;
+  background: rgba(#f80, 0.12);
+  border: 1px solid rgba(#f80, 0.5);
+  a {
+    color: #f80;
+  }
+}
+
+label {
+  margin-top: 10px;
+  display: block;
+}
+
+textarea,
+input[type='text'],
+input[type='number'],
+input[type='password'],
+select {
+  background-color: rgba(
+    color.adjust($accent-base, $lightness: -30%),
+    $transparency
+  );
+  color: $font-color;
+  font-size: $font-size;
+  font-family: $font;
+  border: 1px solid $font-color;
+  border-radius: 5px;
+  padding: 5px;
+  display: block;
+  width: 100%;
+  &:hover {
+    background-color: rgba($accent-base, $transparency);
+  }
+  &:active,
+  &:focus {
+    outline: none;
+    border-color: color.adjust($font-color, $lightness: 20%);
+  }
+}
+
+input[type='checkbox'] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 20px;
+  height: 20px;
+  min-width: 20px;
+  margin-right: 8px;
+  border-radius: 5px;
+  border: 2px solid $font-color;
+  background: rgba($accent-base, $transparency);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  vertical-align: middle;
+  transition:
+    background-color 0.15s ease-in-out,
+    box-shadow 0.15s ease-in-out;
+
+  // a text glyph centers trivially via flexbox, unlike the rotated-border
+  // checkmark trick, and it's always present so only opacity/scale animate
+  &::after {
+    content: '✓';
+    font-size: 14px;
+    line-height: 1;
+    color: $bg;
+    opacity: 0;
+    transform: scale(0.5);
+    transition:
+      opacity 0.15s ease-in-out,
+      transform 0.15s ease-in-out;
+  }
+
+  &:not(:checked):hover:not(:disabled) {
+    background: rgba(
+      color.adjust($accent-base, $lightness: -10%),
+      $transparency
+    );
+    box-shadow: 0 0 8px rgba($font-color, 0.5);
+  }
+
+  &:checked {
+    background: $font-color;
+    border-color: $font-color;
+
+    &::after {
+      opacity: 1;
+      transform: scale(1);
+    }
+
+    &:hover:not(:disabled) {
+      box-shadow: 0 0 10px rgba($font-color, 0.7);
+    }
+  }
+
+  &:focus-visible {
+    outline: 2px solid $font-color;
+    outline-offset: 2px;
+  }
+
+  &:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+  }
+}
+
+.icon-btn {
+  padding: 6px;
+  margin-right: 0;
+}
+
+figcaption {
+  margin-bottom: 6px;
+}
+
+figure {
+  display: inline-block;
+  margin: 0 0 21px 0;
+  padding: 12px;
+  border-radius: 5px;
+  background: rgba($bg, $transparency);
+  box-shadow: none;
+  transition: all 0.5s ease-in-out;
+  &:hover {
+    background: rgba($bg, 0.8);
+    box-shadow: 0 0 12px rgba($font-color, 0.21);
+  }
+  > :first-child {
+    margin-top: 0;
+  }
+}
+
+pre {
+  background: rgba($bg, $transparency);
+  border-radius: 5px;
+  padding: 12px;
+  margin: 0;
+  cursor: pointer;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
+.qrcode {
+  border: 6px solid white;
+  display: flex;
+  cursor: pointer;
+}
+.qr-wrapper {
+  position: relative;
+  display: inline-block;
+}
+.qr-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  border-radius: 0;
+  background: rgba($bg, 0.9);
+  backdrop-filter: blur(6px);
+  font-size: 1.8em;
+  color: $font-color;
+  &:hover {
+    background: rgba($bg, 0.95);
+  }
+}
+.qr-visibility-toggle {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+}
+
+// ---- paste widget (same structure as lnurl_server's Paste) ----
+
+.paste-widget {
+  width: 100%;
+  max-width: 480px;
+  background: rgba($bg, $transparency);
+}
+
+.paste-input-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.paste-input-wrapper {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+
+// scoped under .paste-input-wrapper so this reliably beats the global
+// input[type='text'] rule's specificity
+.paste-input-wrapper .paste-input {
+  padding: 10px 40px 10px 16px;
+  &.invalid {
+    border-color: #f44;
+    &:focus {
+      border-color: #f44;
+    }
+  }
+}
+
+.paste-clear-btn {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 4px;
+  margin-right: 0;
+  border-radius: 50%;
+  background: transparent;
+  font-size: 0.9em;
+  &:hover {
+    background: rgba(
+      color.adjust($accent-base, $lightness: -10%),
+      $transparency
+    );
+  }
+}
+
+.paste-icon-btn,
+.paste-confirm-btn {
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  margin-right: 0;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.15em;
+}
+
+// ---- nav ----
+
+nav {
+  display: flex;
+  align-items: center;
+  line-height: 1.2;
+  position: fixed;
+  font-size: 1.2em;
+  background: rgba($bg, $transparency);
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 2;
+}
+
+.nav-brand {
+  padding: 6px 12px;
+  font-weight: bold;
+  white-space: nowrap;
+  text-decoration: none;
+  color: $font-color;
+}
+
+.nav-toggle {
+  display: none;
+  background: none;
+  border: none;
+  margin: 0;
+  padding: 6px 12px;
+  color: $font-color;
+  font-size: 1.2em;
+  &:hover {
+    background: rgba($font-color, $transparency);
+    color: $bg;
+  }
+}
+
+.nav-links,
+.nav-persistent {
+  a {
+    display: flex;
+    align-items: center;
+    margin-right: 8px;
+    padding: 6px 12px;
+    text-decoration: none;
+    color: $font-color;
+    transition: all 0.5s ease-in-out;
+    &:hover {
+      background: rgba($font-color, $transparency);
+      color: $bg;
+    }
+  }
+}
+
+.nav-links {
+  display: flex;
+  align-items: center;
+  flex: 1;
+}
+
+.nav-persistent {
+  display: flex;
+  align-items: center;
+  margin-left: auto;
+  a:last-child {
+    margin-right: 0;
+  }
+}
+
+@media (max-width: 700px) {
+  .nav-toggle {
+    display: inline-flex;
+  }
+  .nav-links {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    flex-direction: column;
+    align-items: stretch;
+    background: rgba($bg, 0.95);
+    &.open {
+      display: flex;
+    }
+    a {
+      margin-right: 0;
+    }
+  }
+}
+
+.tabs {
+  display: flex;
+  margin: 21px 0;
+  button {
+    margin-right: 9px;
+    opacity: 0.6;
+    &.active {
+      opacity: 1;
+      background-color: rgba(
+        color.adjust($accent-base, $lightness: -10%),
+        $transparency
+      );
+    }
+  }
+}
+
+// ---- hero ----
+
+#hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 42px;
+}
+
+.hero-intro {
+  max-width: 640px;
+  padding: 42px 32px;
+  border-radius: 8px;
+  background: rgba($bg, $transparency);
+  h1 {
+    font-size: 2.4em;
+    margin: 0 0 16px 0;
+  }
+}
+
+.hero-subtitle {
+  font-size: 1.1em;
+  opacity: 0.9;
+  margin: 0 0 24px 0;
+}
+
+.hero-actions {
+  display: flex;
+  justify-content: center;
+  gap: 14px;
+}
+
+.hero-btn {
+  padding: 10px 28px;
+  border-radius: 5px;
+  font-size: 1.1em;
+  font-weight: bold;
+  text-decoration: none;
+  transition: all 0.3s ease-in-out;
+}
+
+.hero-btn-primary {
+  background: $font-color;
+  color: $bg;
+  &:hover {
+    background: color.adjust($font-color, $lightness: 10%);
+  }
+}
+
+.hero-features {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 21px;
+  max-width: 960px;
+}
+
+.hero-feature {
+  flex: 1 1 240px;
+  max-width: 280px;
+  padding: 24px;
+  border-radius: 8px;
+  background: rgba($bg, $transparency);
+  transition: all 0.5s ease-in-out;
+  svg {
+    font-size: 2em;
+  }
+  h3 {
+    margin: 12px 0 8px 0;
+  }
+  p {
+    margin: 0;
+    opacity: 0.85;
+    font-size: 0.95em;
+  }
+  &:hover {
+    background: rgba($bg, 0.8);
+    box-shadow: 0 0 12px rgba($font-color, 0.21);
+  }
+}
+
+@media (max-width: 700px) {
+  .hero-intro {
+    padding: 28px 20px;
+    h1 {
+      font-size: 1.8em;
+    }
+  }
+  .hero-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+// ---- wallet page ----
+
+.wallet-actions {
+  display: flex;
+  align-items: center;
+  a {
+    display: flex;
+    align-items: center;
+    padding: 6px 12px;
+    text-decoration: none;
+    color: $font-color;
+    transition: all 0.5s ease-in-out;
+    &:hover {
+      background: rgba($font-color, $transparency);
+      color: $bg;
+      border-radius: 5px;
+    }
+  }
+}
+
+.combine-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 14px;
+  margin-bottom: 21px;
+  border-radius: 5px;
+  background: rgba($bg, 0.8);
+  border: 1px solid rgba($font-color, 0.5);
+  button {
+    margin-right: 0;
+  }
+  .combine-hint {
+    opacity: 0.7;
+    font-size: 0.9em;
+  }
+}
+
+.server-group {
+  margin-bottom: 21px;
+  > h4 {
+    margin: 0 0 10px 0;
+    opacity: 0.85;
+  }
+}
+
+.bearer-list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 21px;
+}
+
+.bearer-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  max-width: 300px;
+}
+
+.bearer-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin-bottom: 8px;
+}
+
+.bearer-select {
+  margin-top: 0;
+  input {
+    margin-right: 0;
+  }
+}
+
+.bearer-title {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.bearer-amount {
+  font-weight: bold;
+  font-size: 1.1em;
+}
+
+.bearer-pending {
+  color: #f80;
+  font-size: 0.8em;
+}
+
+.bearer-server {
+  font-size: 0.85em;
+  opacity: 0.7;
+  overflow-wrap: anywhere;
+}
+
+.bearer-actions {
+  display: flex;
+  gap: 6px;
+  // pushes this group to the far right of the (flex) .btns row it sits in
+  margin-left: auto;
+}
+
+.bearer-card .btns {
+  width: 100%;
+  gap: 6px;
+}
+
+.bearer-hint {
+  font-size: 0.9em;
+  opacity: 0.85;
+  margin: 6px 0 0 0;
+}
+
+.bearer-dates {
+  font-size: 0.75em;
+  opacity: 0.5;
+  margin: 8px 0 0 0;
+}
+
+// ---- setup / mint / backup / docs ----
+
+.setup-card {
+  display: block;
+  width: 100%;
+  max-width: 480px;
+  textarea,
+  pre {
+    width: 100%;
+  }
+}
+
+.docs-card {
+  display: block;
+  max-width: 720px;
+  p,
+  li {
+    line-height: 1.5;
+  }
+  pre {
+    cursor: text;
+    overflow-x: auto;
+    font-size: 0.85em;
+  }
+  code {
+    background: rgba($accent-base, $transparency);
+    border-radius: 3px;
+    padding: 1px 4px;
+  }
+}
+
+.scanner {
+  width: 100%;
+  max-width: 420px;
+  border-radius: 5px;
+  background: black;
+}
+
+#unlock {
+  display: flex;
+  justify-content: center;
+  figure {
+    width: 100%;
+    max-width: 420px;
+  }
+}
