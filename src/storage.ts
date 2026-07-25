@@ -18,6 +18,10 @@ export type Bearer = {
   callback: string // the mutating callback from the withdrawRequest JSON, '' until first verified
   amount: number // msat, last known (maxWithdrawable) - refreshed on demand
   verified: boolean // false while the issuing service hasn't confirmed the note yet
+  // the issuing service's signing pubkey, cached once seen (withdrawRequest/
+  // payRequest's optional mintPubkey) - lets a note's ?sig= be checked
+  // offline against it without a network round trip
+  mintPubkey?: string
   createdAt: number
   updatedAt: number
 }

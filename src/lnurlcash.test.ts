@@ -1,4 +1,7 @@
 import {describe, expect, it} from 'vitest'
+import {secp256k1} from '@noble/curves/secp256k1.js'
+import {sha256} from '@noble/hashes/sha2.js'
+import {bytesToHex, hexToBytes, utf8ToBytes} from '@noble/hashes/utils.js'
 
 import {
   toBech32Lnurl,
@@ -10,15 +13,17 @@ import {
   resolveNoteInput,
   isValidNoteInput,
   noteK1,
+  noteDeclaredAmount,
+  noteSignature,
   buildNoteUrl,
   withNewK1,
-  noteIdUrl,
   serverOf,
+  verifyNoteSignature,
   isPreimage
 } from './lnurlcash'
 
 const K1 = 'a'.repeat(64)
-const NOTE_URL = `https://mint.example.com/withdraw?k1=${K1}`
+const NOTE_URL = `https://mint.example.com/withdraw?k1=${K1}&amount=21000`
 
 describe('LUD-01 bech32', () => {
   it('round-trips a note URL', () => {
@@ -37,11 +42,11 @@ describe('LUD-01 bech32', () => {
 
 describe('LUD-17 schemes', () => {
   it('converts lnurlw:// to fetchable https and back', () => {
-    expect(fromLud17(`lnurlw://mint.example.com/withdraw?k1=${K1}`)).toBe(
-      NOTE_URL
-    )
+    expect(
+      fromLud17(`lnurlw://mint.example.com/withdraw?k1=${K1}&amount=21000`)
+    ).toBe(NOTE_URL)
     expect(toLud17w(NOTE_URL)).toBe(
-      `lnurlw://mint.example.com/withdraw?k1=${K1}`
+      `lnurlw://mint.example.com/withdraw?k1=${K1}&amount=21000`
     )
   })
 
@@ -55,7 +60,9 @@ describe('LUD-17 schemes', () => {
 describe('input resolution', () => {
   it('resolves bech32, scheme, address and plain URLs', () => {
     expect(resolveLnurlInput(toBech32Lnurl(NOTE_URL))).toBe(NOTE_URL)
-    expect(resolveLnurlInput(`lnurlw://mint.example.com/withdraw?k1=${K1}`)).toBe(NOTE_URL)
+    expect(
+      resolveLnurlInput(`lnurlw://mint.example.com/withdraw?k1=${K1}&amount=21000`)
+    ).toBe(NOTE_URL)
     expect(resolveLnurlInput('mint@mint.example.com')).toBe(
       'https://mint.example.com/.well-known/lnurlp/mint'
     )
@@ -72,37 +79,40 @@ describe('input resolution', () => {
 })
 
 describe('note helpers', () => {
-  it('extracts the k1 and host', () => {
+  it('extracts k1, declared amount, sig and host', () => {
     expect(noteK1(NOTE_URL)).toBe(K1)
     expect(noteK1('https://mint.example.com/withdraw')).toBeNull()
+    expect(noteDeclaredAmount(NOTE_URL)).toBe(21000)
+    expect(noteDeclaredAmount('https://mint.example.com/withdraw?k1=x')).toBeNull()
+    expect(noteSignature(NOTE_URL)).toBeNull()
     expect(serverOf(NOTE_URL)).toBe('mint.example.com')
   })
 
-  it('builds a note from withdrawLink + preimage', () => {
-    expect(buildNoteUrl('https://mint.example.com/withdraw', K1)).toBe(
+  it('builds a note from withdrawLink + preimage + amount', () => {
+    expect(buildNoteUrl('https://mint.example.com/withdraw', K1, 21000)).toBe(
       NOTE_URL
     )
     expect(
-      buildNoteUrl('lnurlw://mint.example.com/withdraw', K1.toUpperCase())
+      buildNoteUrl(
+        'lnurlw://mint.example.com/withdraw',
+        K1.toUpperCase(),
+        21000
+      )
     ).toBe(NOTE_URL)
   })
 
-  it('swaps the secret after rotate/split/merge', () => {
+  it('swaps k1/amount and sets or clears sig after rotate/split/merge', () => {
     const newK1 = 'b'.repeat(64)
-    expect(noteK1(withNewK1(NOTE_URL, newK1))).toBe(newK1)
-  })
+    const rotated = withNewK1(NOTE_URL, newK1, 15000)
+    expect(noteK1(rotated)).toBe(newK1)
+    expect(noteDeclaredAmount(rotated)).toBe(15000)
+    expect(noteSignature(rotated)).toBeNull()
 
-  it('addresses a note by sha256(k1) for informational lookups', () => {
-    // sha256 over the raw bytes (all 0xaa), not the hex string - matches
-    // lnurl-mint's _note_id, which for a minted note is the payment hash
-    const url = noteIdUrl(NOTE_URL)!
-    const id = new URL(url).searchParams.get('id')
-    expect(id).toBe(
-      'e0e77a507412b120f6ede61f62295b1a7b2ff19d3dcc8f7253e51663470c888e'
-    )
-    expect(new URL(url).searchParams.get('k1')).toBeNull()
-    // undefined for non-32-byte-hex secrets
-    expect(noteIdUrl('https://mint.example.com/withdraw?k1=short')).toBeNull()
+    const signed = withNewK1(NOTE_URL, newK1, 15000, 'deadbeef')
+    expect(noteSignature(signed)).toBe('deadbeef')
+    // rotating again without a signature drops the stale one
+    const reRotated = withNewK1(signed, 'c'.repeat(64), 15000)
+    expect(noteSignature(reRotated)).toBeNull()
   })
 })
 
@@ -112,5 +122,43 @@ describe('preimage', () => {
     expect(isPreimage(` ${K1.toUpperCase()} `)).toBe(true)
     expect(isPreimage('a'.repeat(63))).toBe(false)
     expect(isPreimage('z'.repeat(64))).toBe(false)
+  })
+})
+
+describe('offline signature verification', () => {
+  it('verifies a signature made over LNURLcash/note || amount || sha256(k1)', () => {
+    const priv = secp256k1.utils.randomSecretKey()
+    const pubHex = bytesToHex(secp256k1.getPublicKey(priv, true))
+
+    // sign exactly the message verifyNoteSignature reconstructs, using the
+    // library's 'recovered' format - empirically recovery-id-first (rec ||
+    // r || s), matching the spec's byte order
+    const amountMsat = 21000
+    const view = new DataView(new ArrayBuffer(8))
+    view.setBigUint64(0, BigInt(amountMsat), false)
+    const msg = sha256(
+      new Uint8Array([
+        ...utf8ToBytes('LNURLcash/note'),
+        ...new Uint8Array(view.buffer),
+        ...sha256(hexToBytes(K1))
+      ])
+    )
+    const sigHex = bytesToHex(secp256k1.sign(msg, priv, {format: 'recovered'}))
+
+    expect(verifyNoteSignature(K1, amountMsat, sigHex, pubHex)).toBe(true)
+    expect(verifyNoteSignature(K1, amountMsat + 1, sigHex, pubHex)).toBe(false)
+    expect(verifyNoteSignature('b'.repeat(64), amountMsat, sigHex, pubHex)).toBe(
+      false
+    )
+    const otherPub = bytesToHex(
+      secp256k1.getPublicKey(secp256k1.utils.randomSecretKey(), true)
+    )
+    expect(verifyNoteSignature(K1, amountMsat, sigHex, otherPub)).toBe(false)
+  })
+
+  it('rejects garbage signatures without throwing', () => {
+    expect(verifyNoteSignature(K1, 1000, 'not-hex', 'ab'.repeat(33))).toBe(
+      false
+    )
   })
 })

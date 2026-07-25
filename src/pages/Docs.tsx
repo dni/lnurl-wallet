@@ -38,22 +38,29 @@ const Docs: Component = () => {
           </a>{' '}
           withdrawRequest link whose <code>k1</code> <em>is</em> the asset:
         </p>
-        <pre>{`lnurlw://mint.example/withdraw?k1=<secret>`}</pre>
+        <pre>{`lnurlw://mint.example/withdraw?k1=<secret>&amount=<msat>`}</pre>
         <p>
           Whoever knows the <code>k1</code> controls the sats behind it -
-          like a banknote. No new endpoint, no new encoding: a wallet that
-          doesn't know LNURLcash just sees a normal withdraw link and can
-          cash it out to a BOLT-11 invoice. A GET on the note's LNURL is
-          purely <strong>informational</strong> - it reports the note's value
-          (<code>maxWithdrawable</code>) and never burns anything. All
-          mutating operations go to the <code>callback</code> from that
-          response:
+          like a banknote. The <code>amount</code> alongside it is just a
+          claim by whoever encoded the note, so any recipient can display a
+          value before contacting the service - it's untrusted until an
+          online GET confirms it (or a signature backs it, see below). No new
+          endpoint, no new encoding: a wallet that doesn't know LNURLcash just
+          sees a normal withdraw link and can cash it out to a BOLT-11
+          invoice. A GET on the note's LNURL is purely{' '}
+          <strong>informational</strong> - it reports the note's authoritative
+          value (<code>maxWithdrawable</code>) and never burns anything,
+          ignoring the URL's own <code>amount</code> claim. All mutating
+          operations go to the <code>callback</code> from that response:
         </p>
-        <pre>{`callback?k1=X&pr=<bolt11>      melt: X burned, pr (of exactly its value) paid
-callback?k1=X&k1=Y&pr=...      merged melt: all burned, pr of combined value paid
-callback?k1=X                  rotate: X burned, fresh k1' of same value returned
-callback?k1=X&amount=<msat>    split: X burned, response carries k1 + change
-callback?k1=X&k1=Y             merge: all burned, one note worth the sum returned`}</pre>
+        <pre>{`callback?k1=X&pr=<bolt11>    melt: X burned, pr (of exactly its value) paid
+callback?k1=X                rotate: X burned, fresh k1' of same value returned
+callback?k1=X&amount=<msat>  split: X burned, response carries k1 + change
+callback?k1=X&k1=Y           merge: all burned, one note worth the sum returned`}</pre>
+        <p>
+          Melt only ever takes a single <code>k1</code> - to melt several
+          notes in one payment, merge them first.
+        </p>
         <ul>
           <li>
             <strong>Mint</strong>: a{' '}
@@ -66,12 +73,12 @@ callback?k1=X&k1=Y             merge: all burned, one note worth the sum returne
             payRequest advertising <code>withdrawLink</code> mints notes -
             the <strong>payment preimage</strong> of its paid invoice is the
             bearer secret. Pay the invoice with any Lightning wallet, paste
-            the preimage it reveals, and{' '}
-            <code>withdrawLink?k1=&lt;preimage&gt;</code> is your note.
+            the preimage it reveals, and this wallet verifies it with the
+            service and stores the note.
           </li>
           <li>
             <strong>Melt</strong> has the service pay a bolt11 invoice of
-            exactly the note's value - split first to melt less.
+            exactly the note's value - merge first to melt several at once.
           </li>
           <li>
             <strong>Split</strong> burns a note into two fresh ones - the
@@ -80,8 +87,10 @@ callback?k1=X&k1=Y             merge: all burned, one note worth the sum returne
           <li>
             <strong>Transfer</strong> rotates the secret: a fresh note to
             hand over, every old copy burned. The wallet also rotates
-            automatically right after receiving a scanned or pasted note, so
-            the previous holder can't double-spend it.
+            automatically right after receiving a scanned or pasted note -
+            the informational GET that verified it already put the old
+            secret on the wire, so the previous holder's copy needs burning
+            regardless of who they are.
           </li>
           <li>
             <strong>Combine</strong> merges selected same-service notes into
@@ -89,14 +98,36 @@ callback?k1=X&k1=Y             merge: all burned, one note worth the sum returne
           </li>
         </ul>
         <p>
-          When a service supports it (like{' '}
-          <a href="https://github.com/dni/lnurl-mint" target="_blank">
-            lnurl-mint
-          </a>
-          ), the wallet checks a note's value with{' '}
-          <code>?id=sha256(k1)</code> instead of <code>?k1=</code> - the
-          secret then never goes on the wire for lookups; it is transmitted
-          exactly once, in the callback request that burns it.
+          The optional <code>?id=sha256(k1)</code> hash lookup from earlier
+          drafts of this spec was removed - every informational GET now puts
+          the secret itself on the wire, which is exactly why the wallet
+          treats one as exposure and rotates right after, per the spec's own
+          guidance.
+        </p>
+      </figure>
+
+      <figure class="docs-card">
+        <h3>Offline verification (optional)</h3>
+        <p>
+          A bearer note is otherwise an opaque secret - an offline recipient
+          can't tell who issued it or for how much. A service{' '}
+          <strong>MAY</strong> make its notes verifiable by publishing a{' '}
+          <code>mintPubkey</code> and signing each fresh secret it hands out
+          (in the response to rotate, split or merge). The signature covers{' '}
+          <code>sha256("LNURLcash/note" ‖ amount_msat ‖ sha256(k1))</code>{' '}
+          and travels as one extra query parameter, ignored by wallets that
+          don't check it:
+        </p>
+        <pre>{`lnurlw://mint.example/withdraw?k1=<secret>&amount=<msat>&sig=<hex>`}</pre>
+        <p>
+          When this wallet already knows a service's <code>mintPubkey</code>{' '}
+          (learned from an earlier online check) and a note carries a{' '}
+          <code>sig</code>, it recovers the signer from the two and compares
+          it - a match shows as a "signed" badge on the note's card, entirely
+          offline. This only proves the note <em>was issued</em> for that
+          amount, never that it's still unspent - the only definitive check
+          is an online rotate. <code>lnurl-mint</code> doesn't implement
+          signing yet, so notes from it never show this badge.
         </p>
       </figure>
 

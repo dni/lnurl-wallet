@@ -70,16 +70,18 @@ const Wallet: Component = () => {
     setCombining(true)
     try {
       const [base] = picked
-      const newK1 = await mergeNotes(
+      const total = selectedTotal()
+      const merged = await mergeNotes(
         base.callback,
         picked.map(b => noteK1(b.url)!)
       )
       for (const bearer of picked) removeBearer(bearer.id)
       await addBearer({
-        url: withNewK1(base.url, newK1),
+        url: withNewK1(base.url, merged.k1, total, merged.signature),
         callback: base.callback,
-        amount: selectedTotal(),
-        verified: true
+        amount: total,
+        verified: true,
+        mintPubkey: base.mintPubkey
       })
       setSelected(new Set<string>())
       notify(`Combined ${picked.length} notes into one.`, NotifyKind.SUCCESS)

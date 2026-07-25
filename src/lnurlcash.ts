@@ -1,24 +1,35 @@
 import {bech32} from '@scure/base'
 import {sha256} from '@noble/hashes/sha2.js'
-import {bytesToHex, hexToBytes} from '@noble/hashes/utils.js'
+import {secp256k1} from '@noble/curves/secp256k1.js'
+import {bytesToHex, hexToBytes, utf8ToBytes} from '@noble/hashes/utils.js'
 
 // LUD-XX LNURLcash - bearer assets (draft, see luds/XX.md).
 //
 // A bearer note is an ordinary LUD-03 withdrawRequest link whose k1 *is*
-// the asset: lnurlw://host/path?k1=<secret>, encodable as a plain bech32
-// LNURL. No new endpoint, no new encoding. A GET on the note's LNURL is
-// purely informational (never burns); every mutating operation goes to the
-// `callback` URL from the withdrawRequest JSON:
+// the asset: lnurlw://host/path?k1=<secret>&amount=<msat>, encodable as a
+// plain bech32 LNURL. No new endpoint, no new encoding. A GET on the note's
+// LNURL is purely informational (never burns; `amount` is ignored there -
+// it's a claim by whoever encoded the note, the authoritative value is
+// always maxWithdrawable). Every mutating operation goes to the `callback`
+// URL from the withdrawRequest JSON:
 //
-//   callback?k1=X&pr=<bolt11>       melt: X burned, pr paid (plain LUD-03)
-//   callback?k1=X&k1=Y&pr=<bolt11>  merged melt: all burned, pr of combined value paid
-//   callback?k1=X                   rotate: X burned, {..., k1: X'} minted, same value
-//   callback?k1=X&amount=<msat>     split: X burned, {..., k1, change} minted
-//   callback?k1=X&k1=Y..            merge: all burned, {..., k1} worth their sum
+//   callback?k1=X&pr=<bolt11>    melt: X burned, pr (of exactly its value) paid
+//   callback?k1=X                rotate: X burned, {..., k1: X'} minted, same value
+//   callback?k1=X&amount=<msat>  split: X burned, {..., k1, change} minted
+//   callback?k1=X&k1=Y..         merge: all burned, {..., k1} worth their sum
 //
-// Minting: a LUD-06 payRequest may advertise `withdrawLink` (raw LUD-17
-// URL of the withdraw endpoint) - the payment preimage of its paid invoice
-// becomes a valid k1 there, so withdrawLink + ?k1=<preimage> is the note.
+// (multiple k1 + pr - "merged melt" - was removed from the spec: merge
+// first to melt several notes in one payment.)
+//
+// Minting: a LUD-06 payRequest may advertise `withdrawLink` (raw LUD-17 URL
+// of the withdraw endpoint) - the payment preimage of its paid invoice
+// becomes a valid k1 there, so withdrawLink?k1=<preimage>&amount=<msat> is
+// the note.
+//
+// Offline verification (optional): a SERVICE MAY publish a `mintPubkey`
+// (33-byte compressed secp256k1, hex) and sign rotated/split/merged notes,
+// letting a holder verify issuer+amount without contacting SERVICE. See
+// verifyNoteSignature below.
 
 // ---- LUD-01 bech32 encoding ----
 
@@ -98,6 +109,29 @@ export const noteK1 = (url: string): string | null => {
   }
 }
 
+// the amount a note *claims* to carry, straight from the URL - only a claim
+// by whoever encoded it (SERVICE ignores it at the informational endpoint),
+// safe to show before contacting SERVICE but not to be trusted without a
+// matching signature (see verifyNoteSignature) or a fresh online GET
+export const noteDeclaredAmount = (url: string): number | null => {
+  try {
+    const raw = new URL(url).searchParams.get('amount')
+    if (raw === null) return null
+    const n = Number(raw)
+    return Number.isFinite(n) ? n : null
+  } catch {
+    return null
+  }
+}
+
+export const noteSignature = (url: string): string | null => {
+  try {
+    return new URL(url).searchParams.get('sig')
+  } catch {
+    return null
+  }
+}
+
 // input only qualifies as a bearer note if it resolves to a URL carrying k1
 export const resolveNoteInput = (value: string): string | null => {
   const url = resolveLnurlInput(value)
@@ -108,36 +142,35 @@ export const resolveNoteInput = (value: string): string | null => {
 export const isValidNoteInput = (value: string): boolean =>
   resolveNoteInput(value) !== null
 
-// withdrawLink (raw LUD-17 URL of the withdraw endpoint) + a secret -> note
-export const buildNoteUrl = (withdrawLink: string, k1: string): string => {
+// withdrawLink (raw LUD-17 URL of the withdraw endpoint) + a fresh secret
+// -> note. `amountMsat` is the declared value (see noteDeclaredAmount).
+export const buildNoteUrl = (
+  withdrawLink: string,
+  k1: string,
+  amountMsat: number
+): string => {
   const url = new URL(fromLud17(withdrawLink.trim()))
   url.searchParams.set('k1', k1.trim().toLowerCase())
+  url.searchParams.set('amount', String(amountMsat))
   return url.toString()
 }
 
-// the same note with its secret swapped out - after rotate/split/merge
-export const withNewK1 = (url: string, k1: string): string => {
+// the same note with its secret swapped out - after rotate/split/merge. A
+// signature only carries over when the response actually returned a fresh
+// one for this k1 (a rotate/split/merge without offline verification
+// support drops any stale sig, since it no longer matches the new secret).
+export const withNewK1 = (
+  url: string,
+  k1: string,
+  amountMsat: number,
+  signature?: string
+): string => {
   const newUrl = new URL(url)
-  newUrl.searchParams.delete('id')
   newUrl.searchParams.set('k1', k1)
+  newUrl.searchParams.set('amount', String(amountMsat))
+  if (signature) newUrl.searchParams.set('sig', signature)
+  else newUrl.searchParams.delete('sig')
   return newUrl.toString()
-}
-
-// every k1 this scheme mints is 32 bytes hex (a payment preimage or the
-// service's own urandom) - the id lookup below is only defined for those
-const K1_HEX = /^[0-9a-f]{64}$/
-
-// the same note addressed by hash instead of secret - the informational
-// lookup that keeps the secret off the wire (SERVICE MAY support this).
-// id = sha256 over the raw k1 *bytes* (for a minted note that is exactly
-// the payment hash of the funding invoice). null when k1 isn't 32-byte hex.
-export const noteIdUrl = (url: string): string | null => {
-  const k1 = noteK1(url)
-  if (!k1 || !K1_HEX.test(k1)) return null
-  const idUrl = new URL(url)
-  idUrl.searchParams.delete('k1')
-  idUrl.searchParams.set('id', bytesToHex(sha256(hexToBytes(k1))))
-  return idUrl.toString()
 }
 
 export const serverOf = (url: string): string => {
@@ -145,6 +178,47 @@ export const serverOf = (url: string): string => {
     return new URL(url).host
   } catch {
     return url
+  }
+}
+
+// ---- offline verification (optional) ----
+
+// msg = sha256("LNURLcash/note" || uint64_be(amount_msat) || sha256(k1))
+const NOTE_SIG_DOMAIN = utf8ToBytes('LNURLcash/note')
+
+const uint64be = (n: number): Uint8Array => {
+  const bytes = new Uint8Array(8)
+  new DataView(bytes.buffer).setBigUint64(0, BigInt(n), false)
+  return bytes
+}
+
+const noteSignatureMessage = (k1: string, amountMsat: number): Uint8Array =>
+  sha256(
+    new Uint8Array([
+      ...NOTE_SIG_DOMAIN,
+      ...uint64be(amountMsat),
+      ...sha256(hexToBytes(k1))
+    ])
+  )
+
+// recovers the signer's pubkey from (k1, amountMsat, signature) and checks
+// it against `mintPubkey` - true only if both match. `signature` is the
+// spec's 65-byte recoverable form (recovery id || r || s, hex).
+export const verifyNoteSignature = (
+  k1: string,
+  amountMsat: number,
+  signatureHex: string,
+  mintPubkeyHex: string
+): boolean => {
+  try {
+    const msg = noteSignatureMessage(k1, amountMsat)
+    const recovered = secp256k1.recoverPublicKey(
+      hexToBytes(signatureHex),
+      msg
+    )
+    return bytesToHex(recovered) === mintPubkeyHex.toLowerCase()
+  } catch {
+    return false
   }
 }
 
@@ -175,10 +249,13 @@ export type WithdrawRequestInfo = {
   minWithdrawable: number
   maxWithdrawable: number
   defaultDescription?: string
+  mintPubkey?: string
 }
 
 // the informational GET (LUD-03 step 1) - never burns, rotates or alters
-// the note. `url` is the note's LNURL (?k1=) or its ?id= hash form.
+// the note. Per spec this always exposes k1 on the wire now (the optional
+// hash-based lookup was dropped) - callers that keep holding the note
+// afterward SHOULD rotate it (see receive.ts / BearerCard's refresh).
 export const fetchNoteInfo = async (
   url: string
 ): Promise<WithdrawRequestInfo> => {
@@ -186,35 +263,29 @@ export const fetchNoteInfo = async (
   if (
     body?.tag !== 'withdrawRequest' ||
     typeof body.callback !== 'string' ||
+    typeof body.k1 !== 'string' ||
     typeof body.maxWithdrawable !== 'number'
   ) {
     throw new Error('Not a withdrawRequest (unexpected response).')
   }
-  return body as WithdrawRequestInfo
-}
-
-// prefers the ?id= hash lookup (secret never leaves the device) and only
-// falls back to the plain ?k1= GET when the service rejects the id form -
-// callers that keep holding the note after a k1 GET should rotate it, per
-// the spec's exposure guidance
-export const fetchNoteInfoSafe = async (
-  url: string
-): Promise<{info: WithdrawRequestInfo; secretExposed: boolean}> => {
-  const idUrl = noteIdUrl(url)
-  if (idUrl) {
-    try {
-      return {info: await fetchNoteInfo(idUrl), secretExposed: false}
-    } catch {
-      // service may not support the optional id lookup - fall through
-    }
+  // spec MUST: the response's k1 is the actual bearer secret, never a
+  // derived/opaque id - a service returning something else for the k1 we
+  // queried is non-compliant (or the note was rotated by someone else)
+  const queried = noteK1(url)
+  if (queried && body.k1 !== queried) {
+    throw new Error(
+      "Service echoed back a different k1 than queried - the note may have been redeemed elsewhere, or the service isn't spec-compliant."
+    )
   }
-  return {info: await fetchNoteInfo(url), secretExposed: true}
+  return body as WithdrawRequestInfo
 }
 
 export type WithdrawSuccessResponse = {
   status: 'OK'
   k1?: string
   change?: string
+  signature?: string
+  changeSignature?: string
 }
 
 const callbackRequest = async (
@@ -222,7 +293,7 @@ const callbackRequest = async (
   params: [string, string][]
 ): Promise<WithdrawSuccessResponse> => {
   const cbUrl = new URL(callback)
-  // append (not set): merge and merged melt repeat the k1 param
+  // append (not set): merge repeats the k1 param
   for (const [key, value] of params) cbUrl.searchParams.append(key, value)
   const body = await lnurlFetch(cbUrl)
   if (body?.status !== 'OK') {
@@ -231,30 +302,42 @@ const callbackRequest = async (
   return body as WithdrawSuccessResponse
 }
 
-// melt: burn the given note(s), the service pays `pr`. With several k1s the
-// invoice must be of exactly their combined value - split first to melt less.
-export const meltNotes = async (
+// melt: burn a single note, the service pays `pr` of exactly its value -
+// merge first to melt several notes in one payment (the spec dropped
+// multi-k1 melt).
+export const meltNote = async (
   callback: string,
-  k1s: string[],
+  k1: string,
   pr: string
 ): Promise<void> => {
   await callbackRequest(callback, [
-    ...k1s.map((k1): [string, string] => ['k1', k1]),
+    ['k1', k1],
     ['pr', pr.trim()]
   ])
 }
 
+export type RotateResult = {k1: string; signature?: string}
+
 // rotate: burn k1, get a fresh secret of the same value - closes the window
-// in which any previous holder (or logged URL) could redeem the note
+// in which any previous holder (or logged URL) could redeem the note. Also
+// how a wallet obtains a compact, offline-verifiable copy of a note that
+// doesn't have one yet (e.g. straight after minting).
 export const rotateNote = async (
   callback: string,
   k1: string
-): Promise<string> => {
+): Promise<RotateResult> => {
   const body = await callbackRequest(callback, [['k1', k1]])
   if (typeof body.k1 !== 'string') {
     throw new Error('Service did not return a replacement secret.')
   }
-  return body.k1
+  return {k1: body.k1, signature: body.signature}
+}
+
+export type SplitResult = {
+  k1: string
+  signature?: string
+  change: string
+  changeSignature?: string
 }
 
 // split: burn k1, mint one note worth `amountMsat` (response k1) and one
@@ -263,7 +346,7 @@ export const splitNote = async (
   callback: string,
   k1: string,
   amountMsat: number
-): Promise<{k1: string; change: string}> => {
+): Promise<SplitResult> => {
   const body = await callbackRequest(callback, [
     ['k1', k1],
     ['amount', String(amountMsat)]
@@ -271,14 +354,19 @@ export const splitNote = async (
   if (typeof body.k1 !== 'string' || typeof body.change !== 'string') {
     throw new Error('Service did not return the split notes.')
   }
-  return {k1: body.k1, change: body.change}
+  return {
+    k1: body.k1,
+    signature: body.signature,
+    change: body.change,
+    changeSignature: body.changeSignature
+  }
 }
 
 // merge: burn all given notes, mint one worth their sum
 export const mergeNotes = async (
   callback: string,
   k1s: string[]
-): Promise<string> => {
+): Promise<RotateResult> => {
   const body = await callbackRequest(
     callback,
     k1s.map((k1): [string, string] => ['k1', k1])
@@ -286,7 +374,7 @@ export const mergeNotes = async (
   if (typeof body.k1 !== 'string') {
     throw new Error('Service did not return a merged secret.')
   }
-  return body.k1
+  return {k1: body.k1, signature: body.signature}
 }
 
 // ---- minting via LUD-06 payRequest ----
@@ -300,6 +388,7 @@ export type PayRequestInfo = {
   // LUD-XX: present when paying this mints a bearer note - the payment
   // preimage becomes a valid k1 at this (raw LUD-17) withdraw endpoint
   withdrawLink?: string
+  mintPubkey?: string
 }
 
 export const fetchPayRequest = async (url: string): Promise<PayRequestInfo> => {

@@ -1,5 +1,5 @@
 import type {Component} from 'solid-js'
-import {Show, createSignal} from 'solid-js'
+import {Show, createMemo, createSignal} from 'solid-js'
 import {
   IoCopySharp,
   IoEyeSharp,
@@ -8,7 +8,8 @@ import {
   IoFlameSharp,
   IoGitBranchSharp,
   IoSwapHorizontalSharp,
-  IoTrashSharp
+  IoTrashSharp,
+  IoShieldCheckmarkSharp
 } from 'solid-icons/io'
 
 import type {Bearer} from '../storage'
@@ -17,10 +18,12 @@ import {
   toBech32Lnurl,
   toLud17w,
   noteK1,
+  noteSignature,
   serverOf,
   withNewK1,
-  fetchNoteInfoSafe,
-  meltNotes,
+  fetchNoteInfo,
+  verifyNoteSignature,
+  meltNote,
   splitNote,
   rotateNote
 } from '../lnurlcash'
@@ -59,30 +62,48 @@ const BearerCard: Component<BearerCardProps> = props => {
   const k1 = () => noteK1(props.bearer.url) || ''
   const hasCallback = () => props.bearer.callback !== ''
 
-  // informational GET - via the sha256(k1) hash lookup when the service
-  // supports it (the secret never leaves this device); when only the plain
-  // ?k1= form works, the secret has been on the wire, so rotate right after,
-  // per the spec's exposure guidance
+  // offline-verifiable iff the note carries a signature AND this wallet
+  // already knows the issuing service's mintPubkey - both optional per spec
+  const offlineVerified = createMemo(() => {
+    const sig = noteSignature(props.bearer.url)
+    if (!sig || !props.bearer.mintPubkey) return false
+    return verifyNoteSignature(
+      k1(),
+      props.bearer.amount,
+      sig,
+      props.bearer.mintPubkey
+    )
+  })
+
+  // the informational GET always puts k1 on the wire now (the spec dropped
+  // the optional hash-based lookup), so every refresh is followed by a
+  // rotate - per "WALLET SHOULD ... rotate ... after an informational GET
+  // on a note it intends to keep holding"
   const refresh = async () => {
     setBusy(true)
     try {
-      const {info, secretExposed} = await fetchNoteInfoSafe(props.bearer.url)
+      const info = await fetchNoteInfo(props.bearer.url)
       let url = props.bearer.url
-      if (secretExposed) {
-        try {
-          url = withNewK1(url, await rotateNote(info.callback, k1()))
-        } catch {
-          notify(
-            'Service does not support rotation - your secret was transmitted, treat old copies of this note as exposed.',
-            NotifyKind.ERROR
-          )
-        }
+      try {
+        const rotated = await rotateNote(info.callback, k1())
+        url = withNewK1(
+          props.bearer.url,
+          rotated.k1,
+          info.maxWithdrawable,
+          rotated.signature
+        )
+      } catch {
+        notify(
+          'Service does not support rotation - your secret was just transmitted, treat old copies of this note as exposed.',
+          NotifyKind.ERROR
+        )
       }
       await updateBearer(props.bearer.id, {
         url,
         callback: info.callback,
         amount: info.maxWithdrawable,
-        verified: true
+        verified: true,
+        mintPubkey: info.mintPubkey ?? props.bearer.mintPubkey
       })
       notify('Note refreshed.', NotifyKind.SUCCESS)
     } catch (err) {
@@ -99,7 +120,7 @@ const BearerCard: Component<BearerCardProps> = props => {
     }
     setBusy(true)
     try {
-      await meltNotes(props.bearer.callback, [k1()], meltPr())
+      await meltNote(props.bearer.callback, k1(), meltPr())
       removeBearer(props.bearer.id)
       notify('Melted - the note has been paid out.', NotifyKind.SUCCESS)
     } catch (err) {
@@ -126,16 +147,28 @@ const BearerCard: Component<BearerCardProps> = props => {
       // ones; their values are derived from the operation, per the spec
       removeBearer(props.bearer.id)
       await addBearer({
-        url: withNewK1(props.bearer.url, parts.k1),
+        url: withNewK1(
+          props.bearer.url,
+          parts.k1,
+          msat,
+          parts.signature
+        ),
         callback: props.bearer.callback,
         amount: msat,
-        verified: true
+        verified: true,
+        mintPubkey: props.bearer.mintPubkey
       })
       await addBearer({
-        url: withNewK1(props.bearer.url, parts.change),
+        url: withNewK1(
+          props.bearer.url,
+          parts.change,
+          props.bearer.amount - msat,
+          parts.changeSignature
+        ),
         callback: props.bearer.callback,
         amount: props.bearer.amount - msat,
-        verified: true
+        verified: true,
+        mintPubkey: props.bearer.mintPubkey
       })
       notify('Split into two notes.', NotifyKind.SUCCESS)
       setAction(null)
@@ -149,10 +182,15 @@ const BearerCard: Component<BearerCardProps> = props => {
   const transfer = async () => {
     setBusy(true)
     try {
-      const newK1 = await rotateNote(props.bearer.callback, k1())
+      const rotated = await rotateNote(props.bearer.callback, k1())
       // the old secret is dead the moment the service rotates it - keep the
       // fresh note stored until the holder confirms the handover
-      const url = withNewK1(props.bearer.url, newK1)
+      const url = withNewK1(
+        props.bearer.url,
+        rotated.k1,
+        props.bearer.amount,
+        rotated.signature
+      )
       await updateBearer(props.bearer.id, {url})
       setHandover(toBech32Lnurl(url))
     } catch (err) {
@@ -178,6 +216,12 @@ const BearerCard: Component<BearerCardProps> = props => {
           </span>
           <Show when={!props.bearer.verified}>
             <span class="bearer-pending">unverified</span>
+          </Show>
+          <Show when={offlineVerified()}>
+            <span class="bearer-signed" title="Signature checks out against this mint's published pubkey">
+              <IoShieldCheckmarkSharp />
+              &nbsp;signed
+            </span>
           </Show>
           <span class="bearer-server">{serverOf(props.bearer.url)}</span>
         </div>
@@ -230,7 +274,7 @@ const BearerCard: Component<BearerCardProps> = props => {
         </button>
         <button
           class="icon-btn"
-          title="Refresh value from the service (hash lookup - the secret stays local)"
+          title="Refresh value from the service, then rotate (the GET necessarily exposes k1)"
           disabled={busy()}
           onClick={refresh}
         >
@@ -299,7 +343,8 @@ const BearerCard: Component<BearerCardProps> = props => {
         <div class="form-item">
           <label>
             Melt into a bolt11 invoice of exactly{' '}
-            {msatToSats(props.bearer.amount)} sats (split first to melt less)
+            {msatToSats(props.bearer.amount)} sats (merge first to melt
+            several notes)
           </label>
           <input
             type="text"

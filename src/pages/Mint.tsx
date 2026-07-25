@@ -9,7 +9,7 @@ import {
   fetchPayRequest,
   requestInvoice,
   buildNoteUrl,
-  noteIdUrl,
+  withNewK1,
   fetchNoteInfo,
   isPreimage
 } from '../lnurlcash'
@@ -34,6 +34,7 @@ const Mint: Component = () => {
   const [payRequest, setPayRequest] = createSignal<PayRequestInfo | null>(null)
   const [amountSats, setAmountSats] = createSignal('')
   const [invoice, setInvoice] = createSignal<string | null>(null)
+  const [invoicedMsat, setInvoicedMsat] = createSignal(0)
   const [preimage, setPreimage] = createSignal('')
   const [busy, setBusy] = createSignal(false)
 
@@ -94,6 +95,7 @@ const Mint: Component = () => {
     setBusy(true)
     try {
       setInvoice(await requestInvoice(info.callback, msat))
+      setInvoicedMsat(msat)
     } catch (err) {
       notify((err as Error).message, NotifyKind.ERROR)
     } finally {
@@ -110,16 +112,27 @@ const Mint: Component = () => {
     }
     setBusy(true)
     try {
-      const url = buildNoteUrl(info.withdrawLink, preimage())
-      // verify via the hash lookup - the secret never goes on the wire, and
-      // the mint settles a freshly paid invoice on exactly this request
-      const idUrl = noteIdUrl(url)
-      const noteInfo = await fetchNoteInfo(idUrl!)
+      // declare the invoiced amount (a claim - not yet confirmed) so the
+      // note is self-describing even before the verifying GET below
+      const declaredUrl = buildNoteUrl(
+        info.withdrawLink,
+        preimage(),
+        invoicedMsat()
+      )
+      // verify with the service - this settles a freshly paid invoice on
+      // exactly this k1, and its maxWithdrawable is the authoritative value
+      const noteInfo = await fetchNoteInfo(declaredUrl)
+      const url = withNewK1(
+        declaredUrl,
+        noteInfo.k1,
+        noteInfo.maxWithdrawable
+      )
       await addBearer({
         url,
         callback: noteInfo.callback,
         amount: noteInfo.maxWithdrawable,
-        verified: true
+        verified: true,
+        mintPubkey: noteInfo.mintPubkey
       })
       notify(
         `Minted a bearer note of ${msatToSats(noteInfo.maxWithdrawable)} sats.`,

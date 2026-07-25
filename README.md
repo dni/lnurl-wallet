@@ -19,38 +19,51 @@ A bearer note is an ordinary [LUD-03](https://github.com/lnurl/luds/blob/luds/03
 withdrawRequest link whose `k1` **is** the asset:
 
 ```
-lnurlw://mint.example/withdraw?k1=<secret>
+lnurlw://mint.example/withdraw?k1=<secret>&amount=<msat>
 ```
 
-Whoever knows the `k1` controls the sats behind it - like a banknote. No
-new endpoint, no new encoding: a wallet that doesn't know LNURLcash sees a
-normal withdraw link and can cash it out to a BOLT-11 invoice. A GET on the
-note's LNURL is purely **informational** (its `maxWithdrawable` is the
-note's value; it never burns); all mutating operations go to the
-`callback` from that withdrawRequest JSON:
+Whoever knows the `k1` controls the sats behind it - like a banknote. The
+`amount` alongside it is only a claim by whoever encoded the note (untrusted
+until confirmed online, or backed by a signature - see below); the
+authoritative value is always `maxWithdrawable` from an informational GET,
+which the service ignores the URL's own `amount` for. No new endpoint, no
+new encoding: a wallet that doesn't know LNURLcash sees a normal withdraw
+link and can cash it out to a BOLT-11 invoice. That informational GET never
+burns; all mutating operations go to the `callback` from that withdrawRequest
+JSON:
 
 | Request | Result |
 |---------|--------|
 | `callback?k1=X&pr=<bolt11>` | **melt**: X burned, `pr` (of exactly its value) paid |
-| `callback?k1=X&k1=Y&pr=<bolt11>` | **merged melt**: all burned, `pr` of combined value paid |
 | `callback?k1=X` | **rotate**: X burned, `{"status":"OK","k1":X'}` same value |
 | `callback?k1=X&amount=<msat>` | **split**: X burned, response carries `k1` (amount) + `change` |
 | `callback?k1=X&k1=Y` | **merge**: all burned, one note worth the sum returned |
+
+Melt only ever takes a single `k1` - merge several notes first to melt them
+together in one payment (a bare multi-`k1` melt was removed from the spec).
 
 **Minting**: a [LUD-06](https://github.com/lnurl/luds/blob/luds/06.md)
 payRequest advertising `withdrawLink` mints notes - the **payment
 preimage** of its paid invoice becomes a valid `k1` at that endpoint. This
 wallet has no Lightning node of its own, so you pay the invoice with any
-wallet and paste back the preimage it reveals; `withdrawLink?k1=<preimage>`
-is the note.
+wallet and paste back the preimage it reveals; the wallet then verifies it
+with the service and stores the note.
+
+**Offline verification (optional)**: a service MAY publish a `mintPubkey`
+and sign each fresh secret it hands out (on rotate/split/merge), letting a
+holder verify issuer and amount without a network round trip - the
+signature travels as one more query param, `&sig=<hex>`, ignored by wallets
+that don't check it. This wallet verifies it whenever it already knows a
+note's service pubkey and shows a "signed" badge on a match; `lnurl-mint`
+doesn't implement signing yet, so its notes never show one.
 
 The wallet follows the spec's security guidance:
 
-- Received (scanned/pasted) notes are **rotated immediately**, burning the
-  secret the previous holder still knows.
-- Value lookups use the optional `?id=sha256(k1)` hash form when the
-  service supports it, so the secret never goes on the wire for reads; when
-  only the plain `?k1=` GET works, the wallet rotates right after.
+- Received (scanned/pasted) notes are **rotated immediately** after the
+  informational GET that verifies them - that GET necessarily puts the old
+  secret on the wire, so the previous holder's copy needs burning regardless
+  of who they are. (An earlier draft of the spec let this be avoided via an
+  `?id=sha256(k1)` hash lookup; that option was since removed.)
 - One wallet holds notes from **any number of independent mints** side by
   side, grouped per service; combine (merge) works across selected
   same-mint notes in a single request.
@@ -91,6 +104,17 @@ A backup protects against a lost device, not against theft of the note
 itself: the service settles for whoever presents a `k1` first. Rotation
 (the transfer action, and the automatic rotate-on-receive) is the tool
 against stale copies - after restoring an old backup, rotate what you hold.
+
+## Note on lnurl-mint
+
+[lnurl-mint](https://github.com/dni/lnurl-mint) currently implements an
+earlier draft of LUD-XX: it still accepts the removed `?id=` hash lookup
+and multi-`k1` melt, echoes back an opaque id (not the real secret) for
+`?id=` lookups, and returns no `amount`/`signature`/`mintPubkey`. This
+wallet only relies on the parts of the protocol still current, which
+lnurl-mint continues to serve correctly - but it won't show declared
+amounts or the offline-verified "signed" badge against it until it's
+updated to match.
 
 ## Development
 
