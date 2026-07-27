@@ -11,6 +11,7 @@ import {
   buildNoteUrl,
   withNewK1,
   fetchNoteInfo,
+  rotateNote,
   isPreimage
 } from '../lnurlcash'
 import {
@@ -122,17 +123,34 @@ const Mint: Component = () => {
       // verify with the service - this settles a freshly paid invoice on
       // exactly this k1, and its maxWithdrawable is the authoritative value
       const noteInfo = await fetchNoteInfo(declaredUrl)
-      const url = withNewK1(
-        declaredUrl,
-        noteInfo.k1,
-        noteInfo.maxWithdrawable
-      )
+      const mintPubkey = noteInfo.mintPubkey
+      let url = withNewK1(declaredUrl, noteInfo.k1, noteInfo.maxWithdrawable)
+      // that informational GET just put the preimage on the wire (server
+      // logs, proxies, browser history) - per spec, a WALLET intending to
+      // keep holding the note SHOULD rotate any k1 it has transmitted but
+      // not burned. This also opportunistically obtains the note's first
+      // offline-verifiable signature, same as the minting diagram's "obtain
+      // signed note" step.
+      try {
+        const rotated = await rotateNote(noteInfo.callback, noteInfo.k1)
+        url = withNewK1(
+          declaredUrl,
+          rotated.k1,
+          noteInfo.maxWithdrawable,
+          rotated.signature
+        )
+      } catch {
+        notify(
+          'Service does not support rotation - the preimage was just transmitted, treat this note as exposed.',
+          NotifyKind.ERROR
+        )
+      }
       await addBearer({
         url,
         callback: noteInfo.callback,
         amount: noteInfo.maxWithdrawable,
         verified: true,
-        mintPubkey: noteInfo.mintPubkey
+        mintPubkey
       })
       notify(
         `Minted a bearer note of ${msatToSats(noteInfo.maxWithdrawable)} sats.`,

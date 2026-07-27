@@ -46,8 +46,10 @@ together in one payment (a bare multi-`k1` melt was removed from the spec).
 payRequest advertising `withdrawLink` mints notes - the **payment
 preimage** of its paid invoice becomes a valid `k1` at that endpoint. This
 wallet has no Lightning node of its own, so you pay the invoice with any
-wallet and paste back the preimage it reveals; the wallet then verifies it
-with the service and stores the note.
+wallet and paste back the preimage it reveals; the wallet verifies it with
+the service, then immediately rotates it - that verifying GET already put
+the preimage on the wire - before storing the note, same as it does for a
+scanned or pasted note.
 
 **Offline verification (optional)**: a service MAY publish a `mintPubkey`
 and sign each fresh secret it hands out (on rotate/split/merge), letting a

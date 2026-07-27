@@ -73,8 +73,11 @@ callback?k1=X&k1=Y           merge: all burned, one note worth the sum returned`
             payRequest advertising <code>withdrawLink</code> mints notes -
             the <strong>payment preimage</strong> of its paid invoice is the
             bearer secret. Pay the invoice with any Lightning wallet, paste
-            the preimage it reveals, and this wallet verifies it with the
-            service and stores the note.
+            the preimage it reveals; the wallet verifies it with the
+            service, then immediately rotates it (that verifying GET already
+            put the preimage on the wire) before storing the note -
+            opportunistically obtaining its first offline-verifiable
+            signature in the same step.
           </li>
           <li>
             <strong>Melt</strong> has the service pay a bolt11 invoice of
