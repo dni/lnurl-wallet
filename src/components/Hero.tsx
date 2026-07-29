@@ -46,10 +46,9 @@ const Hero: Component<HeroProps> = props => {
           <h1>Your serverless LNURLcash wallet</h1>
           <p class="hero-subtitle">
             LNURLwallet is a static page with no backend of its own. It holds
-            LNURLcash bearer notes - LNURL-withdraw links whose k1 is the
-            asset - from any number of mints, encrypted with a key derived
-            from your seed phrase and stored only in this browser's local
-            storage.
+            LNURLcash bearer notes - LNURL-withdraw links whose k1 is the asset
+            - from any number of mints, encrypted with a key derived from your
+            seed phrase and stored only in this browser's local storage.
           </p>
           <div class="hero-actions">
             <A href="/setup" class="hero-btn hero-btn-primary">
@@ -72,9 +71,9 @@ const Hero: Component<HeroProps> = props => {
           <IoLockClosedSharp />
           <h3>Encrypted at rest</h3>
           <p>
-            Every note is AES-GCM encrypted with a key derived from your
-            linking key before it touches local storage - and the linking key
-            itself can be password-encrypted too.
+            Every note is AES-GCM encrypted with a key derived from your linking
+            key before it touches local storage - and the linking key itself can
+            be password-encrypted too.
           </p>
         </div>
         <div class="hero-feature">

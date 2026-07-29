@@ -10,12 +10,7 @@ import {
 import {useWallet} from '../WalletContext'
 import {isValidNoteInput} from '../lnurlcash'
 import {receiveNote, secureReceivedNote} from '../receive'
-import {
-  notify,
-  NotifyKind,
-  msatToSats,
-  pasteFromClipboard
-} from '../helpers'
+import {notify, NotifyKind, msatToSats, pasteFromClipboard} from '../helpers'
 import RequireWallet from '../components/RequireWallet'
 
 const Paste: Component = () => {
@@ -134,8 +129,8 @@ const Paste: Component = () => {
           </div>
           <Show when={value() !== '' && !isValid()}>
             <p class="warning">
-              Not a valid LNURLcash bearer note (an LNURL-withdraw link
-              carrying a k1).
+              Not a valid LNURLcash bearer note (an LNURL-withdraw link carrying
+              a k1).
             </p>
           </Show>
         </figure>

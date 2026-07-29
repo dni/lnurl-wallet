@@ -56,10 +56,10 @@ const Setup: Component = () => {
       <h2>Set up your wallet</h2>
       <Show when={state() !== 'none'}>
         <p class="warning">
-          A wallet already exists on this device - setting up a new one
-          replaces its linking key. Stored bearer tokens encrypted with the
-          old key will stay in local storage but become unreadable until that
-          seed is restored again.
+          A wallet already exists on this device - setting up a new one replaces
+          its linking key. Stored bearer tokens encrypted with the old key will
+          stay in local storage but become unreadable until that seed is
+          restored again.
         </p>
       </Show>
       <div class="tabs">
@@ -173,9 +173,8 @@ const EncryptChoice: Component<{
       when={props.encrypt}
       fallback={
         <p class="warning">
-          Without a password the linking key sits in local storage in
-          plaintext - anyone using this browser profile can spend your
-          LNURLcash.
+          Without a password the linking key sits in local storage in plaintext
+          - anyone using this browser profile can spend your LNURLcash.
         </p>
       }
     >

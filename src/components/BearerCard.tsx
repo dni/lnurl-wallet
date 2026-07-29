@@ -147,12 +147,7 @@ const BearerCard: Component<BearerCardProps> = props => {
       // ones; their values are derived from the operation, per the spec
       removeBearer(props.bearer.id)
       await addBearer({
-        url: withNewK1(
-          props.bearer.url,
-          parts.k1,
-          msat,
-          parts.signature
-        ),
+        url: withNewK1(props.bearer.url, parts.k1, msat, parts.signature),
         callback: props.bearer.callback,
         amount: msat,
         verified: true,
@@ -218,7 +213,10 @@ const BearerCard: Component<BearerCardProps> = props => {
             <span class="bearer-pending">unverified</span>
           </Show>
           <Show when={offlineVerified()}>
-            <span class="bearer-signed" title="Signature checks out against this mint's published pubkey">
+            <span
+              class="bearer-signed"
+              title="Signature checks out against this mint's published pubkey"
+            >
               <IoShieldCheckmarkSharp />
               &nbsp;signed
             </span>
@@ -249,8 +247,8 @@ const BearerCard: Component<BearerCardProps> = props => {
       </div>
       <Show when={handover()}>
         <p class="warning">
-          Secret rotated - this QR is the fresh note. Hand it to the
-          recipient; your old copy is already burned.
+          Secret rotated - this QR is the fresh note. Hand it to the recipient;
+          your old copy is already burned.
         </p>
         <div class="btns">
           <button
@@ -318,14 +316,14 @@ const BearerCard: Component<BearerCardProps> = props => {
       </div>
       <Show when={!hasCallback()}>
         <p class="bearer-hint">
-          Not verified with its service yet - refresh to enable melt, split
-          and transfer.
+          Not verified with its service yet - refresh to enable melt, split and
+          transfer.
         </p>
       </Show>
       <Show when={confirmDelete()}>
         <p class="warning">
-          Remove this note from the wallet? Without a backup (or the note
-          saved elsewhere) the sats behind it are gone.
+          Remove this note from the wallet? Without a backup (or the note saved
+          elsewhere) the sats behind it are gone.
         </p>
         <div class="btns">
           <button
@@ -343,8 +341,8 @@ const BearerCard: Component<BearerCardProps> = props => {
         <div class="form-item">
           <label>
             Melt into a bolt11 invoice of exactly{' '}
-            {msatToSats(props.bearer.amount)} sats (merge first to melt
-            several notes)
+            {msatToSats(props.bearer.amount)} sats (merge first to melt several
+            notes)
           </label>
           <input
             type="text"
@@ -361,9 +359,7 @@ const BearerCard: Component<BearerCardProps> = props => {
       </Show>
       <Show when={action() === 'split'}>
         <div class="form-item">
-          <label>
-            Split off (sats, of {msatToSats(props.bearer.amount)})
-          </label>
+          <label>Split off (sats, of {msatToSats(props.bearer.amount)})</label>
           <input
             type="number"
             min="1"
@@ -381,9 +377,9 @@ const BearerCard: Component<BearerCardProps> = props => {
       <Show when={action() === 'transfer'}>
         <div class="form-item">
           <p class="bearer-hint">
-            Transfer rotates the bearer secret on the service: you get a
-            fresh note to hand over, and every old copy (including a stolen
-            backup) is burned.
+            Transfer rotates the bearer secret on the service: you get a fresh
+            note to hand over, and every old copy (including a stolen backup) is
+            burned.
           </p>
           <div class="btns">
             <button disabled={busy()} onClick={transfer}>

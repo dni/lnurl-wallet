@@ -61,7 +61,9 @@ describe('input resolution', () => {
   it('resolves bech32, scheme, address and plain URLs', () => {
     expect(resolveLnurlInput(toBech32Lnurl(NOTE_URL))).toBe(NOTE_URL)
     expect(
-      resolveLnurlInput(`lnurlw://mint.example.com/withdraw?k1=${K1}&amount=21000`)
+      resolveLnurlInput(
+        `lnurlw://mint.example.com/withdraw?k1=${K1}&amount=21000`
+      )
     ).toBe(NOTE_URL)
     expect(resolveLnurlInput('mint@mint.example.com')).toBe(
       'https://mint.example.com/.well-known/lnurlp/mint'
@@ -83,7 +85,9 @@ describe('note helpers', () => {
     expect(noteK1(NOTE_URL)).toBe(K1)
     expect(noteK1('https://mint.example.com/withdraw')).toBeNull()
     expect(noteDeclaredAmount(NOTE_URL)).toBe(21000)
-    expect(noteDeclaredAmount('https://mint.example.com/withdraw?k1=x')).toBeNull()
+    expect(
+      noteDeclaredAmount('https://mint.example.com/withdraw?k1=x')
+    ).toBeNull()
     expect(noteSignature(NOTE_URL)).toBeNull()
     expect(serverOf(NOTE_URL)).toBe('mint.example.com')
   })
@@ -147,9 +151,9 @@ describe('offline signature verification', () => {
 
     expect(verifyNoteSignature(K1, amountMsat, sigHex, pubHex)).toBe(true)
     expect(verifyNoteSignature(K1, amountMsat + 1, sigHex, pubHex)).toBe(false)
-    expect(verifyNoteSignature('b'.repeat(64), amountMsat, sigHex, pubHex)).toBe(
-      false
-    )
+    expect(
+      verifyNoteSignature('b'.repeat(64), amountMsat, sigHex, pubHex)
+    ).toBe(false)
     const otherPub = bytesToHex(
       secp256k1.getPublicKey(secp256k1.utils.randomSecretKey(), true)
     )

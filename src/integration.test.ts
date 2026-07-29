@@ -1,6 +1,14 @@
 import {describe, expect, it} from 'vitest'
 
-import {toBech32Lnurl, buildNoteUrl, noteK1, fetchNoteInfo, splitNote, mergeNotes, meltNote} from './lnurlcash'
+import {
+  toBech32Lnurl,
+  buildNoteUrl,
+  noteK1,
+  fetchNoteInfo,
+  splitNote,
+  mergeNotes,
+  meltNote
+} from './lnurlcash'
 import {receiveNote, secureReceivedNote} from './receive'
 
 // Integration run against a locally running lnurl-mint holding a seeded
@@ -53,10 +61,7 @@ describe.runIf(!!process.env.MINT_K1)('against a live lnurl-mint', () => {
     expect(changeInfo.maxWithdrawable).toBe(15000)
 
     // merge them back into one 21-sat note
-    const merged = await mergeNotes(received.callback, [
-      parts.k1,
-      parts.change
-    ])
+    const merged = await mergeNotes(received.callback, [parts.k1, parts.change])
     const mergedInfo = await fetchNoteInfo(
       buildNoteUrl(WITHDRAW, merged.k1, 21000)
     )

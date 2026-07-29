@@ -62,8 +62,8 @@ const Backup: Component = () => {
         <figure class="setup-card">
           <h4>Download backup</h4>
           <p>
-            One JSON file with all {bearers().length} bearer note(s), exactly
-            as they sit in local storage: AES-GCM ciphertext, never plaintext.
+            One JSON file with all {bearers().length} bearer note(s), exactly as
+            they sit in local storage: AES-GCM ciphertext, never plaintext.
             <Show
               when={savedKeyIsEncrypted()}
               fallback={
@@ -120,8 +120,8 @@ const Backup: Component = () => {
         <Show when={keyRestored()}>
           <p class="warning">
             Linking key restored from the backup -{' '}
-            <A href="/">unlock the wallet</A> with the password it was
-            encrypted with.
+            <A href="/">unlock the wallet</A> with the password it was encrypted
+            with.
           </p>
         </Show>
       </figure>

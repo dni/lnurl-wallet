@@ -31,9 +31,7 @@ const Wallet: Component = () => {
     const picked = selectedBearers()
     if (picked.length < 2) return false
     const server = serverOf(picked[0].url)
-    return picked.every(
-      b => serverOf(b.url) === server && b.callback !== ''
-    )
+    return picked.every(b => serverOf(b.url) === server && b.callback !== '')
   })
   const selectedTotal = createMemo(() =>
     selectedBearers().reduce((sum, b) => sum + b.amount, 0)
@@ -127,7 +125,9 @@ const Wallet: Component = () => {
             <div class="page-header">
               <h2>
                 Your LNURLcash&nbsp;·&nbsp;
-                {msatToSats(bearers().reduce((sum, b) => sum + b.amount, 0))}{' '}
+                {msatToSats(
+                  bearers().reduce((sum, b) => sum + b.amount, 0)
+                )}{' '}
                 sats
               </h2>
               <div class="wallet-actions">
@@ -155,8 +155,7 @@ const Wallet: Component = () => {
                   when={combinable()}
                   fallback={
                     <span class="combine-hint">
-                      select 2+ verified notes from the same service to
-                      combine
+                      select 2+ verified notes from the same service to combine
                     </span>
                   }
                 >
@@ -172,7 +171,9 @@ const Wallet: Component = () => {
                 <section class="server-group">
                   <h4>
                     {server}&nbsp;·&nbsp;
-                    {msatToSats(group.reduce((sum, b) => sum + b.amount, 0))}{' '}
+                    {msatToSats(
+                      group.reduce((sum, b) => sum + b.amount, 0)
+                    )}{' '}
                     sats
                   </h4>
                   <div class="bearer-list">

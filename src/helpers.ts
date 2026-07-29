@@ -49,5 +49,4 @@ export const msatToSats = (msat: number): string =>
 export const satsToMsat = (sats: string | number): number =>
   Math.round(Number(sats) * 1000)
 
-export const formatDate = (ts: number): string =>
-  new Date(ts).toLocaleString()
+export const formatDate = (ts: number): string => new Date(ts).toLocaleString()

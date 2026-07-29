@@ -16,7 +16,8 @@ import {
 } from './keys'
 
 // fixed reference vector - the BIP39 test mnemonic
-const SEED = 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about'
+const SEED =
+  'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about'
 
 describe('seed phrase', () => {
   it('generates a valid 12-word mnemonic', () => {
@@ -79,7 +80,7 @@ describe('bearer record encryption', () => {
     expect(await decryptRecord(aesKey, parts)).toEqual(bearer)
   })
 
-  it('cannot be decrypted with a different seed\'s key', async () => {
+  it("cannot be decrypted with a different seed's key", async () => {
     const keyA = await deriveBearerAesKey(deriveWalletLinkingKey(SEED))
     const otherSeed = generateSeedPhrase()
     const keyB = await deriveBearerAesKey(deriveWalletLinkingKey(otherSeed))

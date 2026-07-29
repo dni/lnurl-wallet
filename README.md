@@ -32,12 +32,12 @@ link and can cash it out to a BOLT-11 invoice. That informational GET never
 burns; all mutating operations go to the `callback` from that withdrawRequest
 JSON:
 
-| Request | Result |
-|---------|--------|
-| `callback?k1=X&pr=<bolt11>` | **melt**: X burned, `pr` (of exactly its value) paid |
-| `callback?k1=X` | **rotate**: X burned, `{"status":"OK","k1":X'}` same value |
+| Request                       | Result                                                         |
+| ----------------------------- | -------------------------------------------------------------- |
+| `callback?k1=X&pr=<bolt11>`   | **melt**: X burned, `pr` (of exactly its value) paid           |
+| `callback?k1=X`               | **rotate**: X burned, `{"status":"OK","k1":X'}` same value     |
 | `callback?k1=X&amount=<msat>` | **split**: X burned, response carries `k1` (amount) + `change` |
-| `callback?k1=X&k1=Y` | **merge**: all burned, one note worth the sum returned |
+| `callback?k1=X&k1=Y`          | **merge**: all burned, one note worth the sum returned         |
 
 Melt only ever takes a single `k1` - merge several notes first to melt them
 together in one payment (a bare multi-`k1` melt was removed from the spec).

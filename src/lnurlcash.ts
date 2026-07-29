@@ -212,10 +212,7 @@ export const verifyNoteSignature = (
 ): boolean => {
   try {
     const msg = noteSignatureMessage(k1, amountMsat)
-    const recovered = secp256k1.recoverPublicKey(
-      hexToBytes(signatureHex),
-      msg
-    )
+    const recovered = secp256k1.recoverPublicKey(hexToBytes(signatureHex), msg)
     return bytesToHex(recovered) === mintPubkeyHex.toLowerCase()
   } catch {
     return false
