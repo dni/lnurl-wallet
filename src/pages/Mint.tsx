@@ -24,19 +24,25 @@ import {
 import Qr from '../components/Qr'
 import RequireWallet from '../components/RequireWallet'
 
+type Mode = 'invoice' | 'preimage'
+
 // LUD-XX minting: pay a payRequest that advertises `withdrawLink` - the
 // payment preimage IS the bearer secret. This wallet has no node of its
 // own, so the invoice is paid externally and the preimage (which every
-// Lightning wallet reveals after a successful payment) is pasted back in.
+// Lightning wallet reveals after a successful payment) is claimed here -
+// either freshly requested from this page, or already in hand from a
+// payment made some other way (the mint's own site, a different wallet).
 const Mint: Component = () => {
   const {addBearer} = useWallet()
   const navigate = useNavigate()
   const [mintInput, setMintInput] = createSignal('')
   const [payRequest, setPayRequest] = createSignal<PayRequestInfo | null>(null)
+  const [mode, setMode] = createSignal<Mode>('invoice')
   const [amountSats, setAmountSats] = createSignal('')
   const [invoice, setInvoice] = createSignal<string | null>(null)
   const [invoicedMsat, setInvoicedMsat] = createSignal(0)
   const [preimage, setPreimage] = createSignal('')
+  const [directPreimage, setDirectPreimage] = createSignal('')
   const [busy, setBusy] = createSignal(false)
 
   const lookup = async () => {
@@ -56,8 +62,10 @@ const Mint: Component = () => {
         return
       }
       setPayRequest(info)
+      setMode('invoice')
       setInvoice(null)
       setPreimage('')
+      setDirectPreimage('')
     } catch (err) {
       notify((err as Error).message, NotifyKind.ERROR)
     } finally {
@@ -65,21 +73,29 @@ const Mint: Component = () => {
     }
   }
 
-  const getInvoice = async () => {
-    const info = payRequest()
-    if (!info) return
+  // validates amountSats() against payRequest's bounds, shared by both the
+  // "request an invoice" and "I already paid" paths
+  const parseAmount = (info: PayRequestInfo): number | null => {
     const msat = satsToMsat(amountSats())
     if (!amountSats() || !Number.isFinite(msat) || msat <= 0) {
       notify('Enter an amount in sats.', NotifyKind.ERROR)
-      return
+      return null
     }
     if (msat < info.minSendable || msat > info.maxSendable) {
       notify(
         `Amount must be between ${msatToSats(info.minSendable)} and ${msatToSats(info.maxSendable)} sats.`,
         NotifyKind.ERROR
       )
-      return
+      return null
     }
+    return msat
+  }
+
+  const getInvoice = async () => {
+    const info = payRequest()
+    if (!info) return
+    const msat = parseAmount(info)
+    if (msat === null) return
     setBusy(true)
     try {
       setInvoice(await requestInvoice(info.callback, msat))
@@ -91,10 +107,10 @@ const Mint: Component = () => {
     }
   }
 
-  const claim = async () => {
+  const claim = async (preimageValue: string, amountMsat: number) => {
     const info = payRequest()
     if (!info?.withdrawLink) return
-    if (!isPreimage(preimage())) {
+    if (!isPreimage(preimageValue)) {
       notify('The preimage is 64 hex characters.', NotifyKind.ERROR)
       return
     }
@@ -104,8 +120,8 @@ const Mint: Component = () => {
       // note is self-describing even before the verifying GET below
       const declaredUrl = buildNoteUrl(
         info.withdrawLink,
-        preimage(),
-        invoicedMsat()
+        preimageValue,
+        amountMsat
       )
       // verify with the service - this settles a freshly paid invoice on
       // exactly this k1, and its maxWithdrawable is the authoritative value
@@ -151,6 +167,14 @@ const Mint: Component = () => {
     }
   }
 
+  const claimDirect = () => {
+    const info = payRequest()
+    if (!info) return
+    const msat = parseAmount(info)
+    if (msat === null) return
+    claim(directPreimage(), msat)
+  }
+
   return (
     <RequireWallet>
       <div id="mint" class="page">
@@ -173,6 +197,27 @@ const Mint: Component = () => {
         <Show when={payRequest()}>
           {info => (
             <figure class="setup-card">
+              <div class="tabs">
+                <button
+                  classList={{active: mode() === 'invoice'}}
+                  onClick={() => {
+                    setMode('invoice')
+                    setDirectPreimage('')
+                  }}
+                >
+                  Create new invoice
+                </button>
+                <button
+                  classList={{active: mode() === 'preimage'}}
+                  onClick={() => {
+                    setMode('preimage')
+                    setInvoice(null)
+                    setPreimage('')
+                  }}
+                >
+                  I already have a preimage
+                </button>
+              </div>
               <label>
                 Amount (sats, {msatToSats(info().minSendable)} -{' '}
                 {msatToSats(info().maxSendable)})
@@ -184,11 +229,35 @@ const Mint: Component = () => {
                 value={amountSats()}
                 onInput={e => setAmountSats(e.currentTarget.value)}
               />
-              <div class="btns">
-                <button disabled={busy()} onClick={getInvoice}>
-                  Get invoice
-                </button>
-              </div>
+              <Show
+                when={mode() === 'preimage'}
+                fallback={
+                  <div class="btns">
+                    <button disabled={busy()} onClick={getInvoice}>
+                      Get invoice
+                    </button>
+                  </div>
+                }
+              >
+                <label>
+                  Payment preimage - from paying this mint's invoice some other
+                  way (its own site, a different wallet)
+                </label>
+                <input
+                  type="text"
+                  placeholder="payment preimage (64 hex characters)"
+                  value={directPreimage()}
+                  onInput={e => setDirectPreimage(e.currentTarget.value)}
+                />
+                <div class="btns">
+                  <button
+                    disabled={busy() || !isPreimage(directPreimage())}
+                    onClick={claimDirect}
+                  >
+                    Claim note
+                  </button>
+                </div>
+              </Show>
             </figure>
           )}
         </Show>
@@ -216,7 +285,7 @@ const Mint: Component = () => {
             <div class="btns">
               <button
                 disabled={busy() || !isPreimage(preimage())}
-                onClick={claim}
+                onClick={() => claim(preimage(), invoicedMsat())}
               >
                 Claim note
               </button>
