@@ -6,6 +6,7 @@ import {IoDownloadSharp, IoFolderOpenSharp, IoTrashSharp} from 'solid-icons/io'
 import {useWallet} from '../WalletContext'
 import {buildBackup, applyBackup} from '../storage'
 import {savedKeyIsEncrypted} from '../keys'
+import {trustedMints} from '../trustedMints'
 import {notify, NotifyKind} from '../helpers'
 
 const Backup: Component = () => {
@@ -48,7 +49,10 @@ const Backup: Component = () => {
         refreshState()
       }
       notify(
-        `Restored ${result.added} bearer(s), skipped ${result.skipped}.`,
+        `Restored ${result.added} bearer(s), skipped ${result.skipped}` +
+          (result.trustedMintsAdded > 0
+            ? `, added ${result.trustedMintsAdded} trusted mint(s).`
+            : '.'),
         NotifyKind.SUCCESS
       )
     } catch (err) {
@@ -76,7 +80,9 @@ const Backup: Component = () => {
           <h4>Download backup</h4>
           <p>
             One JSON file with all {bearers().length} bearer note(s), exactly as
-            they sit in local storage: AES-GCM ciphertext, never plaintext.
+            they sit in local storage: AES-GCM ciphertext, never plaintext -
+            plus your {trustedMints().length} trusted mint(s), which aren't
+            secret and so travel in plain.
             <Show
               when={savedKeyIsEncrypted()}
               fallback={

@@ -7,6 +7,8 @@ import {
   savedKeyIsEncrypted,
   restoreLinkingKeyStored
 } from './keys'
+import type {TrustedMint} from './trustedMints'
+import {trustedMints, mergeTrustedMints} from './trustedMints'
 
 // One bearer note held by this wallet - the decrypted, in-memory shape.
 // `url` is the note's withdraw LNURL with the secret as its k1 param (so it
@@ -92,13 +94,15 @@ export const clearAllBearers = (): void => {
 // Backup file: everything exactly as it sits in localStorage - bearer
 // ciphertexts always, the linking-key record only when it is itself
 // password-encrypted. A plaintext linking key never leaves the device in a
-// backup; the seed phrase is the recovery path for it instead.
+// backup; the seed phrase is the recovery path for it instead. Trusted
+// mints are plain (not secret - a mintPubkey is public), included as-is.
 export type BackupFile = {
   type: 'lnurlwallet-backup'
   version: 1
   createdAt: number
   linkingKey?: StoredSecret
   bearers: EncryptedBearerRecord[]
+  trustedMints?: TrustedMint[]
 }
 
 export const buildBackup = (): BackupFile => {
@@ -106,7 +110,8 @@ export const buildBackup = (): BackupFile => {
     type: 'lnurlwallet-backup',
     version: 1,
     createdAt: Date.now(),
-    bearers: readEncryptedBearers()
+    bearers: readEncryptedBearers(),
+    trustedMints: trustedMints()
   }
   if (savedKeyIsEncrypted()) {
     backup.linkingKey = getSavedLinkingKeyStored()!
@@ -118,6 +123,7 @@ export type RestoreResult = {
   added: number
   skipped: number
   linkingKeyRestored: boolean
+  trustedMintsAdded: number
 }
 
 // merges a backup into localStorage: bearer records are added by id (already
@@ -160,5 +166,10 @@ export const applyBackup = (data: unknown): RestoreResult => {
     restoreLinkingKeyStored(backup.linkingKey)
     linkingKeyRestored = true
   }
-  return {added, skipped, linkingKeyRestored}
+
+  const trustedMintsAdded = Array.isArray(backup.trustedMints)
+    ? mergeTrustedMints(backup.trustedMints)
+    : 0
+
+  return {added, skipped, linkingKeyRestored, trustedMintsAdded}
 }

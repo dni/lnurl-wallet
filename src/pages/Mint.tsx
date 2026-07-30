@@ -13,6 +13,7 @@ import {
   withNewK1,
   fetchNoteInfo,
   rotateNote,
+  serverOf,
   isPreimage
 } from '../lnurlcash'
 import {
@@ -22,6 +23,7 @@ import {
   satsToMsat,
   copyToClipboard
 } from '../helpers'
+import {isMintTrusted, addTrustedMint} from '../trustedMints'
 import Qr from '../components/Qr'
 import RequireWallet from '../components/RequireWallet'
 
@@ -49,6 +51,16 @@ const Mint: Component = () => {
   const [preimage, setPreimage] = createSignal('')
   const [directPreimage, setDirectPreimage] = createSignal('')
   const [busy, setBusy] = createSignal(false)
+
+  // set when a lookup discovers a mintPubkey for a server this wallet has
+  // never seen before - the lookup pauses here until the holder trusts it
+  // or cancels (see trustedMints.ts: this is the one path that asks -
+  // everywhere else, holding a bearer from a mint trusts it automatically)
+  const [pendingTrust, setPendingTrust] = createSignal<{
+    server: string
+    mintPubkey: string
+    info: PayRequestInfo
+  } | null>(null)
 
   // LUD-21: only present when the invoice's own callback response
   // advertised a verify URL - the whole check-automatically UI is optional
@@ -119,12 +131,23 @@ const Mint: Component = () => {
 
   onCleanup(stopPolling)
 
+  const proceedWithPayRequest = (info: PayRequestInfo) => {
+    setPayRequest(info)
+    setMode('invoice')
+    setInvoice(null)
+    setPreimage('')
+    setDirectPreimage('')
+    stopPolling()
+    setVerifyUrl(null)
+  }
+
   const lookup = async () => {
     const url = resolveMintInput(mintInput())
     if (!url) {
       notify('Enter a mint LNURL or Lightning Address.', NotifyKind.ERROR)
       return
     }
+    setPendingTrust(null)
     setBusy(true)
     try {
       const info = await fetchPayRequest(url)
@@ -135,18 +158,33 @@ const Mint: Component = () => {
         )
         return
       }
-      setPayRequest(info)
-      setMode('invoice')
-      setInvoice(null)
-      setPreimage('')
-      setDirectPreimage('')
-      stopPolling()
-      setVerifyUrl(null)
+      const server = serverOf(url)
+      // first time seeing this server's signing key - pause for a decision
+      // instead of trusting it silently (a mint with no mintPubkey at all
+      // just isn't offline-verifiable, nothing to trust or ask about)
+      if (info.mintPubkey && !isMintTrusted(server)) {
+        setPendingTrust({server, mintPubkey: info.mintPubkey, info})
+        return
+      }
+      proceedWithPayRequest(info)
     } catch (err) {
       notify((err as Error).message, NotifyKind.ERROR)
     } finally {
       setBusy(false)
     }
+  }
+
+  const confirmTrust = () => {
+    const pending = pendingTrust()
+    if (!pending) return
+    addTrustedMint(pending.server, pending.mintPubkey)
+    setPendingTrust(null)
+    proceedWithPayRequest(pending.info)
+  }
+
+  const cancelTrust = () => {
+    setPendingTrust(null)
+    notify('Mint not trusted - lookup cancelled.', NotifyKind.ERROR)
   }
 
   // validates amountSats() against payRequest's bounds, shared by both the
@@ -274,6 +312,24 @@ const Mint: Component = () => {
             </button>
           </div>
         </figure>
+        <Show when={pendingTrust()}>
+          {pending => (
+            <figure class="setup-card">
+              <h4>Trust this mint?</h4>
+              <p>
+                First time seeing a signing key from{' '}
+                <strong>{pending().server}</strong>. Trusting it lets its notes
+                show as offline-verified against this key - you can remove the
+                trust later, unless you end up holding a note from it.
+              </p>
+              <pre>{pending().mintPubkey}</pre>
+              <div class="btns">
+                <button onClick={confirmTrust}>Trust this mint</button>
+                <button onClick={cancelTrust}>Cancel</button>
+              </div>
+            </figure>
+          )}
+        </Show>
         <Show when={payRequest()}>
           {info => (
             <figure class="setup-card">

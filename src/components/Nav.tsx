@@ -9,7 +9,8 @@ import {
   IoClipboardSharp,
   IoLockClosedSharp,
   IoSaveSharp,
-  IoBookSharp
+  IoBookSharp,
+  IoShieldCheckmarkSharp
 } from 'solid-icons/io'
 import {useWallet} from '../WalletContext'
 
@@ -68,6 +69,10 @@ const Nav = () => {
           </Show>
         </div>
         <div class="nav-persistent">
+          <A href="/mints" title="Trusted mints">
+            <IoShieldCheckmarkSharp />
+            <span class="nav-label">&nbsp;Mints</span>
+          </A>
           <A href="/docs" title="Documentation">
             <IoBookSharp />
             <span class="nav-label">&nbsp;Docs</span>

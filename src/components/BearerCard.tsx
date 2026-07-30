@@ -35,6 +35,7 @@ import {
   notify,
   NotifyKind
 } from '../helpers'
+import {getTrustedMintPubkey} from '../trustedMints'
 import Qr from './Qr'
 
 type Action = 'melt' | 'split' | 'transfer' | null
@@ -63,16 +64,19 @@ const BearerCard: Component<BearerCardProps> = props => {
   const hasCallback = () => props.bearer.callback !== ''
 
   // offline-verifiable iff the note carries a signature AND this wallet
-  // already knows the issuing service's mintPubkey - both optional per spec
+  // already knows the issuing service's mintPubkey - both optional per
+  // spec. The trusted-mints registry is the authoritative source (it can
+  // hold a newer key than this one bearer's own cached copy, e.g. if a
+  // sibling bearer from the same server refreshed more recently); the
+  // bearer's own field is only a fallback for the edge case of a restored
+  // record whose server isn't in the registry yet.
   const offlineVerified = createMemo(() => {
     const sig = noteSignature(props.bearer.url)
-    if (!sig || !props.bearer.mintPubkey) return false
-    return verifyNoteSignature(
-      k1(),
-      props.bearer.amount,
-      sig,
+    const mintPubkey =
+      getTrustedMintPubkey(serverOf(props.bearer.url)) ??
       props.bearer.mintPubkey
-    )
+    if (!sig || !mintPubkey) return false
+    return verifyNoteSignature(k1(), props.bearer.amount, sig, mintPubkey)
   })
 
   // the informational GET always puts k1 on the wire now (the spec dropped

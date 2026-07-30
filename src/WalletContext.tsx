@@ -21,6 +21,7 @@ import {
   newBearerId
 } from './storage'
 import {serverOf} from './lnurlcash'
+import {lockTrustedMint} from './trustedMints'
 
 // 'none': no wallet on this device yet -> setup
 // 'locked': linking key present but password-encrypted -> unlock
@@ -72,7 +73,16 @@ export const WalletProvider = (props: {children: JSX.Element}) => {
   const activate = async (linkingKey: Uint8Array) => {
     aesKey = await deriveBearerAesKey(linkingKey)
     setPubkey(linkingPubKeyHex(linkingKey))
-    setBearers(await loadBearers(aesKey))
+    const loaded = await loadBearers(aesKey)
+    setBearers(loaded)
+    // grandfather in every mint already backing a held bearer as trusted -
+    // holding funds there already implied trusting it, long before this
+    // list existed to ask about it
+    for (const bearer of loaded) {
+      if (bearer.mintPubkey) {
+        lockTrustedMint(serverOf(bearer.url), bearer.mintPubkey)
+      }
+    }
     setState('unlocked')
   }
 
@@ -128,6 +138,12 @@ export const WalletProvider = (props: {children: JSX.Element}) => {
     }
     await persistBearer(requireKey(), bearer)
     setBearers(prev => [bearer, ...prev])
+    // holding a bearer from this mint trusts it by default, whether it was
+    // already trusted (from a lookup, a manual add, or another bearer) or
+    // not - this is the one path that never asks (see trustedMints.ts)
+    if (bearer.mintPubkey) {
+      lockTrustedMint(serverOf(bearer.url), bearer.mintPubkey)
+    }
     return bearer
   }
 
@@ -140,6 +156,9 @@ export const WalletProvider = (props: {children: JSX.Element}) => {
     const updated: Bearer = {...current, ...changes, updatedAt: Date.now()}
     await persistBearer(requireKey(), updated)
     setBearers(prev => prev.map(b => (b.id === id ? updated : b)))
+    if (updated.mintPubkey) {
+      lockTrustedMint(serverOf(updated.url), updated.mintPubkey)
+    }
   }
 
   const removeBearer = (id: string) => {

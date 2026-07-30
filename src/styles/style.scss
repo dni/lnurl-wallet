@@ -726,6 +726,45 @@ nav {
   margin: 8px 0 0 0;
 }
 
+// ---- trusted mints page ----
+
+.mint-list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 21px;
+}
+
+.mint-card {
+  display: block;
+  max-width: 320px;
+  h4 {
+    overflow-wrap: anywhere;
+  }
+}
+
+.mint-pubkey {
+  font-size: 0.8em;
+  opacity: 0.75;
+  overflow-wrap: anywhere;
+  margin: 4px 0 0 0;
+}
+
+.mint-date {
+  font-size: 0.75em;
+  opacity: 0.5;
+  margin: 4px 0 0 0;
+}
+
+.mint-locked {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.85em;
+  opacity: 0.8;
+  margin: 10px 0 0 0;
+}
+
 // ---- setup / mint / backup / docs ----
 
 .setup-card {

@@ -1,4 +1,5 @@
 import type {Component} from 'solid-js'
+import {A} from '@solidjs/router'
 
 const Docs: Component = () => {
   return (
@@ -144,6 +145,18 @@ callback?k1=X&k1=Y           merge: all burned, one note worth the sum returned`
           amount, never that it's still unspent - the only definitive check is
           an online rotate. <code>lnurl-mint</code> doesn't implement signing
           yet, so notes from it never show this badge.
+        </p>
+        <p>
+          Every <code>mintPubkey</code> this wallet has ever seen lives on the{' '}
+          <A href="/mints">Trusted mints</A> page. The first time it sees a
+          brand new one - looking a mint up, before minting anything from it -
+          it asks whether to trust it; declining cancels that lookup. A mint you
+          already hold a bearer note from is trusted automatically instead
+          (holding funds there already implied trusting it) and can't be removed
+          from the list; anything you added yourself - by confirming a lookup or
+          typing it in directly - can be. The list travels with your{' '}
+          <A href="/backup">backup</A> file, in plain (a signing key isn't a
+          secret).
         </p>
       </figure>
 

@@ -15,6 +15,7 @@ import Hero from './pages/Hero'
 import Wallet from './pages/Wallet'
 import Setup from './pages/Setup'
 import Mint from './pages/Mint'
+import Mints from './pages/Mints'
 import Scan from './pages/Scan'
 import Paste from './pages/Paste'
 import Backup from './pages/Backup'
@@ -46,6 +47,7 @@ const cleanup = render(
       <Route path="/wallet" component={Wallet} />
       <Route path="/setup" component={Setup} />
       <Route path="/mint" component={Mint} />
+      <Route path="/mints" component={Mints} />
       <Route path="/scan" component={Scan} />
       <Route path="/paste" component={Paste} />
       <Route path="/backup" component={Backup} />
