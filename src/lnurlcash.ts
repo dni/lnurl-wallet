@@ -154,15 +154,22 @@ export const isValidNoteInput = (value: string): boolean =>
   resolveNoteInput(value) !== null
 
 // withdrawLink (raw LUD-17 URL of the withdraw endpoint) + a fresh secret
-// -> note. `amountMsat` is the declared value (see noteDeclaredAmount).
+// -> note. `amountMsat` is the declared value (see noteDeclaredAmount) -
+// omit it when the real value isn't known yet (e.g. claiming a preimage
+// that arrived from outside this wallet, with no invoice request of our
+// own to read it from): the spec has SERVICE ignore amount at this
+// endpoint regardless, but some implementations validate it strictly, and
+// a placeholder like 0 risks being rejected as invalid rather than ignored.
 export const buildNoteUrl = (
   withdrawLink: string,
   k1: string,
-  amountMsat: number
+  amountMsat?: number
 ): string => {
   const url = new URL(fromLud17(withdrawLink.trim()))
   url.searchParams.set('k1', k1.trim().toLowerCase())
-  url.searchParams.set('amount', String(amountMsat))
+  if (amountMsat !== undefined) {
+    url.searchParams.set('amount', String(amountMsat))
+  }
   return url.toString()
 }
 

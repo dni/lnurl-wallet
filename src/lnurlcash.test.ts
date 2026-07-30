@@ -105,6 +105,16 @@ describe('note helpers', () => {
     ).toBe(NOTE_URL)
   })
 
+  it('omits amount entirely when the value is not yet known', () => {
+    // claiming a preimage that arrived from outside this wallet, with no
+    // invoice request of our own to read a value from - some services
+    // validate a declared amount strictly, so a placeholder like 0 risks
+    // rejection where an absent param is simply ignored
+    const url = buildNoteUrl('https://mint.example.com/withdraw', K1)
+    expect(noteDeclaredAmount(url)).toBeNull()
+    expect(new URL(url).searchParams.has('amount')).toBe(false)
+  })
+
   it('swaps k1/amount and sets or clears sig after rotate/split/merge', () => {
     const newK1 = 'b'.repeat(64)
     const rotated = withNewK1(NOTE_URL, newK1, 15000)

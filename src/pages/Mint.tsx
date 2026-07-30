@@ -223,7 +223,7 @@ const Mint: Component = () => {
     }
   }
 
-  const claim = async (preimageValue: string, amountMsat: number) => {
+  const claim = async (preimageValue: string, amountMsat?: number) => {
     // guards against the auto-poll firing a claim while one is already in
     // flight (manual or automatic) - the disabled buttons only prevent
     // that for clicks, not for checkVerify's own timer-triggered call
@@ -289,9 +289,9 @@ const Mint: Component = () => {
 
   // no amount needed here - unlike requesting a fresh invoice, the note's
   // real value comes from the service's own verification inside claim(),
-  // which always overwrites this placeholder with the authoritative
-  // maxWithdrawable before the bearer is ever stored
-  const claimDirect = () => claim(directPreimage(), 0)
+  // which always sets the authoritative maxWithdrawable before the bearer
+  // is ever stored
+  const claimDirect = () => claim(directPreimage())
 
   return (
     <RequireWallet>
