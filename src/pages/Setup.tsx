@@ -1,6 +1,6 @@
 import type {Component} from 'solid-js'
 import {Show, createSignal} from 'solid-js'
-import {useNavigate} from '@solidjs/router'
+import {useNavigate, useSearchParams} from '@solidjs/router'
 
 import {useWallet} from '../WalletContext'
 import {generateSeedPhrase, isValidSeedPhrase} from '../keys'
@@ -11,7 +11,10 @@ type Tab = 'create' | 'restore'
 const Setup: Component = () => {
   const {setup, state} = useWallet()
   const navigate = useNavigate()
-  const [tab, setTab] = createSignal<Tab>('create')
+  const [searchParams] = useSearchParams()
+  const [tab, setTab] = createSignal<Tab>(
+    searchParams.tab === 'restore' ? 'restore' : 'create'
+  )
   const [seedPhrase, setSeedPhrase] = createSignal<string | null>(null)
   const [restorePhrase, setRestorePhrase] = createSignal('')
   const [confirmed, setConfirmed] = createSignal(false)
@@ -19,6 +22,7 @@ const Setup: Component = () => {
   // means anyone with access to this browser profile can read the wallet
   const [encrypt, setEncrypt] = createSignal(true)
   const [setupPassword, setSetupPassword] = createSignal('')
+  const [confirmPassword, setConfirmPassword] = createSignal('')
   const [busy, setBusy] = createSignal(false)
 
   const generate = () => {
@@ -26,9 +30,16 @@ const Setup: Component = () => {
     setConfirmed(false)
   }
 
+  const passwordOk = () =>
+    !encrypt() || (!!setupPassword() && setupPassword() === confirmPassword())
+
   const finishSetup = async (phrase: string) => {
     if (encrypt() && !setupPassword()) {
       notify('Enter a password to encrypt your linking key.', NotifyKind.ERROR)
+      return
+    }
+    if (encrypt() && setupPassword() !== confirmPassword()) {
+      notify('Passwords do not match.', NotifyKind.ERROR)
       return
     }
     setBusy(true)
@@ -93,10 +104,12 @@ const Setup: Component = () => {
                 setEncrypt={setEncrypt}
                 password={setupPassword()}
                 setPassword={setSetupPassword}
+                confirmPassword={confirmPassword()}
+                setConfirmPassword={setConfirmPassword}
               />
               <div class="btns">
                 <button
-                  disabled={busy() || !restorePhrase().trim()}
+                  disabled={busy() || !restorePhrase().trim() || !passwordOk()}
                   onClick={restore}
                 >
                   Restore wallet
@@ -137,10 +150,12 @@ const Setup: Component = () => {
               setEncrypt={setEncrypt}
               password={setupPassword()}
               setPassword={setSetupPassword}
+              confirmPassword={confirmPassword()}
+              setConfirmPassword={setConfirmPassword}
             />
             <div class="btns">
               <button
-                disabled={busy() || !confirmed()}
+                disabled={busy() || !confirmed() || !passwordOk()}
                 onClick={() => finishSetup(seedPhrase()!)}
               >
                 Continue
@@ -159,6 +174,8 @@ const EncryptChoice: Component<{
   setEncrypt: (v: boolean) => void
   password: string
   setPassword: (v: string) => void
+  confirmPassword: string
+  setConfirmPassword: (v: string) => void
 }> = props => (
   <>
     <label>
@@ -184,6 +201,17 @@ const EncryptChoice: Component<{
         value={props.password}
         onInput={e => props.setPassword(e.currentTarget.value)}
       />
+      <input
+        type="password"
+        placeholder="Confirm password"
+        value={props.confirmPassword}
+        onInput={e => props.setConfirmPassword(e.currentTarget.value)}
+      />
+      <Show
+        when={props.confirmPassword && props.password !== props.confirmPassword}
+      >
+        <p class="warning">Passwords do not match.</p>
+      </Show>
     </Show>
   </>
 )

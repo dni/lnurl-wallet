@@ -1,5 +1,6 @@
 import type {Component} from 'solid-js'
 import {Show, For, createSignal, createMemo} from 'solid-js'
+import {A} from '@solidjs/router'
 import {IoGitMergeSharp, IoLockOpenSharp} from 'solid-icons/io'
 
 import {useWallet, groupByServer} from '../WalletContext'
@@ -109,6 +110,9 @@ const Wallet: Component = () => {
                   </button>
                 </div>
               </form>
+              <p>
+                <A href="/setup?tab=restore">Forgot password?</A>
+              </p>
             </figure>
           </div>
         }

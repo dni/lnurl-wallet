@@ -3,6 +3,7 @@ import {A, useNavigate} from '@solidjs/router'
 import {
   IoMenuSharp,
   IoCloseSharp,
+  IoWalletSharp,
   IoAddCircleSharp,
   IoQrCodeSharp,
   IoClipboardSharp,
@@ -43,6 +44,10 @@ const Nav = () => {
       <div class="nav-menu" classList={{open: menuOpen()}} onClick={closeMenu}>
         <div class="nav-links">
           <Show when={state() === 'unlocked'}>
+            <A href="/" class="nav-link" end>
+              <IoWalletSharp />
+              &nbsp;Wallet
+            </A>
             <A href="/mint" class="nav-link">
               <IoAddCircleSharp />
               &nbsp;Mint
