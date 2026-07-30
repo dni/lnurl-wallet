@@ -9,7 +9,9 @@ import {
   IoGitBranchSharp,
   IoSwapHorizontalSharp,
   IoTrashSharp,
-  IoShieldCheckmarkSharp
+  IoShieldCheckmarkSharp,
+  IoImageSharp,
+  IoCloseSharp
 } from 'solid-icons/io'
 
 import type {Bearer} from '../storage'
@@ -36,6 +38,7 @@ import {
   NotifyKind
 } from '../helpers'
 import {getTrustedMintPubkey} from '../trustedMints'
+import {fileToNoteImage} from '../noteImages'
 import Qr from './Qr'
 
 type Action = 'melt' | 'split' | 'transfer' | null
@@ -58,6 +61,7 @@ const BearerCard: Component<BearerCardProps> = props => {
   // set once a transfer rotated the secret - the fresh note to hand over
   const [handover, setHandover] = createSignal<string | null>(null)
   const [confirmDelete, setConfirmDelete] = createSignal(false)
+  let imageInput: HTMLInputElement | undefined
 
   const token = () => toBech32Lnurl(props.bearer.url)
   const k1 = () => noteK1(props.bearer.url) || ''
@@ -178,6 +182,22 @@ const BearerCard: Component<BearerCardProps> = props => {
     }
   }
 
+  // attach (or replace) artwork from a local file - display only, stored
+  // encrypted with the note, never part of the note URL or a handover
+  const attachImage = async (e: Event) => {
+    const input = e.currentTarget as HTMLInputElement
+    const file = input.files?.[0]
+    input.value = ''
+    if (!file) return
+    try {
+      const image = await fileToNoteImage(file)
+      await updateBearer(props.bearer.id, {image})
+      notify('Image attached.', NotifyKind.SUCCESS)
+    } catch (err) {
+      notify((err as Error).message, NotifyKind.ERROR)
+    }
+  }
+
   const transfer = async () => {
     setBusy(true)
     try {
@@ -228,6 +248,18 @@ const BearerCard: Component<BearerCardProps> = props => {
           <span class="bearer-server">{serverOf(props.bearer.url)}</span>
         </div>
       </div>
+      <Show when={props.bearer.image}>
+        <div class="bearer-image-wrapper">
+          <img class="bearer-image" src={props.bearer.image} alt="" />
+          <button
+            class="icon-btn bearer-image-remove"
+            title="Remove image"
+            onClick={() => updateBearer(props.bearer.id, {image: undefined})}
+          >
+            <IoCloseSharp />
+          </button>
+        </div>
+      </Show>
       <div class="qr-wrapper">
         <Qr value={handover() ?? token()} />
         <Show when={!showQr()}>
@@ -282,6 +314,24 @@ const BearerCard: Component<BearerCardProps> = props => {
         >
           <IoRefreshSharp />
         </button>
+        <button
+          class="icon-btn"
+          title={
+            props.bearer.image
+              ? 'Replace image (display only, stays in this wallet)'
+              : 'Attach an image (display only, stays in this wallet)'
+          }
+          onClick={() => imageInput?.click()}
+        >
+          <IoImageSharp />
+        </button>
+        <input
+          ref={imageInput}
+          type="file"
+          accept="image/*"
+          class="file-hidden"
+          onChange={attachImage}
+        />
         <div class="bearer-actions">
           <button
             class="icon-btn"

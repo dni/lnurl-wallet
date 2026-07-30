@@ -790,6 +790,34 @@ nav {
   margin: 8px 0 0 0;
 }
 
+// ---- note images (display only, see noteImages.ts) ----
+
+.bearer-image-wrapper {
+  position: relative;
+  width: 100%;
+  margin-bottom: 8px;
+}
+
+.bearer-image {
+  display: block;
+  width: 100%;
+  max-height: 180px;
+  object-fit: cover;
+  border-radius: 4px;
+  border: 1px solid rgba($orange, 0.35);
+}
+
+.bearer-image-remove {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  background: rgba($volcanic, 0.85);
+}
+
+.file-hidden {
+  display: none;
+}
+
 // ---- trusted mints page ----
 
 .mint-list {
