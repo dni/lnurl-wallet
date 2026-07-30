@@ -5,7 +5,7 @@ import {useNavigate} from '@solidjs/router'
 import {useWallet} from '../WalletContext'
 import type {PayRequestInfo} from '../lnurlcash'
 import {
-  resolveLnurlInput,
+  resolveMintInput,
   fetchPayRequest,
   requestInvoice,
   buildNoteUrl,
@@ -39,23 +39,10 @@ const Mint: Component = () => {
   const [preimage, setPreimage] = createSignal('')
   const [busy, setBusy] = createSignal(false)
 
-  // bech32 LNURL, Lightning Address, lnurlp:// or plain URL - a bare host
-  // is completed to https://<host>/pay, the lnurl-mint layout
-  const resolveMint = (): string | null => {
-    const trimmed = mintInput().trim()
-    if (!trimmed) return null
-    const resolved = resolveLnurlInput(trimmed)
-    if (resolved) return resolved
-    if (/^[a-z0-9.-]+(:\d+)?$/i.test(trimmed)) {
-      return `https://${trimmed}/pay`
-    }
-    return null
-  }
-
   const lookup = async () => {
-    const url = resolveMint()
+    const url = resolveMintInput(mintInput())
     if (!url) {
-      notify('Enter a mint LNURL, address or host.', NotifyKind.ERROR)
+      notify('Enter a mint LNURL or Lightning Address.', NotifyKind.ERROR)
       return
     }
     setBusy(true)
@@ -169,10 +156,10 @@ const Mint: Component = () => {
       <div id="mint" class="page">
         <h2>Mint a bearer note</h2>
         <figure class="setup-card">
-          <label>Mint (LNURL, Lightning Address or host)</label>
+          <label>Mint (LNURL or Lightning Address)</label>
           <input
             type="text"
-            placeholder="lnurl1... / mint@example.com / mint.example.com"
+            placeholder="lnurl1... or mint@example.com"
             value={mintInput()}
             onInput={e => setMintInput(e.currentTarget.value)}
             onKeyDown={e => e.key === 'Enter' && lookup()}

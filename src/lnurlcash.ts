@@ -84,6 +84,17 @@ const lnAddressToUrl = (address: string): string => {
   return `${scheme}://${domain}/.well-known/lnurlp/${name}`
 }
 
+// narrower than resolveLnurlInput below - a mint lookup only ever accepts a
+// bech32 LNURL or a Lightning Address, both of which point unambiguously at
+// one payRequest with no guessing at scheme or path, unlike a bare host
+export const resolveMintInput = (value: string): string | null => {
+  const trimmed = value.trim()
+  if (!trimmed) return null
+  if (isBech32Lnurl(trimmed)) return fromBech32Lnurl(trimmed)
+  if (isEmail(trimmed)) return lnAddressToUrl(trimmed)
+  return null
+}
+
 // resolves arbitrary LNURL-ish input (bech32, LUD-17 scheme, Lightning
 // Address, plain http(s)) down to a fetchable URL
 export const resolveLnurlInput = (value: string): string | null => {
