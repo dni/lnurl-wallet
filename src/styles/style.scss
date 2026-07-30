@@ -1,13 +1,23 @@
-@use 'sass:color';
+// 600B design system (600.WTF, v0.2.0): bitcoin orange over volcanic stone,
+// Impact caps for display, sharp corners by default, ember glow for
+// emphasis, links that go wavy on hover. Palette tokens as printed:
+$orange: #f7931a; // --c-orange
+$orange-bright: #ffa733; // --c-orange-bright
+$orange-deep: #d97a00; // --c-orange-deep
+$ember: #ff6a00; // --c-ember
+$gold: #f3c244; // --c-gold
+$soot: #111111; // --c-soot
+$charcoal: #222222; // --c-charcoal
+$volcanic: #2a1810; // --c-volcanic
 
-// same design language as lnurl_server's frontend, shifted to a mint/teal
-// palette so wallet and server are instantly distinguishable
-$bg: #002222;
-$accent-base: #044;
+$bg: $volcanic;
+$accent-base: $orange;
 $transparency: 0.6;
-$font-color: #5fc;
+$font-color: #fff7ec; // --c-ember-white
 $font-size: 16px;
-$font: 'Noto Sans', sans-serif;
+$font: 'Trebuchet MS', 'Segoe UI', sans-serif;
+$font-display: Impact, Haettenschweiler, 'Arial Narrow Bold', sans-serif;
+$font-mono: 'JetBrains Mono', Consolas, monospace;
 
 * {
   box-sizing: border-box;
@@ -27,8 +37,26 @@ body {
   padding-bottom: 56px;
 }
 
+// display type is Impact caps, slightly tracked - the brand's voice
+h1,
+h2,
+h3,
+h4 {
+  font-family: $font-display;
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+// 2px underline, switching to wavy on hover - canonical link treatment
 a {
-  color: $font-color;
+  color: $orange;
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+  &:hover {
+    text-decoration-style: wavy;
+  }
 }
 
 footer {
@@ -53,7 +81,7 @@ footer {
     color: white;
     text-decoration: none;
     &:hover {
-      color: $font-color;
+      color: $orange-bright;
     }
   }
 }
@@ -91,23 +119,30 @@ h4 {
   margin-bottom: 6px;
 }
 
+// sharp corners, Impact caps, solid orange - hover lifts to brighter
+// orange, press shrinks to 0.97, straight from the component sheet
 button {
-  background-color: rgba($accent-base, $transparency);
-  border-radius: 5px;
-  color: $font-color;
-  font-size: $font-size;
-  font-family: $font;
+  background-color: $orange;
+  border-radius: 0;
+  color: $soot;
+  font-size: 0.95em;
+  font-family: $font-display;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
   border: none;
   padding: 6px 14px;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   margin-right: 9px;
+  transition:
+    background-color 0.15s ease-in-out,
+    transform 0.1s ease-in-out;
   &:hover {
-    background-color: rgba(
-      color.adjust($accent-base, $lightness: -10%),
-      $transparency
-    );
+    background-color: $orange-bright;
+  }
+  &:active {
+    transform: scale(0.97);
   }
   &:disabled {
     cursor: not-allowed;
@@ -127,14 +162,14 @@ button {
 }
 
 .warning {
-  color: #f80;
+  color: $ember;
   padding: 10px 14px;
   margin: 10px 0;
-  border-radius: 5px;
-  background: rgba(#f80, 0.12);
-  border: 1px solid rgba(#f80, 0.5);
+  border-radius: 0;
+  background: rgba($ember, 0.12);
+  border-left: 3px solid $ember;
   a {
-    color: #f80;
+    color: $ember;
   }
 }
 
@@ -148,25 +183,22 @@ input[type='text'],
 input[type='number'],
 input[type='password'],
 select {
-  background-color: rgba(
-    color.adjust($accent-base, $lightness: -30%),
-    $transparency
-  );
+  background-color: rgba($soot, 0.8);
   color: $font-color;
   font-size: $font-size;
   font-family: $font;
-  border: 1px solid $font-color;
-  border-radius: 5px;
+  border: 1px solid rgba($font-color, 0.4);
+  border-radius: 0;
   padding: 5px;
   display: block;
   width: 100%;
   &:hover {
-    background-color: rgba($accent-base, $transparency);
+    background-color: rgba($charcoal, 0.8);
   }
   &:active,
   &:focus {
     outline: none;
-    border-color: color.adjust($font-color, $lightness: 20%);
+    border-color: $orange;
   }
 }
 
@@ -177,9 +209,9 @@ input[type='checkbox'] {
   height: 20px;
   min-width: 20px;
   margin-right: 8px;
-  border-radius: 5px;
-  border: 2px solid $font-color;
-  background: rgba($accent-base, $transparency);
+  border-radius: 0;
+  border: 2px solid $orange;
+  background: rgba($charcoal, $transparency);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -195,7 +227,7 @@ input[type='checkbox'] {
     content: '✓';
     font-size: 14px;
     line-height: 1;
-    color: $bg;
+    color: $soot;
     opacity: 0;
     transform: scale(0.5);
     transition:
@@ -204,16 +236,13 @@ input[type='checkbox'] {
   }
 
   &:not(:checked):hover:not(:disabled) {
-    background: rgba(
-      color.adjust($accent-base, $lightness: -10%),
-      $transparency
-    );
-    box-shadow: 0 0 8px rgba($font-color, 0.5);
+    background: rgba($soot, $transparency);
+    box-shadow: 0 0 8px rgba($ember, 0.5);
   }
 
   &:checked {
-    background: $font-color;
-    border-color: $font-color;
+    background: $orange;
+    border-color: $orange;
 
     &::after {
       opacity: 1;
@@ -221,12 +250,12 @@ input[type='checkbox'] {
     }
 
     &:hover:not(:disabled) {
-      box-shadow: 0 0 10px rgba($font-color, 0.7);
+      box-shadow: 0 0 10px rgba($ember, 0.7);
     }
   }
 
   &:focus-visible {
-    outline: 2px solid $font-color;
+    outline: 2px solid $orange;
     outline-offset: 2px;
   }
 
@@ -236,9 +265,17 @@ input[type='checkbox'] {
   }
 }
 
+// icon buttons step back from the solid-orange primary treatment: quiet
+// charcoal chips that light up orange on hover
 .icon-btn {
   padding: 6px;
   margin-right: 0;
+  background-color: rgba($charcoal, 0.8);
+  color: $font-color;
+  &:hover {
+    background-color: $orange;
+    color: $soot;
+  }
 }
 
 figcaption {
@@ -249,13 +286,14 @@ figure {
   display: inline-block;
   margin: 0 0 21px 0;
   padding: 12px;
-  border-radius: 5px;
-  background: rgba($bg, $transparency);
+  border-radius: 4px; // r-1
+  background: rgba($soot, $transparency);
   box-shadow: none;
   transition: all 0.5s ease-in-out;
   &:hover {
-    background: rgba($bg, 0.8);
-    box-shadow: 0 0 12px rgba($font-color, 0.21);
+    background: rgba($soot, 0.8);
+    // ember glow - the system's emphasis treatment
+    box-shadow: 0 0 14px rgba($ember, 0.35);
   }
   > :first-child {
     margin-top: 0;
@@ -264,12 +302,13 @@ figure {
 
 pre {
   background: rgba($bg, $transparency);
-  border-radius: 5px;
+  border-radius: 4px;
   padding: 12px;
   margin: 0;
   cursor: pointer;
   white-space: pre-wrap;
   overflow-wrap: break-word;
+  font-family: $font-mono;
 }
 
 .qrcode {
@@ -360,12 +399,11 @@ pre {
   margin-right: 0;
   border-radius: 50%;
   background: transparent;
+  color: $font-color;
   font-size: 0.9em;
   &:hover {
-    background: rgba(
-      color.adjust($accent-base, $lightness: -10%),
-      $transparency
-    );
+    background: rgba($charcoal, 0.8);
+    color: $font-color;
   }
 }
 
@@ -400,10 +438,16 @@ nav {
 
 .nav-brand {
   padding: 6px 12px;
-  font-weight: bold;
+  font-family: $font-display;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
   white-space: nowrap;
   text-decoration: none;
-  color: $font-color;
+  color: $orange;
+  &:hover {
+    text-decoration: none;
+    color: $orange-bright;
+  }
 }
 
 .nav-toggle {
@@ -431,8 +475,9 @@ nav {
     color: $font-color;
     transition: all 0.5s ease-in-out;
     &:hover {
-      background: rgba($font-color, $transparency);
-      color: $bg;
+      text-decoration: none;
+      background: $orange;
+      color: $soot;
     }
   }
 }
@@ -509,13 +554,13 @@ nav {
   margin: 21px 0;
   button {
     margin-right: 9px;
-    opacity: 0.6;
+    background-color: rgba($charcoal, 0.8);
+    color: $font-color;
+    opacity: 0.8;
     &.active {
       opacity: 1;
-      background-color: rgba(
-        color.adjust($accent-base, $lightness: -10%),
-        $transparency
-      );
+      background-color: $orange;
+      color: $soot;
     }
   }
 }
@@ -555,18 +600,26 @@ nav {
 
 .hero-btn {
   padding: 10px 28px;
-  border-radius: 5px;
+  border-radius: 0;
   font-size: 1.1em;
-  font-weight: bold;
+  font-family: $font-display;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
   text-decoration: none;
   transition: all 0.3s ease-in-out;
+  &:hover {
+    text-decoration: none;
+  }
+  &:active {
+    transform: scale(0.97);
+  }
 }
 
 .hero-btn-primary {
-  background: $font-color;
-  color: $bg;
+  background: $orange;
+  color: $soot;
   &:hover {
-    background: color.adjust($font-color, $lightness: 10%);
+    background: $orange-bright;
   }
 }
 
@@ -624,9 +677,9 @@ nav {
   gap: 14px;
   padding: 10px 14px;
   margin-bottom: 21px;
-  border-radius: 5px;
-  background: rgba($bg, 0.8);
-  border: 1px solid rgba($font-color, 0.5);
+  border-radius: 0;
+  background: rgba($soot, 0.8);
+  border-left: 3px solid $orange;
   button {
     margin-right: 0;
   }
@@ -684,16 +737,27 @@ nav {
   font-size: 1.1em;
 }
 
-.bearer-pending {
-  color: #f80;
-  font-size: 0.8em;
-}
-
+// status stamps: sharp, condensed, never rounded - per the badge sheet
+.bearer-pending,
 .bearer-signed {
   display: inline-flex;
   align-items: center;
-  color: #6c6;
-  font-size: 0.8em;
+  width: fit-content;
+  font-family: $font-display;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  font-size: 0.65em;
+  padding: 2px 6px;
+  margin: 2px 0;
+  color: $soot;
+}
+
+.bearer-pending {
+  background: $gold;
+}
+
+.bearer-signed {
+  background: $orange;
 }
 
 .bearer-server {
@@ -790,16 +854,17 @@ nav {
     font-size: 0.85em;
   }
   code {
-    background: rgba($accent-base, $transparency);
-    border-radius: 3px;
+    background: rgba($charcoal, 0.9);
+    border-radius: 0;
     padding: 1px 4px;
+    font-family: $font-mono;
   }
 }
 
 .scanner {
   width: 100%;
   max-width: 420px;
-  border-radius: 5px;
+  border-radius: 4px;
   background: black;
 }
 

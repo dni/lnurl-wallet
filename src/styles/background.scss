@@ -1,25 +1,25 @@
-// Calm, mint-toned backdrop: soft glows of the wallet's own accent color
-// (#5fc) drifting over a dark teal base (#002222, matching style.scss's
-// $bg/$font-color) - low-contrast and static, unlike a busy repeating
-// pattern, so it reads as ambient depth rather than something to look at.
+// Volcanic stone backdrop with drifting ember glows - 600B's fire palette
+// (#FF6A00 ember over #2A1810 volcanic, per the design system) kept
+// low-contrast and static, so it reads as ambient heat rather than
+// something to look at.
 body {
   background:
     radial-gradient(
       ellipse 70% 50% at 15% -10%,
-      rgba(#5fc, 0.1),
+      rgba(#ff6a00, 0.12),
       transparent 60%
     ),
     radial-gradient(
       ellipse 60% 45% at 100% 15%,
-      rgba(#5fc, 0.07),
+      rgba(#f7931a, 0.08),
       transparent 60%
     ),
     radial-gradient(
       ellipse 80% 60% at 50% 115%,
-      rgba(#5fc, 0.08),
+      rgba(#ff6a00, 0.1),
       transparent 65%
     ),
-    linear-gradient(160deg, #001616 0%, #002222 55%, #001a1a 100%);
+    linear-gradient(160deg, #1c0f08 0%, #2a1810 55%, #200f0a 100%);
   // pin the gradient to the viewport at all times, sized to fill it exactly,
   // instead of scrolling with (and being sized to) the page's content box
   background-attachment: fixed;
