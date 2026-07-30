@@ -57,12 +57,18 @@ export const fromBech32Lnurl = (data: string): string | null => {
 
 // ---- LUD-17 scheme URLs ----
 
-// mirrors lnurl_server's INSECURE_HOSTS: these (plus .onion) resolve to
-// http:// instead of https://
+// mirrors lnurl_server's INSECURE_HOSTS: these (plus .onion and .fips)
+// resolve to http:// instead of https:// - both overlay transports are
+// already encrypted end-to-end and can't carry a CA certificate anyway.
+// .fips (fips.network) addresses nodes by nostr key, so a mint reachable
+// at <npub(mintPubkey)>.fips is by construction the keyholder behind its
+// notes - optional for now, clearnet stays the default (NORD-03).
 const INSECURE_HOSTS = ['127.0.0.1', '0.0.0.0', 'localhost']
 
 const isInsecureHost = (host: string): boolean =>
-  INSECURE_HOSTS.includes(host) || host.endsWith('.onion')
+  INSECURE_HOSTS.includes(host) ||
+  host.endsWith('.onion') ||
+  host.endsWith('.fips')
 
 export const fromLud17 = (url: string): string => {
   const match = url.match(/^(?:lnurlw|lnurlp|lnurlc|keyauth):\/\/([^/]+)/i)

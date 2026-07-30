@@ -55,6 +55,12 @@ describe('LUD-17 schemes', () => {
       'http://localhost:8000/withdraw'
     )
   })
+
+  it('resolves .fips mesh hosts to http', () => {
+    expect(fromLud17(`lnurlw://npub1example.fips/withdraw?k1=${K1}`)).toBe(
+      `http://npub1example.fips/withdraw?k1=${K1}`
+    )
+  })
 })
 
 describe('input resolution', () => {
