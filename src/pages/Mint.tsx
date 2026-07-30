@@ -167,13 +167,11 @@ const Mint: Component = () => {
     }
   }
 
-  const claimDirect = () => {
-    const info = payRequest()
-    if (!info) return
-    const msat = parseAmount(info)
-    if (msat === null) return
-    claim(directPreimage(), msat)
-  }
+  // no amount needed here - unlike requesting a fresh invoice, the note's
+  // real value comes from the service's own verification inside claim(),
+  // which always overwrites this placeholder with the authoritative
+  // maxWithdrawable before the bearer is ever stored
+  const claimDirect = () => claim(directPreimage(), 0)
 
   return (
     <RequireWallet>
@@ -218,30 +216,33 @@ const Mint: Component = () => {
                   I already have a preimage
                 </button>
               </div>
-              <label>
-                Amount (sats, {msatToSats(info().minSendable)} -{' '}
-                {msatToSats(info().maxSendable)})
-              </label>
-              <input
-                type="number"
-                min="1"
-                placeholder="amount in sats"
-                value={amountSats()}
-                onInput={e => setAmountSats(e.currentTarget.value)}
-              />
               <Show
                 when={mode() === 'preimage'}
                 fallback={
-                  <div class="btns">
-                    <button disabled={busy()} onClick={getInvoice}>
-                      Get invoice
-                    </button>
-                  </div>
+                  <>
+                    <label>
+                      Amount (sats, {msatToSats(info().minSendable)} -{' '}
+                      {msatToSats(info().maxSendable)})
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      placeholder="amount in sats"
+                      value={amountSats()}
+                      onInput={e => setAmountSats(e.currentTarget.value)}
+                    />
+                    <div class="btns">
+                      <button disabled={busy()} onClick={getInvoice}>
+                        Get invoice
+                      </button>
+                    </div>
+                  </>
                 }
               >
                 <label>
                   Payment preimage - from paying this mint's invoice some other
-                  way (its own site, a different wallet)
+                  way (its own site, a different wallet); its value comes
+                  straight from the mint, no need to enter an amount
                 </label>
                 <input
                   type="text"

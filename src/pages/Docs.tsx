@@ -190,12 +190,12 @@ callback?k1=X&k1=Y           merge: all burned, one note worth the sum returned`
         </p>
         <h3>Forget this wallet</h3>
         <p>
-          The Backup page can also remove the linking key from this device -
-          asks for confirmation first, since it's the one thing standing between
-          this browser and your notes. Your bearer notes stay in local storage
-          untouched, still encrypted: restoring the same seed phrase (or a
-          backup carrying the encrypted key) turns this device back into a
-          wallet with everything it held before.
+          The Backup page can also wipe this wallet from the device entirely -
+          the linking key <em>and</em> every bearer note, after confirming.
+          Unlike locking, this isn't undone by restoring the same seed
+          afterward: the notes' ciphertext is deleted too, not just re-locked
+          behind the key. Download a backup first if there's anything on this
+          device worth keeping - it's the only way back.
         </p>
       </figure>
 

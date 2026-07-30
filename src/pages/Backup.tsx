@@ -62,7 +62,7 @@ const Backup: Component = () => {
     forgetWallet()
     setConfirmForget(false)
     notify(
-      'Wallet forgotten on this device - your bearer notes stay encrypted in local storage, restore the seed phrase to use them again.',
+      'Wallet forgotten - the linking key and every bearer note were removed from this device.',
       NotifyKind.SUCCESS
     )
     navigate('/')
@@ -141,12 +141,19 @@ const Backup: Component = () => {
       <Show when={state() !== 'none'}>
         <figure class="setup-card">
           <h4>Forget this wallet</h4>
-          <p>
-            Removes the linking key from this device. Your bearer notes stay in
-            local storage, still encrypted, untouched - restoring the same seed
-            phrase (or a backup that includes the encrypted key) makes this
-            device a wallet again, with everything it held before.
+          <p class="warning">
+            This removes <strong>everything</strong> from this device - the
+            linking key and every bearer note. Unlike locking, restoring the
+            same seed phrase afterward will not bring the notes back: their
+            ciphertext is gone too, not just re-locked. A backup downloaded
+            beforehand is the only way back.
           </p>
+          <div class="btns">
+            <button onClick={download}>
+              <IoDownloadSharp />
+              &nbsp;Download backup first
+            </button>
+          </div>
           <Show
             when={confirmForget()}
             fallback={
@@ -159,11 +166,12 @@ const Backup: Component = () => {
             }
           >
             <p class="warning">
-              Are you sure? Without the seed phrase (or a backup carrying the
-              encrypted key), this device's linking key cannot be recovered.
+              Are you sure? This deletes the linking key and every bearer note
+              from this device - only a backup downloaded beforehand can bring
+              them back.
             </p>
             <div class="btns">
-              <button onClick={doForget}>Yes, forget it</button>
+              <button onClick={doForget}>Yes, forget everything</button>
               <button onClick={() => setConfirmForget(false)}>Cancel</button>
             </div>
           </Show>

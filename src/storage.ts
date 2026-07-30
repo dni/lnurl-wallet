@@ -81,6 +81,14 @@ export const deleteBearerRecord = (id: string): void => {
   writeEncryptedBearers(readEncryptedBearers().filter(r => r.id !== id))
 }
 
+// wipes every bearer record from this device outright - unlike forgetting
+// just the linking key, this is not recoverable by restoring the same seed:
+// the ciphertexts themselves are gone, so only a previously downloaded
+// backup file can bring them back
+export const clearAllBearers = (): void => {
+  localStorage.removeItem(BEARERS_STORAGE_KEY)
+}
+
 // Backup file: everything exactly as it sits in localStorage - bearer
 // ciphertexts always, the linking-key record only when it is itself
 // password-encrypted. A plaintext linking key never leaves the device in a

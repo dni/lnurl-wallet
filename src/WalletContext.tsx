@@ -17,6 +17,7 @@ import {
   loadBearers,
   persistBearer,
   deleteBearerRecord,
+  clearAllBearers,
   newBearerId
 } from './storage'
 import {serverOf} from './lnurlcash'
@@ -99,10 +100,13 @@ export const WalletProvider = (props: {children: JSX.Element}) => {
     setState('locked')
   }
 
-  // wipes the linking key from this device - bearer ciphertexts stay in
-  // localStorage, recoverable later by restoring the same seed phrase
+  // wipes this wallet from the device entirely - the linking key AND every
+  // bearer record. Not recoverable by restoring the same seed afterward
+  // (the ciphertexts themselves are gone); only a backup downloaded before
+  // this runs can bring the notes back - the UI should prompt for one
   const forgetWallet = () => {
     clearSavedLinkingKey()
+    clearAllBearers()
     aesKey = null
     setPubkey(null)
     setBearers([])
