@@ -27,7 +27,7 @@ const RequireWallet: Component<{children: JSX.Element}> = props => {
               }
             >
               <p>Your wallet is locked.</p>
-              <A href="/" class="hero-btn hero-btn-primary">
+              <A href="/wallet" class="hero-btn hero-btn-primary">
                 Unlock
               </A>
             </Show>

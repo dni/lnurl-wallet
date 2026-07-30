@@ -46,7 +46,7 @@ const Setup: Component = () => {
     try {
       await setup(phrase, encrypt() ? setupPassword() : undefined)
       notify('Wallet ready.', NotifyKind.SUCCESS)
-      navigate('/')
+      navigate('/wallet')
     } catch (err) {
       notify((err as Error).message, NotifyKind.ERROR)
     } finally {

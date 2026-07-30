@@ -1,47 +1,25 @@
-// shoutout to https://codepen.io/bennettfeely/pen/jOEjmXK
-// Author: Bennett Feely (bennettfeely)
-$colors:
-  #fedc00 0,
-  #fedc00 calc(1 / 18) * 100%,
-  #fcb712 0,
-  #fcb712 calc(2 / 18) * 100%,
-  #f7921e 0,
-  #f7921e calc(3 / 18) * 100%,
-  #e87f24 0,
-  #e87f24 calc(4 / 18) * 100%,
-  #dd6227 0,
-  #dd6227 calc(5 / 18) * 100%,
-  #dc4c27 0,
-  #dc4c27 calc(6 / 18) * 100%,
-  #ca3435 0,
-  #ca3435 calc(7 / 18) * 100%,
-  #b82841 0,
-  #b82841 calc(8 / 18) * 100%,
-  #953751 0,
-  #953751 calc(9 / 18) * 100%,
-  #364c88 0,
-  #364c88 calc(10 / 18) * 100%,
-  #16599d 0,
-  #16599d calc(11 / 18) * 100%,
-  #02609e 0,
-  #02609e calc(12 / 18) * 100%,
-  #0073a9 0,
-  #0073a9 calc(13 / 18) * 100%,
-  #008aa4 0,
-  #008aa4 calc(14 / 18) * 100%,
-  #239a87 0,
-  #239a87 calc(15 / 18) * 100%,
-  #7cba6d 0,
-  #7cba6d calc(16 / 18) * 100%,
-  #becc2f 0,
-  #becc2f calc(17 / 18) * 100%,
-  #e0d81d 0,
-  #e0d81d calc(18 / 18) * 100%;
+// Calm, mint-toned backdrop: soft glows of the wallet's own accent color
+// (#5fc) drifting over a dark teal base (#002222, matching style.scss's
+// $bg/$font-color) - low-contrast and static, unlike a busy repeating
+// pattern, so it reads as ambient depth rather than something to look at.
 body {
   background:
-    repeating-radial-gradient(circle at bottom left, $colors),
-    repeating-radial-gradient(circle at bottom right, $colors);
-  background-blend-mode: luminosity;
+    radial-gradient(
+      ellipse 70% 50% at 15% -10%,
+      rgba(#5fc, 0.1),
+      transparent 60%
+    ),
+    radial-gradient(
+      ellipse 60% 45% at 100% 15%,
+      rgba(#5fc, 0.07),
+      transparent 60%
+    ),
+    radial-gradient(
+      ellipse 80% 60% at 50% 115%,
+      rgba(#5fc, 0.08),
+      transparent 65%
+    ),
+    linear-gradient(160deg, #001616 0%, #002222 55%, #001a1a 100%);
   // pin the gradient to the viewport at all times, sized to fill it exactly,
   // instead of scrolling with (and being sized to) the page's content box
   background-attachment: fixed;

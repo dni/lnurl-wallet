@@ -276,6 +276,20 @@ pre {
   border: 6px solid white;
   display: flex;
   cursor: pointer;
+  // the underlying SVG has no viewBox - it's just a WxH pixel grid, so a
+  // long value (a bolt11 invoice vs. a short LNURL) crammed into a small
+  // fixed size renders with visibly uneven/blurry modules. Scaling the
+  // whole (still-vector, still-crisp) SVG to fill its box via CSS instead
+  // of relying on the library's own fixed width/height keeps it sharp at
+  // any size, capped so it doesn't balloon on a wide desktop card.
+  width: 100%;
+  max-width: 280px;
+  aspect-ratio: 1 / 1;
+  svg {
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
 }
 .qr-wrapper {
   position: relative;

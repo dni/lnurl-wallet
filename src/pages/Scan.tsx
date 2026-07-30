@@ -24,7 +24,7 @@ const Scan: Component = () => {
           'Note stored, but its service could not be reached - refresh it later.',
           NotifyKind.LOADING
         )
-        navigate('/')
+        navigate('/wallet')
         return
       }
       // rotate immediately: whoever showed us this QR still knows the old
@@ -42,7 +42,7 @@ const Scan: Component = () => {
           NotifyKind.ERROR
         )
       }
-      navigate('/')
+      navigate('/wallet')
     } catch (err) {
       notify((err as Error).message, NotifyKind.ERROR)
     } finally {

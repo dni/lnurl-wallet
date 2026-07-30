@@ -11,6 +11,7 @@ import './styles/background.scss'
 
 import Nav from './components/Nav'
 import Footer from './components/Footer'
+import Hero from './pages/Hero'
 import Wallet from './pages/Wallet'
 import Setup from './pages/Setup'
 import Mint from './pages/Mint'
@@ -41,7 +42,8 @@ const App = (props: any) => {
 const cleanup = render(
   () => (
     <HashRouter root={App}>
-      <Route path="/" component={Wallet} />
+      <Route path="/" component={Hero} />
+      <Route path="/wallet" component={Wallet} />
       <Route path="/setup" component={Setup} />
       <Route path="/mint" component={Mint} />
       <Route path="/scan" component={Scan} />

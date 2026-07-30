@@ -23,7 +23,7 @@ const Nav = () => {
   const lock_action = () => {
     closeMenu()
     lock()
-    navigate('/')
+    navigate('/wallet')
   }
 
   return (
@@ -43,11 +43,16 @@ const Nav = () => {
       empty when opened (see .nav-menu in style.scss) */}
       <div class="nav-menu" classList={{open: menuOpen()}} onClick={closeMenu}>
         <div class="nav-links">
-          <Show when={state() === 'unlocked'}>
-            <A href="/" class="nav-link" end>
+          {/* shown whenever there's a wallet on this device, even locked -
+          that's where the unlock form lives now that "/" is the landing
+          page (see pages/Hero.tsx and pages/Wallet.tsx) */}
+          <Show when={state() !== 'none'}>
+            <A href="/wallet" class="nav-link">
               <IoWalletSharp />
               &nbsp;Wallet
             </A>
+          </Show>
+          <Show when={state() === 'unlocked'}>
             <A href="/mint" class="nav-link">
               <IoAddCircleSharp />
               &nbsp;Mint

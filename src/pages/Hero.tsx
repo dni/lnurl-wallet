@@ -9,53 +9,38 @@ import {
   IoSaveSharp
 } from 'solid-icons/io'
 
-export type HeroProps = {
-  // 'welcome': no wallet on this device yet - lead to setup.
-  // 'empty': wallet ready but holds no LNURLcash yet - lead to mint/scan/paste.
-  mode: 'welcome' | 'empty'
-}
+import {useWallet} from '../WalletContext'
 
-const Hero: Component<HeroProps> = props => {
+// The home page - always the marketing/landing view, regardless of wallet
+// state. The actual wallet (bearer list, unlock form) lives at /wallet;
+// this only ever links there.
+const Hero: Component = () => {
+  const {state} = useWallet()
+
   return (
     <div id="hero" class="page">
       <section class="hero-intro">
-        <Show
-          when={props.mode === 'welcome'}
-          fallback={
-            <>
-              <h1>No LNURLcash yet</h1>
-              <p class="hero-subtitle">
-                Your wallet is ready but empty. Mint a fresh bearer note from
-                any LNURLcash mint, or bring one in by scanning or pasting a
-                note someone handed you.
-              </p>
-              <div class="hero-actions">
-                <A href="/mint" class="hero-btn hero-btn-primary">
-                  Mint
-                </A>
-                <A href="/scan" class="hero-btn hero-btn-primary">
-                  Scan
-                </A>
-                <A href="/paste" class="hero-btn hero-btn-primary">
-                  Paste
-                </A>
-              </div>
-            </>
-          }
-        >
-          <h1>Your serverless LNURLcash wallet</h1>
-          <p class="hero-subtitle">
-            LNURLwallet is a static page with no backend of its own. It holds
-            LNURLcash bearer notes - LNURL-withdraw links whose k1 is the asset
-            - from any number of mints, encrypted with a key derived from your
-            seed phrase and stored only in this browser's local storage.
-          </p>
-          <div class="hero-actions">
-            <A href="/setup" class="hero-btn hero-btn-primary">
-              Create wallet
+        <h1>Your serverless LNURLcash wallet</h1>
+        <p class="hero-subtitle">
+          LNURLwallet is a static page with no backend of its own. It holds
+          LNURLcash bearer notes - LNURL-withdraw links whose k1 is the asset -
+          from any number of mints, encrypted with a key derived from your seed
+          phrase and stored only in this browser's local storage.
+        </p>
+        <div class="hero-actions">
+          <Show
+            when={state() !== 'none'}
+            fallback={
+              <A href="/setup" class="hero-btn hero-btn-primary">
+                Create wallet
+              </A>
+            }
+          >
+            <A href="/wallet" class="hero-btn hero-btn-primary">
+              Go to my wallet
             </A>
-          </div>
-        </Show>
+          </Show>
+        </div>
       </section>
       <section class="hero-features">
         <div class="hero-feature">

@@ -1,12 +1,17 @@
 import type {Component} from 'solid-js'
 import {Show, For, createSignal, createMemo} from 'solid-js'
 import {A} from '@solidjs/router'
-import {IoGitMergeSharp, IoLockOpenSharp} from 'solid-icons/io'
+import {
+  IoAddCircleSharp,
+  IoQrCodeSharp,
+  IoClipboardSharp,
+  IoGitMergeSharp,
+  IoLockOpenSharp
+} from 'solid-icons/io'
 
 import {useWallet, groupByServer} from '../WalletContext'
 import {serverOf, noteK1, withNewK1, mergeNotes} from '../lnurlcash'
 import {notify, NotifyKind, msatToSats} from '../helpers'
-import Hero from '../components/Hero'
 import BearerCard from '../components/BearerCard'
 
 const Wallet: Component = () => {
@@ -85,7 +90,22 @@ const Wallet: Component = () => {
   }
 
   return (
-    <Show when={state() !== 'none'} fallback={<Hero mode="welcome" />}>
+    <Show
+      when={state() !== 'none'}
+      fallback={
+        <div id="wallet" class="page">
+          <figure>
+            <h2>No wallet on this device yet</h2>
+            <p>Create one, or restore a seed phrase you already have.</p>
+            <div class="btns">
+              <A href="/setup" class="hero-btn hero-btn-primary">
+                Create wallet
+              </A>
+            </div>
+          </figure>
+        </div>
+      }
+    >
       <Show
         when={state() === 'unlocked'}
         fallback={
@@ -117,7 +137,35 @@ const Wallet: Component = () => {
           </div>
         }
       >
-        <Show when={bearers().length > 0} fallback={<Hero mode="empty" />}>
+        <Show
+          when={bearers().length > 0}
+          fallback={
+            <div id="wallet" class="page">
+              <section class="hero-intro">
+                <h1>No LNURLcash yet</h1>
+                <p class="hero-subtitle">
+                  Your wallet is ready but empty. Mint a fresh bearer note from
+                  any LNURLcash mint, or bring one in by scanning or pasting a
+                  note someone handed you.
+                </p>
+                <div class="hero-actions">
+                  <A href="/mint" class="hero-btn hero-btn-primary">
+                    <IoAddCircleSharp />
+                    &nbsp;Mint
+                  </A>
+                  <A href="/scan" class="hero-btn hero-btn-primary">
+                    <IoQrCodeSharp />
+                    &nbsp;Scan
+                  </A>
+                  <A href="/paste" class="hero-btn hero-btn-primary">
+                    <IoClipboardSharp />
+                    &nbsp;Paste
+                  </A>
+                </div>
+              </section>
+            </div>
+          }
+        >
           <div id="wallet" class="page">
             <div class="page-header">
               <h2>

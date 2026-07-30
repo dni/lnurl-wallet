@@ -241,7 +241,7 @@ const Mint: Component = () => {
         `Minted a bearer note of ${msatToSats(noteInfo.maxWithdrawable)} sats.`,
         NotifyKind.SUCCESS
       )
-      navigate('/')
+      navigate('/wallet')
     } catch (err) {
       notify((err as Error).message, NotifyKind.ERROR)
     } finally {

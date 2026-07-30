@@ -10,8 +10,13 @@ export interface QrProps {
 }
 
 const Qr: Component<QrProps> = (props: QrProps) => {
-  const width = props.width || 200
-  const height = props.height || 200
+  // the actual on-screen size is controlled by CSS (.qrcode scales the SVG
+  // to fill its box - see style.scss) - this only sets the coordinate
+  // space the library draws into, so a higher default gives denser codes
+  // (e.g. a long bolt11 invoice vs. a short LNURL) more sub-pixel
+  // precision before that scaling, instead of looking uneven/blurry
+  const width = props.width || 256
+  const height = props.height || 256
   return (
     <div class="qrcode" onClick={() => copyToClipboard(props.value)}>
       <QRCodeSVG

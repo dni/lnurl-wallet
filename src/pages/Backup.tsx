@@ -133,8 +133,8 @@ const Backup: Component = () => {
         <Show when={keyRestored()}>
           <p class="warning">
             Linking key restored from the backup -{' '}
-            <A href="/">unlock the wallet</A> with the password it was encrypted
-            with.
+            <A href="/wallet">unlock the wallet</A> with the password it was
+            encrypted with.
           </p>
         </Show>
       </figure>
