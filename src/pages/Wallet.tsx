@@ -1,13 +1,6 @@
 import type {Component} from 'solid-js'
 import {Show, For, createSignal, createMemo} from 'solid-js'
-import {A} from '@solidjs/router'
-import {
-  IoAddCircleSharp,
-  IoQrCodeSharp,
-  IoClipboardSharp,
-  IoGitMergeSharp,
-  IoLockOpenSharp
-} from 'solid-icons/io'
+import {IoGitMergeSharp, IoLockOpenSharp} from 'solid-icons/io'
 
 import {useWallet, groupByServer} from '../WalletContext'
 import {serverOf, noteK1, withNewK1, mergeNotes} from '../lnurlcash'
@@ -130,20 +123,6 @@ const Wallet: Component = () => {
                 )}{' '}
                 sats
               </h2>
-              <div class="wallet-actions">
-                <A href="/mint" class="nav-link" title="Mint">
-                  <IoAddCircleSharp />
-                  &nbsp;Mint
-                </A>
-                <A href="/scan" class="nav-link" title="Scan">
-                  <IoQrCodeSharp />
-                  &nbsp;Scan
-                </A>
-                <A href="/paste" class="nav-link" title="Paste">
-                  <IoClipboardSharp />
-                  &nbsp;Paste
-                </A>
-              </div>
             </div>
             <Show when={selectedBearers().length > 0}>
               <div class="combine-bar">

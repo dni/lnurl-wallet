@@ -423,6 +423,13 @@ nav {
   }
 }
 
+// wraps .nav-links + .nav-persistent so both collapse into one dropdown on
+// mobile - display:contents keeps it invisible to desktop's flex layout, so
+// its children lay out as direct children of nav exactly as before
+.nav-menu {
+  display: contents;
+}
+
 .nav-links {
   display: flex;
   align-items: center;
@@ -438,11 +445,18 @@ nav {
   }
 }
 
+// hidden on desktop - .nav-persistent's icons are compact and title-only
+// there; only shown once collapsed into the mobile dropdown below, where an
+// icon alone in a stacked list would otherwise be unclear
+.nav-label {
+  display: none;
+}
+
 @media (max-width: 700px) {
   .nav-toggle {
     display: inline-flex;
   }
-  .nav-links {
+  .nav-menu {
     display: none;
     position: absolute;
     top: 100%;
@@ -451,12 +465,28 @@ nav {
     flex-direction: column;
     align-items: stretch;
     background: rgba($bg, 0.95);
+    // above everything else on the page, including the fixed footer - a
+    // dropdown that opens but renders underneath other content looks
+    // exactly like it "didn't open"
+    z-index: 3;
     &.open {
       display: flex;
     }
+  }
+  // .nav-links can be empty (nothing to show before the wallet is
+  // unlocked) - .nav-persistent's Docs link always renders regardless of
+  // wallet state, so the dropdown is never entirely empty when opened
+  .nav-links,
+  .nav-persistent {
+    flex-direction: column;
+    align-items: stretch;
+    margin-left: 0;
     a {
       margin-right: 0;
     }
+  }
+  .nav-label {
+    display: inline;
   }
 }
 
@@ -572,24 +602,6 @@ nav {
 }
 
 // ---- wallet page ----
-
-.wallet-actions {
-  display: flex;
-  align-items: center;
-  a {
-    display: flex;
-    align-items: center;
-    padding: 6px 12px;
-    text-decoration: none;
-    color: $font-color;
-    transition: all 0.5s ease-in-out;
-    &:hover {
-      background: rgba($font-color, $transparency);
-      color: $bg;
-      border-radius: 5px;
-    }
-  }
-}
 
 .combine-bar {
   display: flex;
