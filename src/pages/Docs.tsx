@@ -76,7 +76,23 @@ callback?k1=X&k1=Y           merge: all burned, one note worth the sum returned`
             preimage it reveals; the wallet verifies it with the service, then
             immediately rotates it (that verifying GET already put the preimage
             on the wire) before storing the note - opportunistically obtaining
-            its first offline-verifiable signature in the same step.
+            its first offline-verifiable signature in the same step. When a
+            mint's invoice also advertises a{' '}
+            <a
+              href="https://github.com/lnurl/luds/blob/luds/21.md"
+              target="_blank"
+            >
+              LUD-21
+            </a>{' '}
+            verify URL, a "Check payment" button appears with a countdown and
+            checks automatically every 10 seconds - if that check ever returns
+            the preimage itself, the wallet claims and rotates the note right
+            then, no pasting needed. Most mints won't return it there (for
+            lnurlcash the preimage is the spend secret, so handing it to anyone
+            who merely knows the payment hash - not proof of payment - would let
+            them steal the note first), in which case verify just confirms the
+            payment settled and pasting the preimage by hand remains the way to
+            claim.
           </li>
           <li>
             <strong>Melt</strong> has the service pay a bolt11 invoice of

@@ -1,5 +1,5 @@
 import type {Component} from 'solid-js'
-import {Show, createSignal} from 'solid-js'
+import {Show, createSignal, onCleanup} from 'solid-js'
 import {useNavigate} from '@solidjs/router'
 
 import {useWallet} from '../WalletContext'
@@ -8,6 +8,7 @@ import {
   resolveMintInput,
   fetchPayRequest,
   requestInvoice,
+  fetchInvoiceVerification,
   buildNoteUrl,
   withNewK1,
   fetchNoteInfo,
@@ -25,6 +26,10 @@ import Qr from '../components/Qr'
 import RequireWallet from '../components/RequireWallet'
 
 type Mode = 'invoice' | 'preimage'
+
+// LUD-21 auto-poll interval, in seconds - both the countdown shown on the
+// button and the cadence of the automatic check
+const VERIFY_POLL_SECONDS = 10
 
 // LUD-XX minting: pay a payRequest that advertises `withdrawLink` - the
 // payment preimage IS the bearer secret. This wallet has no node of its
@@ -44,6 +49,75 @@ const Mint: Component = () => {
   const [preimage, setPreimage] = createSignal('')
   const [directPreimage, setDirectPreimage] = createSignal('')
   const [busy, setBusy] = createSignal(false)
+
+  // LUD-21: only present when the invoice's own callback response
+  // advertised a verify URL - the whole check-automatically UI is optional
+  // on that, per-mint
+  const [verifyUrl, setVerifyUrl] = createSignal<string | null>(null)
+  const [secondsLeft, setSecondsLeft] = createSignal(VERIFY_POLL_SECONDS)
+  const [verifying, setVerifying] = createSignal(false)
+  let pollTimer: ReturnType<typeof setInterval> | null = null
+
+  const stopPolling = () => {
+    if (pollTimer) clearInterval(pollTimer)
+    pollTimer = null
+  }
+
+  const checkVerify = async () => {
+    const url = verifyUrl()
+    if (!url || verifying()) return
+    setVerifying(true)
+    try {
+      const result = await fetchInvoiceVerification(url)
+      if (result.settled) {
+        stopPolling()
+        if (result.preimage && isPreimage(result.preimage)) {
+          // pre-fill the manual input too, so a failed auto-claim still
+          // leaves the holder one click away from retrying by hand
+          setPreimage(result.preimage)
+          notify(
+            'Payment settled - claiming automatically...',
+            NotifyKind.LOADING
+          )
+          await claim(result.preimage, invoicedMsat())
+        } else {
+          notify(
+            'Payment settled - paste the preimage your wallet revealed to claim the note.',
+            NotifyKind.SUCCESS
+          )
+        }
+      }
+    } catch {
+      // a single failed check isn't fatal - the next tick tries again
+    } finally {
+      setVerifying(false)
+    }
+  }
+
+  const startPolling = (url: string) => {
+    stopPolling()
+    setVerifyUrl(url)
+    setSecondsLeft(VERIFY_POLL_SECONDS)
+    pollTimer = setInterval(() => {
+      setSecondsLeft(s => {
+        if (s <= 1) {
+          checkVerify()
+          return VERIFY_POLL_SECONDS
+        }
+        return s - 1
+      })
+    }, 1000)
+  }
+
+  // manual click: check right away, then restart the countdown so the next
+  // automatic tick isn't immediately on its heels
+  const manualCheck = () => {
+    checkVerify()
+    const url = verifyUrl()
+    if (url) startPolling(url)
+  }
+
+  onCleanup(stopPolling)
 
   const lookup = async () => {
     const url = resolveMintInput(mintInput())
@@ -66,6 +140,8 @@ const Mint: Component = () => {
       setInvoice(null)
       setPreimage('')
       setDirectPreimage('')
+      stopPolling()
+      setVerifyUrl(null)
     } catch (err) {
       notify((err as Error).message, NotifyKind.ERROR)
     } finally {
@@ -98,8 +174,10 @@ const Mint: Component = () => {
     if (msat === null) return
     setBusy(true)
     try {
-      setInvoice(await requestInvoice(info.callback, msat))
+      const result = await requestInvoice(info.callback, msat)
+      setInvoice(result.pr)
       setInvoicedMsat(msat)
+      if (result.verify) startPolling(result.verify)
     } catch (err) {
       notify((err as Error).message, NotifyKind.ERROR)
     } finally {
@@ -108,6 +186,10 @@ const Mint: Component = () => {
   }
 
   const claim = async (preimageValue: string, amountMsat: number) => {
+    // guards against the auto-poll firing a claim while one is already in
+    // flight (manual or automatic) - the disabled buttons only prevent
+    // that for clicks, not for checkVerify's own timer-triggered call
+    if (busy()) return
     const info = payRequest()
     if (!info?.withdrawLink) return
     if (!isPreimage(preimageValue)) {
@@ -272,10 +354,21 @@ const Mint: Component = () => {
               <button onClick={() => copyToClipboard(invoice()!)}>
                 Copy invoice
               </button>
+              <Show when={verifyUrl()}>
+                <button disabled={verifying()} onClick={manualCheck}>
+                  {verifying()
+                    ? 'Checking...'
+                    : `Check payment (${secondsLeft()}s)`}
+                </button>
+              </Show>
             </div>
             <label>
               2. Paste the payment preimage your wallet reveals after paying -
               it IS the bearer secret
+              <Show when={verifyUrl()}>
+                {' '}
+                (or wait - this mint supports checking automatically)
+              </Show>
             </label>
             <input
               type="text"

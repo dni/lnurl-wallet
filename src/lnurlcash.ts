@@ -407,17 +407,54 @@ export const fetchPayRequest = async (url: string): Promise<PayRequestInfo> => {
   return body as PayRequestInfo
 }
 
+export type InvoiceResult = {
+  pr: string
+  // LUD-21 (optional): a URL to poll for this invoice's settlement status
+  verify?: string
+}
+
 export const requestInvoice = async (
   payCallback: string,
   amountMsat: number
-): Promise<string> => {
+): Promise<InvoiceResult> => {
   const cbUrl = new URL(payCallback)
   cbUrl.searchParams.set('amount', String(amountMsat))
   const body = await lnurlFetch(cbUrl)
   if (typeof body?.pr !== 'string') {
     throw new Error('Service did not return an invoice.')
   }
-  return body.pr
+  return {
+    pr: body.pr,
+    verify: typeof body.verify === 'string' ? body.verify : undefined
+  }
+}
+
+export type VerifyResult = {
+  settled: boolean
+  preimage: string | null
+  pr: string
+}
+
+// LUD-21: polls whether an invoice from requestInvoice has settled, via the
+// URL it optionally returned as `verify`. `preimage` is only ever populated
+// by a service that chooses to return it - for lnurlcash specifically, the
+// preimage IS the bearer secret, so a service SHOULD withhold it here (a
+// verify GET proves nothing about who's asking, just that they know the
+// payment hash embedded in the URL) and let the payer's own wallet be the
+// only source of it. Treat a returned preimage as a convenience, never a
+// guarantee that any given service provides one.
+export const fetchInvoiceVerification = async (
+  verifyUrl: string
+): Promise<VerifyResult> => {
+  const body = await lnurlFetch(verifyUrl)
+  if (typeof body?.settled !== 'boolean' || typeof body?.pr !== 'string') {
+    throw new Error('Service returned an unexpected verify response.')
+  }
+  return {
+    settled: body.settled,
+    preimage: typeof body.preimage === 'string' ? body.preimage : null,
+    pr: body.pr
+  }
 }
 
 // a payment preimage (the future k1): 32 bytes hex
