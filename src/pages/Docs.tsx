@@ -188,6 +188,15 @@ callback?k1=X&k1=Y           merge: all burned, one note worth the sum returned`
           Rotation is your tool against stale copies - after restoring an old
           backup, transfer (rotate) anything you still hold.
         </p>
+        <h3>Forget this wallet</h3>
+        <p>
+          The Backup page can also remove the linking key from this device -
+          asks for confirmation first, since it's the one thing standing between
+          this browser and your notes. Your bearer notes stay in local storage
+          untouched, still encrypted: restoring the same seed phrase (or a
+          backup carrying the encrypted key) turns this device back into a
+          wallet with everything it held before.
+        </p>
       </figure>
 
       <figure class="docs-card">

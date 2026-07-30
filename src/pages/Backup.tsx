@@ -1,7 +1,7 @@
 import type {Component} from 'solid-js'
 import {Show, createSignal} from 'solid-js'
-import {A} from '@solidjs/router'
-import {IoDownloadSharp, IoFolderOpenSharp} from 'solid-icons/io'
+import {A, useNavigate} from '@solidjs/router'
+import {IoDownloadSharp, IoFolderOpenSharp, IoTrashSharp} from 'solid-icons/io'
 
 import {useWallet} from '../WalletContext'
 import {buildBackup, applyBackup} from '../storage'
@@ -9,10 +9,13 @@ import {savedKeyIsEncrypted} from '../keys'
 import {notify, NotifyKind} from '../helpers'
 
 const Backup: Component = () => {
-  const {state, bearers, reloadBearers, refreshState} = useWallet()
+  const {state, bearers, reloadBearers, refreshState, forgetWallet} =
+    useWallet()
+  const navigate = useNavigate()
   let fileRef: HTMLInputElement | undefined
   const [busy, setBusy] = createSignal(false)
   const [keyRestored, setKeyRestored] = createSignal(false)
+  const [confirmForget, setConfirmForget] = createSignal(false)
 
   const download = () => {
     const backup = buildBackup()
@@ -53,6 +56,16 @@ const Backup: Component = () => {
     } finally {
       setBusy(false)
     }
+  }
+
+  const doForget = () => {
+    forgetWallet()
+    setConfirmForget(false)
+    notify(
+      'Wallet forgotten on this device - your bearer notes stay encrypted in local storage, restore the seed phrase to use them again.',
+      NotifyKind.SUCCESS
+    )
+    navigate('/')
   }
 
   return (
@@ -125,6 +138,37 @@ const Backup: Component = () => {
           </p>
         </Show>
       </figure>
+      <Show when={state() !== 'none'}>
+        <figure class="setup-card">
+          <h4>Forget this wallet</h4>
+          <p>
+            Removes the linking key from this device. Your bearer notes stay in
+            local storage, still encrypted, untouched - restoring the same seed
+            phrase (or a backup that includes the encrypted key) makes this
+            device a wallet again, with everything it held before.
+          </p>
+          <Show
+            when={confirmForget()}
+            fallback={
+              <div class="btns">
+                <button onClick={() => setConfirmForget(true)}>
+                  <IoTrashSharp />
+                  &nbsp;Forget wallet
+                </button>
+              </div>
+            }
+          >
+            <p class="warning">
+              Are you sure? Without the seed phrase (or a backup carrying the
+              encrypted key), this device's linking key cannot be recovered.
+            </p>
+            <div class="btns">
+              <button onClick={doForget}>Yes, forget it</button>
+              <button onClick={() => setConfirmForget(false)}>Cancel</button>
+            </div>
+          </Show>
+        </figure>
+      </Show>
     </div>
   )
 }
