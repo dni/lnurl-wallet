@@ -4,8 +4,8 @@ import {Route, HashRouter} from '@solidjs/router'
 import {Toaster} from 'solid-toast'
 
 import {WalletProvider} from './WalletContext'
-import '@fontsource/noto-sans/400.css'
-import '@fontsource/noto-sans/700.css'
+// no webfonts: the 600B system's Impact / Trebuchet MS / Georgia are
+// system stacks, so the whole skin ships zero font bytes
 import './styles/style.scss'
 import './styles/background.scss'
 

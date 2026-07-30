@@ -14,7 +14,6 @@
     "format:check": "prettier --check ."
   },
   "dependencies": {
-    "@fontsource/noto-sans": "^5.2.10",
     "@noble/curves": "^2.2.0",
     "@noble/hashes": "^2.2.0",
     "@scure/base": "^1.2.4",

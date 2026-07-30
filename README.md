@@ -11,7 +11,9 @@ Built with the same stack as
 [lnurl_server](https://github.com/dni/lnurl_server)'s frontend: Vite,
 SolidJS, TypeScript, sass, `@scure`/`@noble` crypto, `solid-qr-code`,
 `solid-toast`, `solid-icons`. Works against any spec-compliant service,
-e.g. [lnurl-mint](https://github.com/dni/lnurl-mint).
+e.g. [lnurl-mint](https://github.com/dni/lnurl-mint). Styled after the
+600B design system: bitcoin orange over volcanic stone, Impact caps,
+sharp corners, ember glow.
 
 ## LNURLcash (LUD-XX)
 
