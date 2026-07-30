@@ -24,6 +24,7 @@ import {
   copyToClipboard
 } from '../helpers'
 import {isMintTrusted, addTrustedMint} from '../trustedMints'
+import {payRequestImage} from '../noteImages'
 import Qr from '../components/Qr'
 import RequireWallet from '../components/RequireWallet'
 
@@ -273,7 +274,10 @@ const Mint: Component = () => {
         callback: noteInfo.callback,
         amount: noteInfo.maxWithdrawable,
         verified: true,
-        mintPubkey
+        mintPubkey,
+        // a mint that brands its payRequest metadata with an image entry
+        // brands its freshly minted notes with it too - display only
+        image: payRequestImage(info.metadata) ?? undefined
       })
       notify(
         `Minted a bearer note of ${msatToSats(noteInfo.maxWithdrawable)} sats.`,

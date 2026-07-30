@@ -72,6 +72,25 @@ The wallet follows the spec's security guidance:
   side, grouped per service; combine (merge) works across selected
   same-mint notes in a single request.
 
+## Note images
+
+A note can carry artwork - strictly a display-layer feature, deliberately
+outside the protocol: the image is never part of the note URL, is never
+sent anywhere, and does not travel with a handover. It lives inside this
+wallet's encrypted bearer records, so backups include it automatically.
+Two ways a note gets one:
+
+- **From the mint**: a payRequest whose LUD-06 `metadata` carries an
+  `image/png;base64` / `image/jpeg;base64` entry brands its freshly minted
+  notes with it.
+- **By hand**: attach any local image to a held note; it is downscaled in
+  the browser before being stored.
+
+Artwork survives rotate and transfer (same record, fresh secret), both
+halves of a split inherit it, and a combine keeps the first artwork among
+the merged notes. Removing it is one click; melting a note burns it along
+with everything else.
+
 ## Security model: encrypted with your linking key, in your local storage
 
 - At setup a 12-word BIP39 **seed phrase** is generated in your browser. It

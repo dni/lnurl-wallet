@@ -78,7 +78,10 @@ const Wallet: Component = () => {
         callback: base.callback,
         amount: total,
         verified: true,
-        mintPubkey: base.mintPubkey
+        mintPubkey: base.mintPubkey,
+        // display only: the merged note keeps the first artwork among the
+        // burned ones (they are gone, their images with them)
+        image: picked.find(b => b.image)?.image
       })
       setSelected(new Set<string>())
       notify(`Combined ${picked.length} notes into one.`, NotifyKind.SUCCESS)

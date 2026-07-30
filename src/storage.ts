@@ -24,6 +24,10 @@ export type Bearer = {
   // payRequest's optional mintPubkey) - lets a note's ?sig= be checked
   // offline against it without a network round trip
   mintPubkey?: string
+  // optional artwork (data: URL) - display only, never part of the note URL
+  // or a handover; encrypted with the record like everything else, so it is
+  // in backups automatically (see noteImages.ts)
+  image?: string
   createdAt: number
   updatedAt: number
 }
