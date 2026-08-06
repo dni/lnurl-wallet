@@ -765,6 +765,17 @@ nav {
   margin: 10px 0 0 0;
 }
 
+// click-to-select mint lists on the Mint page (trusted + public)
+.mint-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  button {
+    margin-right: 0;
+    font-size: 0.9em;
+  }
+}
+
 // ---- setup / mint / backup / docs ----
 
 .setup-card {

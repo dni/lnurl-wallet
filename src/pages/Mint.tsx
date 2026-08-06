@@ -1,5 +1,5 @@
 import type {Component} from 'solid-js'
-import {Show, createSignal, onCleanup} from 'solid-js'
+import {Show, For, createSignal, onCleanup} from 'solid-js'
 import {useNavigate} from '@solidjs/router'
 
 import {useWallet} from '../WalletContext'
@@ -23,7 +23,7 @@ import {
   satsToMsat,
   copyToClipboard
 } from '../helpers'
-import {isMintTrusted, addTrustedMint} from '../trustedMints'
+import {isMintTrusted, addTrustedMint, trustedMints} from '../trustedMints'
 import Qr from '../components/Qr'
 import RequireWallet from '../components/RequireWallet'
 
@@ -32,6 +32,19 @@ type Mode = 'invoice' | 'preimage'
 // LUD-21 auto-poll interval, in seconds - both the countdown shown on the
 // button and the cadence of the automatic check
 const VERIFY_POLL_SECONDS = 10
+
+// A small curated list of known public mints, for a one-click quick start -
+// unrelated to the trusted-mints registry (a mint appearing here says
+// nothing about its signing key or whether you've ever used it).
+const PUBLIC_MINTS = ['mint@mint.600.wtf']
+
+// trustedMints only stores a bare hostname (see trustedMints.ts) - there's
+// no record of *how* it was originally reached, so re-selecting one guesses
+// the same mint@<host> Lightning Address convention this wallet's own
+// reference mint (lnurl-mint) defaults to. A reasonable quick-fill, not a
+// guarantee: if a given mint uses a different username, the lookup below
+// just fails normally and the holder can type the real address by hand.
+const guessMintAddress = (server: string): string => `mint@${server}`
 
 // LUD-XX minting: pay a payRequest that advertises `withdrawLink` - the
 // payment preimage IS the bearer secret. This wallet has no node of its
@@ -174,6 +187,13 @@ const Mint: Component = () => {
     }
   }
 
+  // click-to-select from either list below: fills the input and looks it
+  // up immediately, same as typing it in and pressing enter
+  const selectMint = (address: string) => {
+    setMintInput(address)
+    lookup()
+  }
+
   const confirmTrust = () => {
     const pending = pendingTrust()
     if (!pending) return
@@ -309,6 +329,35 @@ const Mint: Component = () => {
             <button disabled={busy()} onClick={lookup}>
               Look up mint
             </button>
+          </div>
+        </figure>
+        <Show when={trustedMints().length > 0}>
+          <figure class="setup-card">
+            <h4>Your trusted mints</h4>
+            <div class="mint-picker">
+              <For each={trustedMints()}>
+                {mint => (
+                  <button
+                    disabled={busy()}
+                    onClick={() => selectMint(guessMintAddress(mint.server))}
+                  >
+                    {mint.server}
+                  </button>
+                )}
+              </For>
+            </div>
+          </figure>
+        </Show>
+        <figure class="setup-card">
+          <h4>Public mints</h4>
+          <div class="mint-picker">
+            <For each={PUBLIC_MINTS}>
+              {address => (
+                <button disabled={busy()} onClick={() => selectMint(address)}>
+                  {address}
+                </button>
+              )}
+            </For>
           </div>
         </figure>
         <Show when={pendingTrust()}>
