@@ -523,3 +523,31 @@ export const isBolt11Invoice = (value: string): boolean =>
   /^ln(bc|tb|bcrt|tbs|sb)[0-9]*[munp]?1[a-z0-9]+$/.test(
     value.trim().toLowerCase()
   )
+
+// per unit of the invoice's amount digits, relative to whole BTC (10^-3,
+// 10^-6, 10^-9, 10^-12), converted straight to msat (1 BTC = 10^11 msat)
+const BOLT11_AMOUNT_MSAT_PER_UNIT: Record<string, number> = {
+  '': 100_000_000_000,
+  m: 100_000_000,
+  u: 100_000,
+  n: 100,
+  p: 0.1
+}
+
+// pulls just the amount out of a bolt11 invoice's human-readable part - no
+// full bech32/TLV decode needed for that. The bech32 separator is the LAST
+// '1' in the string (data characters can also be '1'); everything before it
+// is "ln" + network + optional digits + optional multiplier. Null for a
+// no-amount invoice or anything that doesn't parse as one.
+export const decodeBolt11AmountMsat = (pr: string): number | null => {
+  const trimmed = pr.trim().toLowerCase()
+  const sep = trimmed.lastIndexOf('1')
+  if (sep < 2) return null
+  const hrp = trimmed.slice(0, sep)
+  const match = hrp.match(/^ln(?:bc|tb|bcrt|tbs|sb)(\d+)?([munp])?$/)
+  if (!match) return null
+  const [, digits, multiplier] = match
+  if (!digits) return null
+  const msat = Number(digits) * BOLT11_AMOUNT_MSAT_PER_UNIT[multiplier || '']
+  return Number.isInteger(msat) ? msat : null
+}

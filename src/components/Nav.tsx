@@ -7,6 +7,7 @@ import {
   IoAddCircleSharp,
   IoQrCodeSharp,
   IoClipboardSharp,
+  IoFlameSharp,
   IoLockClosedSharp,
   IoSaveSharp,
   IoBookSharp,
@@ -65,6 +66,10 @@ const Nav = () => {
             <A href="/paste" class="nav-link">
               <IoClipboardSharp />
               &nbsp;Paste
+            </A>
+            <A href="/melt" class="nav-link">
+              <IoFlameSharp />
+              &nbsp;Melt
             </A>
           </Show>
         </div>

@@ -20,7 +20,8 @@ import {
   serverOf,
   verifyNoteSignature,
   isPreimage,
-  isBolt11Invoice
+  isBolt11Invoice,
+  decodeBolt11AmountMsat
 } from './lnurlcash'
 
 const K1 = 'a'.repeat(64)
@@ -153,6 +154,25 @@ describe('bolt11 invoice', () => {
     expect(isBolt11Invoice(toBech32Lnurl(NOTE_URL))).toBe(false)
     expect(isBolt11Invoice('not an invoice')).toBe(false)
     expect(isBolt11Invoice('')).toBe(false)
+  })
+
+  it('decodes the amount from each multiplier, and null without one', () => {
+    // '1' never appears in bech32 data (it's the reserved separator), so
+    // these use only charset-safe filler after the real separator
+    expect(decodeBolt11AmountMsat('lnbc1u1p0examplebech32data')).toBe(100_000)
+    expect(decodeBolt11AmountMsat('lnbc10m1p0examplebech32data')).toBe(
+      1_000_000_000
+    )
+    expect(decodeBolt11AmountMsat('lnbc250n1p0examplebech32data')).toBe(25_000)
+    expect(decodeBolt11AmountMsat('lnbc10p1p0examplebech32data')).toBe(1)
+    // digits with no multiplier suffix means whole BTC
+    expect(decodeBolt11AmountMsat('lnbc11p0examplebech32data')).toBe(
+      100_000_000_000
+    )
+    // network prefix runs straight into the separator - no amount at all
+    expect(decodeBolt11AmountMsat('lnbc1p0examplebech32data')).toBeNull()
+    expect(decodeBolt11AmountMsat('lntb1p0examplenoamount')).toBeNull()
+    expect(decodeBolt11AmountMsat('not an invoice')).toBeNull()
   })
 })
 

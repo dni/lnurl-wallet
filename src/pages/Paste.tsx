@@ -4,21 +4,13 @@ import {useNavigate} from '@solidjs/router'
 import {
   IoClipboardSharp,
   IoCloseSharp,
-  IoReturnDownForwardSharp,
-  IoCopySharp
+  IoReturnDownForwardSharp
 } from 'solid-icons/io'
 
 import {useWallet} from '../WalletContext'
 import {isValidNoteInput, isBolt11Invoice} from '../lnurlcash'
 import {receiveNote, secureReceivedNote} from '../receive'
-import {
-  notify,
-  NotifyKind,
-  msatToSats,
-  pasteFromClipboard,
-  copyToClipboard
-} from '../helpers'
-import Qr from '../components/Qr'
+import {notify, NotifyKind, msatToSats, pasteFromClipboard} from '../helpers'
 import RequireWallet from '../components/RequireWallet'
 
 const Paste: Component = () => {
@@ -27,12 +19,6 @@ const Paste: Component = () => {
   let pasteRef: HTMLInputElement | null = null
   const [value, setValue] = createSignal('')
   const [busy, setBusy] = createSignal(false)
-  // a recognized bolt11 invoice, shown as its own QR card rather than fed
-  // into the note-receiving flow below - this wallet has no node of its
-  // own to pay it with, so pasting one here is just a quick way to display
-  // it as a scannable/copyable QR (e.g. to melt a bearer against on
-  // another device, or hand to whoever's paying it)
-  const [pastedInvoice, setPastedInvoice] = createSignal<string | null>(null)
 
   // an empty field isn't "invalid" - just nothing to show feedback about yet
   const isValid = createMemo(
@@ -43,7 +29,9 @@ const Paste: Component = () => {
   const handle = async () => {
     if (value() === '') return
     if (isBolt11Invoice(value())) {
-      setPastedInvoice(value().trim())
+      // this wallet has no Lightning node of its own - paying one is its
+      // own dialog on the Melt page, reachable from the main nav
+      navigate(`/melt?pr=${encodeURIComponent(value().trim())}`)
       setValue('')
       return
     }
@@ -159,23 +147,6 @@ const Paste: Component = () => {
             </p>
           </Show>
         </figure>
-        <Show when={pastedInvoice()}>
-          <figure class="setup-card">
-            <figcaption>
-              Bolt11 invoice - this wallet has no Lightning node of its own, so
-              pay it with another wallet, or melt a bearer note against it from
-              the Wallet page
-            </figcaption>
-            <Qr value={pastedInvoice()!.toUpperCase()} />
-            <div class="btns">
-              <button onClick={() => copyToClipboard(pastedInvoice()!)}>
-                <IoCopySharp />
-                &nbsp;Copy invoice
-              </button>
-              <button onClick={() => setPastedInvoice(null)}>Clear</button>
-            </div>
-          </figure>
-        </Show>
       </div>
     </RequireWallet>
   )

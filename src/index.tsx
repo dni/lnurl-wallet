@@ -18,6 +18,7 @@ import Mint from './pages/Mint'
 import Mints from './pages/Mints'
 import Scan from './pages/Scan'
 import Paste from './pages/Paste'
+import Melt from './pages/Melt'
 import Backup from './pages/Backup'
 import Docs from './pages/Docs'
 
@@ -50,6 +51,7 @@ const cleanup = render(
       <Route path="/mints" component={Mints} />
       <Route path="/scan" component={Scan} />
       <Route path="/paste" component={Paste} />
+      <Route path="/melt" component={Melt} />
       <Route path="/backup" component={Backup} />
       <Route path="/docs" component={Docs} />
       <Route path="*" component={() => <h1>Page not found</h1>} />
