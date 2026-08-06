@@ -4,13 +4,21 @@ import {useNavigate} from '@solidjs/router'
 import {
   IoClipboardSharp,
   IoCloseSharp,
-  IoReturnDownForwardSharp
+  IoReturnDownForwardSharp,
+  IoCopySharp
 } from 'solid-icons/io'
 
 import {useWallet} from '../WalletContext'
-import {isValidNoteInput} from '../lnurlcash'
+import {isValidNoteInput, isBolt11Invoice} from '../lnurlcash'
 import {receiveNote, secureReceivedNote} from '../receive'
-import {notify, NotifyKind, msatToSats, pasteFromClipboard} from '../helpers'
+import {
+  notify,
+  NotifyKind,
+  msatToSats,
+  pasteFromClipboard,
+  copyToClipboard
+} from '../helpers'
+import Qr from '../components/Qr'
 import RequireWallet from '../components/RequireWallet'
 
 const Paste: Component = () => {
@@ -19,14 +27,31 @@ const Paste: Component = () => {
   let pasteRef: HTMLInputElement | null = null
   const [value, setValue] = createSignal('')
   const [busy, setBusy] = createSignal(false)
+  // a recognized bolt11 invoice, shown as its own QR card rather than fed
+  // into the note-receiving flow below - this wallet has no node of its
+  // own to pay it with, so pasting one here is just a quick way to display
+  // it as a scannable/copyable QR (e.g. to melt a bearer against on
+  // another device, or hand to whoever's paying it)
+  const [pastedInvoice, setPastedInvoice] = createSignal<string | null>(null)
 
   // an empty field isn't "invalid" - just nothing to show feedback about yet
-  const isValid = createMemo(() => value() === '' || isValidNoteInput(value()))
+  const isValid = createMemo(
+    () =>
+      value() === '' || isValidNoteInput(value()) || isBolt11Invoice(value())
+  )
 
   const handle = async () => {
     if (value() === '') return
+    if (isBolt11Invoice(value())) {
+      setPastedInvoice(value().trim())
+      setValue('')
+      return
+    }
     if (!isValidNoteInput(value())) {
-      notify('Not a valid LNURLcash bearer note.', NotifyKind.ERROR)
+      notify(
+        'Not a valid LNURLcash bearer note or bolt11 invoice.',
+        NotifyKind.ERROR
+      )
       return
     }
     setBusy(true)
@@ -84,7 +109,7 @@ const Paste: Component = () => {
   return (
     <RequireWallet>
       <div id="paste" class="page">
-        <h2>Paste a bearer note</h2>
+        <h2>Paste a bearer note or invoice</h2>
         <figure class="paste-widget">
           <div class="paste-input-row">
             <button
@@ -101,7 +126,7 @@ const Paste: Component = () => {
                 type="text"
                 class="paste-input"
                 classList={{invalid: value() !== '' && !isValid()}}
-                placeholder="lnurl1... or lnurlw://...?k1=..."
+                placeholder="lnurl1... / lnurlw://...?k1=... / lnbc1..."
                 value={value()}
                 onInput={e => setValue(e.currentTarget.value)}
                 onKeyDown={onKeydown}
@@ -130,10 +155,27 @@ const Paste: Component = () => {
           <Show when={value() !== '' && !isValid()}>
             <p class="warning">
               Not a valid LNURLcash bearer note (an LNURL-withdraw link carrying
-              a k1).
+              a k1) or bolt11 invoice.
             </p>
           </Show>
         </figure>
+        <Show when={pastedInvoice()}>
+          <figure class="setup-card">
+            <figcaption>
+              Bolt11 invoice - this wallet has no Lightning node of its own, so
+              pay it with another wallet, or melt a bearer note against it from
+              the Wallet page
+            </figcaption>
+            <Qr value={pastedInvoice()!.toUpperCase()} />
+            <div class="btns">
+              <button onClick={() => copyToClipboard(pastedInvoice()!)}>
+                <IoCopySharp />
+                &nbsp;Copy invoice
+              </button>
+              <button onClick={() => setPastedInvoice(null)}>Clear</button>
+            </div>
+          </figure>
+        </Show>
       </div>
     </RequireWallet>
   )

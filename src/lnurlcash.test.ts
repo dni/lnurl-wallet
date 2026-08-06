@@ -19,7 +19,8 @@ import {
   withNewK1,
   serverOf,
   verifyNoteSignature,
-  isPreimage
+  isPreimage,
+  isBolt11Invoice
 } from './lnurlcash'
 
 const K1 = 'a'.repeat(64)
@@ -136,6 +137,22 @@ describe('preimage', () => {
     expect(isPreimage(` ${K1.toUpperCase()} `)).toBe(true)
     expect(isPreimage('a'.repeat(63))).toBe(false)
     expect(isPreimage('z'.repeat(64))).toBe(false)
+  })
+})
+
+describe('bolt11 invoice', () => {
+  it('recognizes mainnet/testnet/regtest prefixes with and without an amount', () => {
+    expect(isBolt11Invoice('lnbc1p0examplebech32data')).toBe(true)
+    expect(isBolt11Invoice('lnbc210n1p0examplebech32data')).toBe(true)
+    expect(isBolt11Invoice('lntb1p0examplebech32data')).toBe(true)
+    expect(isBolt11Invoice('lnbcrt1p0examplebech32data')).toBe(true)
+    expect(isBolt11Invoice(`  ${'LNBC1P0EXAMPLEBECH32DATA'}  `)).toBe(true)
+  })
+
+  it('rejects LNURLs and unrelated strings despite the ln prefix', () => {
+    expect(isBolt11Invoice(toBech32Lnurl(NOTE_URL))).toBe(false)
+    expect(isBolt11Invoice('not an invoice')).toBe(false)
+    expect(isBolt11Invoice('')).toBe(false)
   })
 })
 

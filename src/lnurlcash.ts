@@ -513,3 +513,13 @@ export const fetchInvoiceVerification = async (
 // a payment preimage (the future k1): 32 bytes hex
 export const isPreimage = (value: string): boolean =>
   /^[0-9a-fA-F]{64}$/.test(value.trim())
+
+// a raw BOLT-11 invoice - loose shape check only (one of the known network
+// prefixes, an optional amount, then the bech32 separator), same
+// non-exhaustive spirit as isValidNoteInput. Anchored to actual bolt11
+// prefixes (bc/tb/bcrt/...) rather than a bare "ln", which a bech32 LNURL
+// ("lnurl1...") would also match.
+export const isBolt11Invoice = (value: string): boolean =>
+  /^ln(bc|tb|bcrt|tbs|sb)[0-9]*[munp]?1[a-z0-9]+$/.test(
+    value.trim().toLowerCase()
+  )
