@@ -60,7 +60,12 @@ callback?k1=X&amount=<msat>  split: X burned, response carries k1 + change
 callback?k1=X&k1=Y           merge: all burned, one note worth the sum returned`}</pre>
         <p>
           Melt only ever takes a single <code>k1</code> - to melt several notes
-          in one payment, merge them first.
+          in one payment, merge them first. Its <code>{`{"status":"OK"}`}</code>{' '}
+          only means the payment is now on its way, not that the note is
+          confirmed spent yet: the service pays it out asynchronously and only
+          finalizes the burn once that settles, restoring the note if it fails
+          instead. The wallet leaves a just-melted note in place rather than
+          assume success - refresh it in a moment to confirm it's actually gone.
         </p>
         <ul>
           <li>
@@ -127,13 +132,29 @@ callback?k1=X&k1=Y           merge: all burned, one note worth the sum returned`
         <h3>Offline verification (optional)</h3>
         <p>
           A bearer note is otherwise an opaque secret - an offline recipient
-          can't tell who issued it or for how much. A service{' '}
-          <strong>MAY</strong> make its notes verifiable by publishing a{' '}
-          <code>mintPubkey</code> and signing each fresh secret it hands out (in
-          the response to rotate, split or merge). The signature covers{' '}
-          <code>sha256("LNURLcash/note" ‖ amount_msat ‖ sha256(k1))</code> and
-          travels as one extra query parameter, ignored by wallets that don't
-          check it:
+          can't tell who issued it, by whom, or for how much, until they're back
+          online and can ask the service directly. A service{' '}
+          <strong>MAY</strong> close that gap by publishing a{' '}
+          <code>mintPubkey</code> on its withdrawRequest response and signing
+          each fresh secret it hands out (in the response to rotate, split or
+          merge - a freshly minted note has none until rotated once).
+        </p>
+        <p>
+          The signature is made the same way{' '}
+          <a
+            href="https://github.com/lnurl/luds/blob/luds/13.md"
+            target="_blank"
+          >
+            LUD-13
+          </a>{' '}
+          signs its auth seed phrase - a Lightning node's own{' '}
+          <code>signmessage</code>:
+        </p>
+        <pre>{`message = "LNURLcash:" || amount_msat (decimal) || ":" || hex(sha256(k1))
+digest  = sha256(sha256("Lightning Signed Message:" || message))`}</pre>
+        <p>
+          and travels as one extra query parameter on the note URL, ignored by
+          wallets that don't check it:
         </p>
         <pre>{`lnurlw://mint.example/withdraw?k1=<secret>&amount=<msat>&sig=<hex>`}</pre>
         <p>
@@ -143,8 +164,7 @@ callback?k1=X&k1=Y           merge: all burned, one note worth the sum returned`
           - a match shows as a "signed" badge on the note's card, entirely
           offline. This only proves the note <em>was issued</em> for that
           amount, never that it's still unspent - the only definitive check is
-          an online rotate. <code>lnurl-mint</code> doesn't implement signing
-          yet, so notes from it never show this badge.
+          an online rotate.
         </p>
         <p>
           Every <code>mintPubkey</code> this wallet has ever seen lives on the{' '}

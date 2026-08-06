@@ -125,8 +125,19 @@ const BearerCard: Component<BearerCardProps> = props => {
     setBusy(true)
     try {
       await meltNote(props.bearer.callback, k1(), meltPr())
-      removeBearer(props.bearer.id)
-      notify('Melted - the note has been paid out.', NotifyKind.SUCCESS)
+      // {"status":"OK"} only means the payment is now in flight - SERVICE
+      // finalizes the burn once it settles, or restores the note if it
+      // fails, so this isn't confirmation the note is actually spent yet.
+      // Leave it in the wallet rather than assume success: refreshing
+      // shortly will show it as gone once the melt truly completes (or,
+      // if it failed instead, just refresh normally - nothing lost either
+      // way, unlike removing it now would risk).
+      setAction(null)
+      setMeltPr('')
+      notify(
+        'Melt requested - the payment is on its way. Refresh in a moment to confirm the note is gone.',
+        NotifyKind.SUCCESS
+      )
     } catch (err) {
       notify((err as Error).message, NotifyKind.ERROR)
     } finally {

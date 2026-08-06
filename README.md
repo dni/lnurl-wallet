@@ -34,13 +34,19 @@ JSON:
 
 | Request                       | Result                                                         |
 | ----------------------------- | -------------------------------------------------------------- |
-| `callback?k1=X&pr=<bolt11>`   | **melt**: X burned, `pr` (of exactly its value) paid           |
+| `callback?k1=X&pr=<bolt11>`   | **melt**: X burned once `pr` (of exactly its value) settles    |
 | `callback?k1=X`               | **rotate**: X burned, `{"status":"OK","k1":X'}` same value     |
 | `callback?k1=X&amount=<msat>` | **split**: X burned, response carries `k1` (amount) + `change` |
 | `callback?k1=X&k1=Y`          | **merge**: all burned, one note worth the sum returned         |
 
 Melt only ever takes a single `k1` - merge several notes first to melt them
-together in one payment (a bare multi-`k1` melt was removed from the spec).
+together in one payment. `{"status":"OK"}` from a melt only means the
+payment is now on its way, not that the note is confirmed spent - the
+service pays it out asynchronously and only finalizes the burn once that
+settles, restoring the note if it fails instead (rejecting any other
+callback naming that `k1` with `{"status":"ERROR","reason":"pending"}` in
+the meantime). This wallet leaves a just-melted note in place rather than
+assume success; refresh confirms it once the note is actually gone.
 
 **Minting**: a [LUD-06](https://github.com/lnurl/luds/blob/luds/06.md)
 payRequest advertising `withdrawLink` mints notes - the **payment
@@ -52,12 +58,23 @@ the preimage on the wire - before storing the note, same as it does for a
 scanned or pasted note.
 
 **Offline verification (optional)**: a service MAY publish a `mintPubkey`
-and sign each fresh secret it hands out (on rotate/split/merge), letting a
-holder verify issuer and amount without a network round trip - the
-signature travels as one more query param, `&sig=<hex>`, ignored by wallets
-that don't check it. This wallet verifies it whenever it already knows a
-note's service pubkey and shows a "signed" badge on a match; `lnurl-mint`
-doesn't implement signing yet, so its notes never show one.
+on its withdrawRequest response and sign each fresh secret it hands out (on
+rotate/split/merge), letting a holder verify issuer and amount without a
+network round trip. The signature is made the same way LUD-13 signs its
+auth seed phrase - a Lightning node's own `signmessage`:
+
+```
+message = "LNURLcash:" || amount_msat (decimal) || ":" || hex(sha256(k1))
+digest  = sha256(sha256("Lightning Signed Message:" || message))
+```
+
+and travels as one more query param, `&sig=<hex>`, ignored by wallets that
+don't check it. This wallet verifies it whenever it already knows a note's
+service pubkey and shows a "signed" badge on a match - tolerating both the
+spec text's `r ‖ s ‖ recovery-id` (trailing) wire layout and the
+recovery-id-leading layout at least one real implementation
+(`lnurl-mint`, as of this writing) sends instead, trying both rather than
+hard-failing real notes over a byte-order mismatch.
 
 The wallet follows the spec's security guidance:
 
@@ -109,14 +126,15 @@ against stale copies - after restoring an old backup, rotate what you hold.
 
 ## Note on lnurl-mint
 
-[lnurl-mint](https://github.com/dni/lnurl-mint) currently implements an
-earlier draft of LUD-XX: it still accepts the removed `?id=` hash lookup
-and multi-`k1` melt, echoes back an opaque id (not the real secret) for
-`?id=` lookups, and returns no `amount`/`signature`/`mintPubkey`. This
-wallet only relies on the parts of the protocol still current, which
-lnurl-mint continues to serve correctly - but it won't show declared
-amounts or the offline-verified "signed" badge against it until it's
-updated to match.
+[lnurl-mint](https://github.com/dni/lnurl-mint) tracks this spec closely and
+implements offline verification when a funding source is configured
+(`mintPubkey` + signing via the node's own `signmessage`), but its
+`sign_note` currently sends the recovery-id-leading byte layout rather than
+the spec text's trailing one - see Offline verification above for how this
+wallet tolerates both. Its melt is also synchronous (the HTTP response
+doesn't return until the outgoing payment has already settled or
+confirmably failed) rather than exposing the spec's async pending window,
+which is a stricter special case of it, not a violation.
 
 ## Development
 

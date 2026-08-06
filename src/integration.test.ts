@@ -20,15 +20,13 @@ import {receiveNote, secureReceivedNote} from './receive'
 //   # seed: INSERT INTO notes (id, amount_msat) VALUES (sha256(k1), 21000)
 //   MINT_K1=<k1> npm test
 //
-// Note: lnurl-mint currently implements an earlier draft of LUD-XX (it
-// still accepts the now-removed ?id= hash lookup and multi-k1 melt, and
-// doesn't return `amount`/`signature`/`mintPubkey`) - this test only
-// exercises what the current spec and this wallet actually use, which
-// remains a subset the mint still serves correctly.
+// Without a funding source configured, melt fails (no way to pay out) and
+// signatures/mintPubkey are omitted - both still exercised for their
+// documented no-funding-source behavior, not their happy path.
 declare const process: {env: Record<string, string | undefined>}
 
 const K1 = process.env.MINT_K1!
-const WITHDRAW = 'http://localhost:8137/withdraw'
+const WITHDRAW = 'http://localhost:8137/w'
 
 describe.runIf(!!process.env.MINT_K1)('against a live lnurl-mint', () => {
   it('receive -> rotate -> split -> merge, spec-compliantly', async () => {
@@ -39,7 +37,7 @@ describe.runIf(!!process.env.MINT_K1)('against a live lnurl-mint', () => {
     const received = await receiveNote(toBech32Lnurl(url), [])
     expect(received.verified).toBe(true)
     expect(received.amount).toBe(21000)
-    expect(received.callback).toBe('http://localhost:8137/withdraw/cb')
+    expect(received.callback).toBe('http://localhost:8137/w/cb')
 
     // rotate-on-receive: burns the handed-over secret
     const rotatedUrl = await secureReceivedNote(received)

@@ -140,24 +140,36 @@ describe('preimage', () => {
 })
 
 describe('offline signature verification', () => {
-  it('verifies a signature made over LNURLcash/note || amount || sha256(k1)', () => {
+  // signed the same way LUD-13 signs its auth seed phrase - the standard
+  // Lightning `signmessage` double-sha256 wrapping, over a message that
+  // embeds the amount as decimal ASCII (not binary) and sha256(k1) as hex
+  // (not raw bytes)
+  const signAsMint = (
+    priv: Uint8Array,
+    k1: string,
+    amountMsat: number
+  ): string => {
+    const k1Hash = bytesToHex(sha256(hexToBytes(k1)))
+    const message = utf8ToBytes(`LNURLcash:${amountMsat}:${k1Hash}`)
+    const digest = sha256(
+      sha256(
+        new Uint8Array([
+          ...utf8ToBytes('Lightning Signed Message:'),
+          ...message
+        ])
+      )
+    )
+    // library's 'recovered' format is empirically recovery-id-first (rec ||
+    // r || s) - the spec's wire format is r || s || recovery-id, so reorder
+    const libSig = secp256k1.sign(digest, priv, {format: 'recovered'})
+    return bytesToHex(new Uint8Array([...libSig.subarray(1), libSig[0]]))
+  }
+
+  it('verifies a signature made per the LUD-XX Lightning-signmessage scheme', () => {
     const priv = secp256k1.utils.randomSecretKey()
     const pubHex = bytesToHex(secp256k1.getPublicKey(priv, true))
-
-    // sign exactly the message verifyNoteSignature reconstructs, using the
-    // library's 'recovered' format - empirically recovery-id-first (rec ||
-    // r || s), matching the spec's byte order
     const amountMsat = 21000
-    const view = new DataView(new ArrayBuffer(8))
-    view.setBigUint64(0, BigInt(amountMsat), false)
-    const msg = sha256(
-      new Uint8Array([
-        ...utf8ToBytes('LNURLcash/note'),
-        ...new Uint8Array(view.buffer),
-        ...sha256(hexToBytes(K1))
-      ])
-    )
-    const sigHex = bytesToHex(secp256k1.sign(msg, priv, {format: 'recovered'}))
+    const sigHex = signAsMint(priv, K1, amountMsat)
 
     expect(verifyNoteSignature(K1, amountMsat, sigHex, pubHex)).toBe(true)
     expect(verifyNoteSignature(K1, amountMsat + 1, sigHex, pubHex)).toBe(false)
@@ -170,9 +182,38 @@ describe('offline signature verification', () => {
     expect(verifyNoteSignature(K1, amountMsat, sigHex, otherPub)).toBe(false)
   })
 
+  it('also verifies the recovery-id-leading layout lnurl-mint actually sends', () => {
+    // lnurl-mint's sign_note forwards its Lightning node's signmessage RPC
+    // output unreordered (recovery-id || r || s), rather than the spec
+    // text's r || s || recovery-id - real-world interop needs both
+    const priv = secp256k1.utils.randomSecretKey()
+    const pubHex = bytesToHex(secp256k1.getPublicKey(priv, true))
+    const amountMsat = 6000
+    const k1Hash = bytesToHex(sha256(hexToBytes(K1)))
+    const message = utf8ToBytes(`LNURLcash:${amountMsat}:${k1Hash}`)
+    const digest = sha256(
+      sha256(
+        new Uint8Array([
+          ...utf8ToBytes('Lightning Signed Message:'),
+          ...message
+        ])
+      )
+    )
+    const leadingSigHex = bytesToHex(
+      secp256k1.sign(digest, priv, {format: 'recovered'})
+    )
+    expect(verifyNoteSignature(K1, amountMsat, leadingSigHex, pubHex)).toBe(
+      true
+    )
+  })
+
   it('rejects garbage signatures without throwing', () => {
     expect(verifyNoteSignature(K1, 1000, 'not-hex', 'ab'.repeat(33))).toBe(
       false
     )
+    // wrong length (not 65 bytes)
+    expect(
+      verifyNoteSignature(K1, 1000, 'ab'.repeat(10), 'ab'.repeat(33))
+    ).toBe(false)
   })
 })

@@ -27,9 +27,15 @@ import {bytesToHex, hexToBytes, utf8ToBytes} from '@noble/hashes/utils.js'
 // the note.
 //
 // Offline verification (optional): a SERVICE MAY publish a `mintPubkey`
-// (33-byte compressed secp256k1, hex) and sign rotated/split/merged notes,
-// letting a holder verify issuer+amount without contacting SERVICE. See
-// verifyNoteSignature below.
+// (33-byte compressed secp256k1, hex) on the withdrawRequest response and
+// sign rotated/split/merged notes, letting a holder verify issuer+amount
+// without contacting SERVICE. See verifyNoteSignature below.
+//
+// A melt's {"status":"OK"} only means the payment is now in flight - the
+// note isn't confirmed spent until it settles, and is restored to
+// outstanding if it fails (see meltNote). Any other callback naming a k1
+// that's mid-melt is rejected with {"status":"ERROR","reason":"pending"}
+// until it resolves one way or the other.
 
 // ---- LUD-01 bech32 encoding ----
 
@@ -201,40 +207,57 @@ export const serverOf = (url: string): string => {
 
 // ---- offline verification (optional) ----
 
-// msg = sha256("LNURLcash/note" || uint64_be(amount_msat) || sha256(k1))
-const NOTE_SIG_DOMAIN = utf8ToBytes('LNURLcash/note')
+// Signed the same way LUD-13 signs its auth seed phrase - the standard
+// Lightning node `signmessage` wrapping:
+//   message = "LNURLcash:" || amount_msat (decimal ASCII) || ":" || hex(sha256(k1))
+//   digest  = sha256(sha256("Lightning Signed Message:" || message))
+const LIGHTNING_SIGNED_MESSAGE_PREFIX = utf8ToBytes('Lightning Signed Message:')
 
-const uint64be = (n: number): Uint8Array => {
-  const bytes = new Uint8Array(8)
-  new DataView(bytes.buffer).setBigUint64(0, BigInt(n), false)
-  return bytes
+const noteSignatureDigest = (k1: string, amountMsat: number): Uint8Array => {
+  const k1Hash = bytesToHex(sha256(hexToBytes(k1)))
+  const message = utf8ToBytes(`LNURLcash:${amountMsat}:${k1Hash}`)
+  return sha256(
+    sha256(new Uint8Array([...LIGHTNING_SIGNED_MESSAGE_PREFIX, ...message]))
+  )
 }
 
-const noteSignatureMessage = (k1: string, amountMsat: number): Uint8Array =>
-  sha256(
-    new Uint8Array([
-      ...NOTE_SIG_DOMAIN,
-      ...uint64be(amountMsat),
-      ...sha256(hexToBytes(k1))
-    ])
-  )
-
 // recovers the signer's pubkey from (k1, amountMsat, signature) and checks
-// it against `mintPubkey` - true only if both match. `signature` is the
-// spec's 65-byte recoverable form (recovery id || r || s, hex).
+// it against `mintPubkey` - true only if both match. `signature` is 65
+// bytes, but which end carries the recovery id varies by mint in practice:
+// the spec text calls for r || s || recovery-id (trailing - the same
+// layout raw BOLT-11 signatures use), but at least one real implementation
+// (lnurl-mint, as of this writing) instead sends its underlying Lightning
+// node's signmessage RPC output unreordered - recovery-id || r || s
+// (leading). Trying both candidate orderings costs nothing security-wise
+// (recovering against the wrong one just yields an unrelated pubkey that
+// won't match mintPubkey) and means a note verifies correctly regardless
+// of which convention its issuer actually followed.
 export const verifyNoteSignature = (
   k1: string,
   amountMsat: number,
   signatureHex: string,
   mintPubkeyHex: string
 ): boolean => {
+  let wireSig: Uint8Array
   try {
-    const msg = noteSignatureMessage(k1, amountMsat)
-    const recovered = secp256k1.recoverPublicKey(hexToBytes(signatureHex), msg)
-    return bytesToHex(recovered) === mintPubkeyHex.toLowerCase()
+    wireSig = hexToBytes(signatureHex)
   } catch {
     return false
   }
+  if (wireSig.length !== 65) return false
+  const digest = noteSignatureDigest(k1, amountMsat)
+  const target = mintPubkeyHex.toLowerCase()
+  const trailing = new Uint8Array([wireSig[64], ...wireSig.subarray(0, 64)])
+  const leading = wireSig
+  for (const candidate of [trailing, leading]) {
+    try {
+      const recovered = secp256k1.recoverPublicKey(candidate, digest)
+      if (bytesToHex(recovered) === target) return true
+    } catch {
+      // not a valid recovery under this ordering - try the other one
+    }
+  }
+  return false
 }
 
 // ---- protocol requests ----
@@ -310,7 +333,19 @@ const callbackRequest = async (
   const cbUrl = new URL(callback)
   // append (not set): merge repeats the k1 param
   for (const [key, value] of params) cbUrl.searchParams.append(key, value)
-  const body = await lnurlFetch(cbUrl)
+  let body: any
+  try {
+    body = await lnurlFetch(cbUrl)
+  } catch (err) {
+    // a k1 already mid-melt (see meltNote) rejects any other callback
+    // naming it with this exact reason string, verbatim per spec
+    if ((err as Error).message === 'pending') {
+      throw new Error(
+        'This note has another operation in progress - try again in a moment.'
+      )
+    }
+    throw err
+  }
   if (body?.status !== 'OK') {
     throw new Error('Operation was not confirmed by the service.')
   }
@@ -319,7 +354,12 @@ const callbackRequest = async (
 
 // melt: burn a single note, the service pays `pr` of exactly its value -
 // merge first to melt several notes in one payment (the spec dropped
-// multi-k1 melt).
+// multi-k1 melt). `{"status":"OK"}` here only means the payment is now in
+// flight, NOT that the note is confirmed spent: SERVICE pays pr
+// asynchronously and only finalizes the burn once it settles, restoring
+// the note to outstanding if the payment fails instead. Callers should
+// treat this as "melt requested," not "melt done" - see BearerCard's melt
+// action for how that plays out in the UI.
 export const meltNote = async (
   callback: string,
   k1: string,
@@ -403,6 +443,12 @@ export type PayRequestInfo = {
   // LUD-XX: present when paying this mints a bearer note - the payment
   // preimage becomes a valid k1 at this (raw LUD-17) withdraw endpoint
   withdrawLink?: string
+  // rarely present here in practice: a WALLET that pays the invoice can
+  // recover SERVICE's node id straight from its own BOLT-11 signature, so
+  // the spec only has SERVICE publish mintPubkey where there's no invoice
+  // to recover it from - the withdrawRequest response, for rotated/split/
+  // merged notes. Kept optional here too since nothing forbids a SERVICE
+  // from including it anyway.
   mintPubkey?: string
 }
 
