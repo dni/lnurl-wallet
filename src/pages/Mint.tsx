@@ -223,11 +223,10 @@ const Mint: Component = () => {
     }
   }
 
+  // shared by the manual "Claim note" buttons and checkVerify's automatic
+  // claim once LUD-21 verify returns a preimage - rotates unconditionally
+  // right after verifying, in both cases, no separate confirmation step
   const claim = async (preimageValue: string, amountMsat?: number) => {
-    // guards against the auto-poll firing a claim while one is already in
-    // flight (manual or automatic) - the disabled buttons only prevent
-    // that for clicks, not for checkVerify's own timer-triggered call
-    if (busy()) return
     const info = payRequest()
     if (!info?.withdrawLink) return
     if (!isPreimage(preimageValue)) {
