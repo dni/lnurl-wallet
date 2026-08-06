@@ -1,5 +1,14 @@
+import {readFileSync} from 'node:fs'
+import {fileURLToPath} from 'node:url'
 import {defineConfig} from 'vite'
 import solidPlugin from 'vite-plugin-solid'
+
+const pkg = JSON.parse(
+  readFileSync(
+    fileURLToPath(new URL('./package.json', import.meta.url)),
+    'utf-8'
+  )
+)
 
 export default defineConfig({
   plugins: [solidPlugin()],
@@ -12,5 +21,10 @@ export default defineConfig({
   },
   build: {
     target: 'esnext'
+  },
+  // Footer shows this - a compile-time constant instead of a hand-kept-
+  // in-sync copy of package.json's own version
+  define: {
+    __APP_VERSION__: JSON.stringify(pkg.version)
   }
 })

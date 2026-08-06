@@ -20,7 +20,7 @@ const luds = Object.keys(LUD_TITLES)
 const Footer = () => {
   return (
     <footer class="footer">
-      <span>LNURLwallet v0.0.4</span>
+      <span>LNURLwallet v{__APP_VERSION__}</span>
       &nbsp;|&nbsp;
       <a href="https://github.com/dni/lnurl-wallet" target="_blank">
         <AiFillGithub />
