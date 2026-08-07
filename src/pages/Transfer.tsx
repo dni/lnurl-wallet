@@ -12,40 +12,30 @@ import {useWallet} from '../WalletContext'
 import {isValidNoteInput, isBolt11Invoice} from '../lnurlcash'
 import {receiveNote, secureReceivedNote} from '../receive'
 import {notify, NotifyKind, msatToSats, pasteFromClipboard} from '../helpers'
+import Scanner from '../components/Scanner'
 import RequireWallet from '../components/RequireWallet'
 
-const Paste: Component = () => {
+// bringing a note into this wallet, scanned or pasted - same destination
+// either way, so one page covers both instead of sending the holder to
+// pick an input method up front
+const Transfer: Component = () => {
   const {addBearer, updateBearer, bearers} = useWallet()
   const navigate = useNavigate()
   let pasteRef: HTMLInputElement | null = null
   const [value, setValue] = createSignal('')
   const [busy, setBusy] = createSignal(false)
 
-  // an empty field isn't "invalid" - just nothing to show feedback about yet
   const isValid = createMemo(
     () =>
       value() === '' || isValidNoteInput(value()) || isBolt11Invoice(value())
   )
 
-  const handle = async () => {
-    if (value() === '') return
-    if (isBolt11Invoice(value())) {
-      // this wallet has no Lightning node of its own - paying one is its
-      // own dialog on the Melt page, reachable from the main nav
-      navigate(`/melt?pr=${encodeURIComponent(value().trim())}`)
-      setValue('')
-      return
-    }
-    if (!isValidNoteInput(value())) {
-      notify(
-        'Not a valid LNURLcash bearer note or bolt11 invoice.',
-        NotifyKind.ERROR
-      )
-      return
-    }
+  // shared by both the scanner and the paste field once they've settled on
+  // a valid bearer note
+  const receiveIntoWallet = async (noteValue: string) => {
     setBusy(true)
     try {
-      const received = await receiveNote(value(), bearers())
+      const received = await receiveNote(noteValue, bearers())
       const bearer = await addBearer(received)
       setValue('')
       if (!received.verified) {
@@ -79,27 +69,71 @@ const Paste: Component = () => {
     }
   }
 
+  // this wallet has no Lightning node of its own - paying an invoice is its
+  // own dialog on the Melt page, reachable from the main nav
+  const goToMelt = (pr: string) =>
+    navigate(`/melt?pr=${encodeURIComponent(pr.trim())}`)
+
+  const onScan = (scanned: string) => {
+    if (isBolt11Invoice(scanned)) {
+      goToMelt(scanned)
+      return
+    }
+    receiveIntoWallet(scanned)
+  }
+
+  const handlePaste = async () => {
+    if (value() === '') return
+    if (isBolt11Invoice(value())) {
+      goToMelt(value())
+      setValue('')
+      return
+    }
+    if (!isValidNoteInput(value())) {
+      notify(
+        'Not a valid LNURLcash bearer note or bolt11 invoice.',
+        NotifyKind.ERROR
+      )
+      return
+    }
+    await receiveIntoWallet(value())
+  }
+
   const paste = async () => {
     const text = await pasteFromClipboard()
     if (text !== null) {
       setValue(text)
       pasteRef?.focus()
-      handle()
+      handlePaste()
     }
   }
 
   const onKeydown = (e: KeyboardEvent) => {
     if (e.key === 'Enter') {
       e.preventDefault()
-      handle()
+      handlePaste()
     }
   }
 
   return (
     <RequireWallet>
-      <div id="paste" class="page">
-        <h2>Paste a bearer note or invoice</h2>
+      <div id="transfer" class="page">
+        <h2>Bring in a bearer note</h2>
+        <figure class="setup-card">
+          <figcaption>
+            Point the camera at a note QR (<code>lnurl1...</code> or{' '}
+            <code>lnurlw://...?k1=...</code>) - a bolt11 invoice QR goes
+            straight to Melt instead
+          </figcaption>
+          <Show when={!busy()} fallback={<p>Adding note...</p>}>
+            <Scanner
+              onScan={onScan}
+              accept={v => isValidNoteInput(v) || isBolt11Invoice(v)}
+            />
+          </Show>
+        </figure>
         <figure class="paste-widget">
+          <figcaption>...or paste one instead</figcaption>
           <div class="paste-input-row">
             <button
               type="button"
@@ -136,7 +170,7 @@ const Paste: Component = () => {
               class="icon-btn paste-confirm-btn"
               title="Add to wallet"
               disabled={busy() || value() === '' || !isValid()}
-              onClick={handle}
+              onClick={handlePaste}
             >
               <Show when={busy()} fallback={<IoReturnDownForwardSharp />}>
                 <IoRefreshSharp class="spin" />
@@ -154,4 +188,4 @@ const Paste: Component = () => {
     </RequireWallet>
   )
 }
-export default Paste
+export default Transfer

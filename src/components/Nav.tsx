@@ -5,8 +5,7 @@ import {
   IoCloseSharp,
   IoWalletSharp,
   IoAddCircleSharp,
-  IoQrCodeSharp,
-  IoClipboardSharp,
+  IoSwapHorizontalSharp,
   IoFlameSharp,
   IoLockClosedSharp,
   IoSaveSharp,
@@ -55,21 +54,17 @@ const Nav = () => {
             </A>
           </Show>
           <Show when={state() === 'unlocked'}>
+            <A href="/melt" class="nav-link">
+              <IoFlameSharp />
+              &nbsp;Melt
+            </A>
             <A href="/mint" class="nav-link">
               <IoAddCircleSharp />
               &nbsp;Mint
             </A>
-            <A href="/scan" class="nav-link">
-              <IoQrCodeSharp />
-              &nbsp;Scan
-            </A>
-            <A href="/paste" class="nav-link">
-              <IoClipboardSharp />
-              &nbsp;Paste
-            </A>
-            <A href="/melt" class="nav-link">
-              <IoFlameSharp />
-              &nbsp;Melt
+            <A href="/transfer" class="nav-link">
+              <IoSwapHorizontalSharp />
+              &nbsp;Transfer
             </A>
           </Show>
         </div>

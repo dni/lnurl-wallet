@@ -1,6 +1,5 @@
 import type {Component} from 'solid-js'
 import {Show, createSignal, onCleanup, onMount} from 'solid-js'
-import {A} from '@solidjs/router'
 import jsQR from 'jsqr'
 
 export type ScannerProps = {
@@ -104,9 +103,7 @@ const Scanner: Component<ScannerProps> = props => {
         <video ref={videoRef} class="scanner" playsinline muted />
       }
     >
-      <p class="warning">
-        {error()} Use the <A href="/paste">Paste</A> action instead.
-      </p>
+      <p class="warning">{error()} Paste the note instead, below.</p>
     </Show>
   )
 }

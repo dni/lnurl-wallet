@@ -3,8 +3,7 @@ import {Show, For, createSignal, createMemo} from 'solid-js'
 import {A} from '@solidjs/router'
 import {
   IoAddCircleSharp,
-  IoQrCodeSharp,
-  IoClipboardSharp,
+  IoSwapHorizontalSharp,
   IoGitMergeSharp,
   IoLockOpenSharp,
   IoRefreshSharp,
@@ -209,13 +208,9 @@ const Wallet: Component = () => {
                     <IoAddCircleSharp />
                     &nbsp;Mint
                   </A>
-                  <A href="/scan" class="hero-btn hero-btn-primary">
-                    <IoQrCodeSharp />
-                    &nbsp;Scan
-                  </A>
-                  <A href="/paste" class="hero-btn hero-btn-primary">
-                    <IoClipboardSharp />
-                    &nbsp;Paste
+                  <A href="/transfer" class="hero-btn hero-btn-primary">
+                    <IoSwapHorizontalSharp />
+                    &nbsp;Transfer
                   </A>
                 </div>
               </section>
