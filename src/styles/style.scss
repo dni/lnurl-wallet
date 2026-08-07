@@ -99,17 +99,38 @@ h2 {
   font-size: 1.3em;
   margin-bottom: 0;
 }
-.page-header {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-  margin-bottom: 10px;
+.wallet-hero {
+  margin: 0 0 21px 0;
+  padding: 20px 24px;
+  border-radius: 8px;
+  background: rgba($bg, $transparency);
   h2 {
-    margin-bottom: 0;
+    margin: 0 0 14px 0;
   }
 }
+
+.wallet-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+  margin-bottom: 14px;
+}
+
+.wallet-stat {
+  display: flex;
+  flex-direction: column;
+}
+
+.wallet-stat-value {
+  font-weight: bold;
+  font-size: 1.4em;
+}
+
+.wallet-stat-label {
+  font-size: 0.85em;
+  opacity: 0.7;
+}
+
 h4 {
   margin-bottom: 6px;
 }

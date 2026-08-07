@@ -8,7 +8,8 @@ import {
   IoGitMergeSharp,
   IoLockOpenSharp,
   IoRefreshSharp,
-  IoBanSharp
+  IoBanSharp,
+  IoTrashSharp
 } from 'solid-icons/io'
 
 import {useWallet, groupByServer} from '../WalletContext'
@@ -24,15 +25,22 @@ const Wallet: Component = () => {
   const [selected, setSelected] = createSignal<Set<string>>(new Set())
   const [combining, setCombining] = createSignal(false)
   const [showSpent, setShowSpent] = createSignal(false)
+  const [confirmClearSpent, setConfirmClearSpent] = createSignal(false)
 
-  // the header total is always the spendable balance (excludes spent
-  // notes), regardless of whether the toggle is currently revealing them -
-  // otherwise "Your LNURLcash" would count sats that aren't actually yours
-  // to spend anymore
+  // the hero's balance/mint count is always the spendable view (excludes
+  // spent notes), regardless of whether the toggle is currently revealing
+  // them - otherwise "Total balance" would count sats that aren't actually
+  // yours to spend anymore
   const spendableBearers = createMemo(() => bearers().filter(b => !b.spent))
-  const spentCount = createMemo(
-    () => bearers().length - spendableBearers().length
+  const spentBearers = createMemo(() => bearers().filter(b => b.spent))
+  const spentCount = createMemo(() => spentBearers().length)
+  const spendableTotal = createMemo(() =>
+    spendableBearers().reduce((sum, b) => sum + b.amount, 0)
   )
+  const spentTotal = createMemo(() =>
+    spentBearers().reduce((sum, b) => sum + b.amount, 0)
+  )
+  const mintCount = createMemo(() => groupByServer(spendableBearers()).length)
   const visibleBearers = createMemo(() =>
     showSpent() ? bearers() : spendableBearers()
   )
@@ -107,6 +115,20 @@ const Wallet: Component = () => {
     } finally {
       setCombining(false)
     }
+  }
+
+  // a bulk version of BearerCard's own per-note Clear - each spent note is
+  // just a local record at this point (see storage.ts's Bearer.spent), so
+  // this is a plain local removal, not a service call
+  const clearAllSpent = () => {
+    const spent = spentBearers()
+    for (const bearer of spent) removeBearer(bearer.id)
+    setConfirmClearSpent(false)
+    setShowSpent(false)
+    notify(
+      `Cleared ${spent.length} spent note${spent.length === 1 ? '' : 's'}.`,
+      NotifyKind.SUCCESS
+    )
   }
 
   return (
@@ -189,35 +211,73 @@ const Wallet: Component = () => {
           }
         >
           <div id="wallet" class="page">
-            <div class="page-header">
-              <h2>
-                Your LNURLcash&nbsp;·&nbsp;
-                {msatToSats(
-                  spendableBearers().reduce((sum, b) => sum + b.amount, 0)
-                )}{' '}
-                sats
-              </h2>
+            <section class="wallet-hero">
+              <h2>Your LNURLcash</h2>
+              <div class="wallet-stats">
+                <div class="wallet-stat">
+                  <span class="wallet-stat-value">
+                    {msatToSats(spendableTotal())} sats
+                  </span>
+                  <span class="wallet-stat-label">Total balance</span>
+                </div>
+                <div class="wallet-stat">
+                  <span class="wallet-stat-value">{mintCount()}</span>
+                  <span class="wallet-stat-label">
+                    {mintCount() === 1 ? 'Mint' : 'Mints'}
+                  </span>
+                </div>
+                <Show when={spentCount() > 0}>
+                  <div class="wallet-stat">
+                    <span class="wallet-stat-value">
+                      {msatToSats(spentTotal())} sats
+                    </span>
+                    <span class="wallet-stat-label">
+                      Spent&nbsp;·&nbsp;{spentCount()}
+                    </span>
+                  </div>
+                </Show>
+              </div>
               <Show when={spentCount() > 0}>
-                <label
-                  class="switch-control"
-                  title="Spent notes are locally locked (melted, transferred, or marked by hand) - this just shows or hides them, it doesn't change anything about them"
-                >
-                  <IoBanSharp />
-                  <span>
-                    Show spent
-                    <Show when={!showSpent()}>&nbsp;({spentCount()})</Show>
-                  </span>
-                  <span class="switch">
-                    <input
-                      type="checkbox"
-                      checked={showSpent()}
-                      onChange={e => setShowSpent(e.currentTarget.checked)}
-                    />
-                    <span class="switch-track"></span>
-                  </span>
-                </label>
+                <div class="btns">
+                  <label
+                    class="switch-control"
+                    title="Spent notes are locally locked (melted, transferred, or marked by hand) - this just shows or hides them, it doesn't change anything about them"
+                  >
+                    <IoBanSharp />
+                    <span>
+                      Show spent
+                      <Show when={!showSpent()}>&nbsp;({spentCount()})</Show>
+                    </span>
+                    <span class="switch">
+                      <input
+                        type="checkbox"
+                        checked={showSpent()}
+                        onChange={e => setShowSpent(e.currentTarget.checked)}
+                      />
+                      <span class="switch-track"></span>
+                    </span>
+                  </label>
+                  <button onClick={() => setConfirmClearSpent(true)}>
+                    <IoTrashSharp />
+                    &nbsp;Clear all spent
+                  </button>
+                </div>
+                <Show when={confirmClearSpent()}>
+                  <p class="warning">
+                    Clear all {spentCount()} spent note
+                    {spentCount() === 1 ? '' : 's'} from the wallet? If any of
+                    them turn out not to have actually been spent, those sats
+                    are gone unless you saved them elsewhere.
+                  </p>
+                  <div class="btns">
+                    <button onClick={clearAllSpent}>Clear all</button>
+                    <button onClick={() => setConfirmClearSpent(false)}>
+                      Cancel
+                    </button>
+                  </div>
+                </Show>
               </Show>
-            </div>
+            </section>
             <Show when={selectedBearers().length > 0}>
               <div class="combine-bar">
                 <span>
