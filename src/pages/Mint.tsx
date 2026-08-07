@@ -1,7 +1,12 @@
 import type {Component} from 'solid-js'
 import {Show, For, createSignal, onCleanup} from 'solid-js'
 import {useNavigate} from '@solidjs/router'
-import {IoRefreshSharp} from 'solid-icons/io'
+import {
+  IoRefreshSharp,
+  IoClipboardSharp,
+  IoCloseSharp,
+  IoReturnDownForwardSharp
+} from 'solid-icons/io'
 
 import {useWallet} from '../WalletContext'
 import type {PayRequestInfo} from '../lnurlcash'
@@ -22,10 +27,12 @@ import {
   NotifyKind,
   msatToSats,
   satsToMsat,
-  copyToClipboard
+  copyToClipboard,
+  pasteFromClipboard
 } from '../helpers'
 import {isMintTrusted, addTrustedMint, trustedMints} from '../trustedMints'
 import Qr from '../components/Qr'
+import ScanToggle from '../components/ScanToggle'
 import RequireWallet from '../components/RequireWallet'
 
 type Mode = 'invoice' | 'preimage'
@@ -189,10 +196,16 @@ const Mint: Component = () => {
   }
 
   // click-to-select from either list below: fills the input and looks it
-  // up immediately, same as typing it in and pressing enter
+  // up immediately, same as typing it in and pressing enter - also what a
+  // scanned or pasted mint address goes through
   const selectMint = (address: string) => {
     setMintInput(address)
     lookup()
+  }
+
+  const pasteMint = async () => {
+    const text = await pasteFromClipboard()
+    if (text !== null) selectMint(text)
   }
 
   const confirmTrust = () => {
@@ -317,22 +330,51 @@ const Mint: Component = () => {
     <RequireWallet>
       <div id="mint" class="page">
         <h2>Mint a bearer note</h2>
-        <figure class="setup-card">
+        <figure class="paste-widget">
           <label>Mint (LNURL or Lightning Address)</label>
-          <input
-            type="text"
-            placeholder="lnurl1... or mint@example.com"
-            value={mintInput()}
-            onInput={e => setMintInput(e.currentTarget.value)}
-            onKeyDown={e => e.key === 'Enter' && lookup()}
-          />
-          <div class="btns">
-            <button disabled={busy()} onClick={lookup}>
-              <Show when={busy()}>
-                <IoRefreshSharp class="spin" />
-                &nbsp;
+          <div class="paste-input-row">
+            <ScanToggle
+              onScan={selectMint}
+              accept={v => resolveMintInput(v) !== null}
+            />
+            <button
+              type="button"
+              class="icon-btn paste-icon-btn"
+              title="Paste from clipboard"
+              onClick={pasteMint}
+            >
+              <IoClipboardSharp />
+            </button>
+            <div class="paste-input-wrapper">
+              <input
+                type="text"
+                class="paste-input"
+                placeholder="lnurl1... or mint@example.com"
+                value={mintInput()}
+                onInput={e => setMintInput(e.currentTarget.value)}
+                onKeyDown={e => e.key === 'Enter' && lookup()}
+              />
+              <Show when={mintInput() !== ''}>
+                <button
+                  type="button"
+                  class="icon-btn paste-clear-btn"
+                  title="Clear"
+                  onClick={() => setMintInput('')}
+                >
+                  <IoCloseSharp />
+                </button>
               </Show>
-              Look up mint
+            </div>
+            <button
+              type="button"
+              class="icon-btn paste-confirm-btn"
+              title="Look up mint"
+              disabled={busy() || mintInput() === ''}
+              onClick={lookup}
+            >
+              <Show when={busy()} fallback={<IoReturnDownForwardSharp />}>
+                <IoRefreshSharp class="spin" />
+              </Show>
             </button>
           </div>
         </figure>
