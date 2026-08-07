@@ -54,13 +54,13 @@ const Nav = () => {
             </A>
           </Show>
           <Show when={state() === 'unlocked'}>
-            <A href="/melt" class="nav-link">
-              <IoFlameSharp />
-              &nbsp;Melt
-            </A>
             <A href="/mint" class="nav-link">
               <IoAddCircleSharp />
               &nbsp;Mint
+            </A>
+            <A href="/melt" class="nav-link">
+              <IoFlameSharp />
+              &nbsp;Melt
             </A>
             <A href="/transfer" class="nav-link">
               <IoSwapHorizontalSharp />
