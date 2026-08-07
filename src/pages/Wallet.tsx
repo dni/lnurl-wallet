@@ -73,6 +73,19 @@ const Wallet: Component = () => {
     })
   }
 
+  // bulk version for MintGroupCard's select/deselect all - one signal
+  // write for the whole group instead of N individual toggleSelect calls
+  const selectMany = (ids: string[], isSelected: boolean) => {
+    setSelected(prev => {
+      const next = new Set(prev)
+      for (const id of ids) {
+        if (isSelected) next.add(id)
+        else next.delete(id)
+      }
+      return next
+    })
+  }
+
   const unlockWallet = async (e: Event) => {
     e.preventDefault()
     setUnlocking(true)
@@ -313,7 +326,12 @@ const Wallet: Component = () => {
               <For each={groupByServer(visibleBearers())}>
                 {([server, group]) => (
                   <section class="server-group">
-                    <MintGroupCard server={server} group={group} />
+                    <MintGroupCard
+                      server={server}
+                      group={group}
+                      selected={selected()}
+                      onSelectAll={selectMany}
+                    />
                     <div class="bearer-list">
                       <For each={group}>
                         {bearer => (

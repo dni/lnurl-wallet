@@ -4,7 +4,9 @@ import {
   IoCopySharp,
   IoGitMergeSharp,
   IoSwapHorizontalSharp,
-  IoRefreshSharp
+  IoRefreshSharp,
+  IoCheckboxSharp,
+  IoSquareOutline
 } from 'solid-icons/io'
 
 import type {Bearer} from '../storage'
@@ -23,6 +25,8 @@ import Qr from './Qr'
 export type MintGroupCardProps = {
   server: string
   group: Bearer[]
+  selected: Set<string>
+  onSelectAll: (ids: string[], isSelected: boolean) => void
 }
 
 const MintGroupCard: Component<MintGroupCardProps> = props => {
@@ -62,6 +66,17 @@ const MintGroupCard: Component<MintGroupCardProps> = props => {
       props.group.length === 1 &&
       props.group[0].callback !== '' &&
       !props.group[0].spent
+  )
+
+  // select/deselect all: only unspent notes are ever selectable (see
+  // BearerCard, whose own checkbox is disabled once a note is spent)
+  const selectableIds = createMemo(() =>
+    props.group.filter(b => !b.spent).map(b => b.id)
+  )
+  const allSelected = createMemo(
+    () =>
+      selectableIds().length > 0 &&
+      selectableIds().every(id => props.selected.has(id))
   )
 
   const combineAll = async () => {
@@ -130,6 +145,18 @@ const MintGroupCard: Component<MintGroupCardProps> = props => {
           onClick={() => copyToClipboard(mintPubkey()!)}
         >
           <IoCopySharp />
+        </button>
+        <button
+          disabled={selectableIds().length === 0}
+          title={
+            allSelected() ? 'Deselect all notes here' : 'Select all notes here'
+          }
+          onClick={() => props.onSelectAll(selectableIds(), !allSelected())}
+        >
+          <Show when={allSelected()} fallback={<IoCheckboxSharp />}>
+            <IoSquareOutline />
+          </Show>
+          &nbsp;{allSelected() ? 'Deselect all' : 'Select all'}
         </button>
         <button
           disabled={!canCombineAll() || combining()}
