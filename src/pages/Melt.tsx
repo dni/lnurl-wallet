@@ -1,6 +1,6 @@
 import type {Component} from 'solid-js'
 import {Show, For, createSignal, createMemo, onMount} from 'solid-js'
-import {useSearchParams} from '@solidjs/router'
+import {useNavigate, useSearchParams} from '@solidjs/router'
 import {
   IoClipboardSharp,
   IoCloseSharp,
@@ -24,6 +24,7 @@ import RequireWallet from '../components/RequireWallet'
 
 const Melt: Component = () => {
   const {addBearer, updateBearer, removeBearer, bearers} = useWallet()
+  const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   let pasteRef: HTMLInputElement | null = null
 
@@ -156,8 +157,8 @@ const Melt: Component = () => {
   // melt - the note is left in the wallet rather than removed, but locked
   // as spent so it can't be acted on again out from under the in-flight
   // payment (unspend it from the Wallet page if the payment turns out to
-  // have failed). The invoice itself is kept on screen rather than
-  // cleared, so its outcome stays visible
+  // have failed) - which is also where a successful payment sends you, to
+  // see that note now sitting there locked
   const payInvoice = async () => {
     const invoice = pastedInvoice()
     const picked = selectedBearers()
@@ -172,6 +173,7 @@ const Melt: Component = () => {
         NotifyKind.SUCCESS
       )
       setSelectedIds(new Set<string>())
+      navigate('/wallet')
     } catch (err) {
       notify((err as Error).message, NotifyKind.ERROR)
     } finally {
@@ -223,6 +225,7 @@ const Melt: Component = () => {
         NotifyKind.SUCCESS
       )
       setSelectedIds(new Set<string>())
+      navigate('/wallet')
     } catch (err) {
       notify((err as Error).message, NotifyKind.ERROR)
     } finally {
