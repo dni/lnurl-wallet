@@ -58,6 +58,20 @@ footer {
   }
 }
 
+// one section of the footer (version, Github, the privacy note, the LUD
+// list) - the "|" between them is a generated pseudo-element rather than
+// markup, so the mobile breakpoint can drop it for a stacked layout without
+// touching Footer.tsx
+.footer-item {
+  display: flex;
+  align-items: center;
+  &:not(:last-child)::after {
+    content: '|';
+    margin: 0 8px;
+    opacity: 0.5;
+  }
+}
+
 @media (max-width: 700px) {
   body {
     padding: 12px;
@@ -66,6 +80,15 @@ footer {
   footer {
     position: static;
     font-size: 0.8em;
+    flex-direction: column;
+    align-items: center;
+    row-gap: 10px;
+    padding: 14px 6px;
+  }
+  // each section gets its own line instead of wrapping mid-sentence behind
+  // a "|" - the separator only makes sense inline, so it's dropped here
+  .footer-item:not(:last-child)::after {
+    content: none;
   }
   .page {
     padding-bottom: 0;
@@ -477,8 +500,11 @@ nav {
 }
 
 @media (max-width: 700px) {
+  // the hamburger itself is a tap target too - bigger than its desktop size
   .nav-toggle {
     display: inline-flex;
+    padding: 14px 18px;
+    font-size: 1.5em;
   }
   .nav-menu {
     display: none;
@@ -505,8 +531,17 @@ nav {
     flex-direction: column;
     align-items: stretch;
     margin-left: 0;
+    // rows sized for a thumb, not a cursor, with a divider between them so
+    // adjacent large tap targets still read as separate rows
     a {
       margin-right: 0;
+      padding: 16px 20px;
+      font-size: 1.15em;
+      min-height: 48px;
+      border-bottom: 1px solid rgba($font-color, 0.15);
+      &:last-child {
+        border-bottom: none;
+      }
     }
   }
   .nav-label {
