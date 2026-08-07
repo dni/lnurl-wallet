@@ -1,10 +1,11 @@
 import type {Component} from 'solid-js'
 import {Show, For, createSignal, createMemo, onMount} from 'solid-js'
-import {useNavigate, useSearchParams} from '@solidjs/router'
+import {useSearchParams} from '@solidjs/router'
 import {
   IoClipboardSharp,
   IoCloseSharp,
-  IoReturnDownForwardSharp
+  IoReturnDownForwardSharp,
+  IoRefreshSharp
 } from 'solid-icons/io'
 
 import {useWallet, groupByServer} from '../WalletContext'
@@ -23,7 +24,6 @@ import RequireWallet from '../components/RequireWallet'
 
 const Melt: Component = () => {
   const {addBearer, removeBearer, bearers} = useWallet()
-  const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   let pasteRef: HTMLInputElement | null = null
 
@@ -83,23 +83,31 @@ const Melt: Component = () => {
   const selectedTotal = createMemo(() =>
     selectedBearers().reduce((sum, b) => sum + b.amount, 0)
   )
-  // melting burns every selected note in one payment (via a merge first if
-  // there's more than one, then a split if the combined value overshoots
-  // the invoice - melt itself demands an exact match), so the selection
-  // must share a service and each note must already be verified (callback
-  // known)
-  const selectionPayable = createMemo(() => {
+  // merging (and, if needed, splitting) burns notes and mints replacements,
+  // so every selected note must come from the same service and already be
+  // verified (callback known) before either action is allowed
+  const selectionValid = createMemo(() => {
     const picked = selectedBearers()
     if (picked.length === 0) return false
     const server = serverOf(picked[0].url)
-    if (!picked.every(b => serverOf(b.url) === server && b.callback !== ''))
-      return false
-    // an invoice amount that fails to decode is treated as unknown, not
-    // zero - let the service be the judge rather than block on it here.
-    // Otherwise anything >= what's owed works: a surplus gets split into
-    // exact change plus a note kept for later, an exact match skips that
+    return picked.every(b => serverOf(b.url) === server && b.callback !== '')
+  })
+
+  // melt demands an exact match - an invoice amount that fails to decode is
+  // treated as unknown, not zero, so it's left for the service to judge
+  // rather than blocking here
+  const selectionPayable = createMemo(() => {
+    if (!selectionValid()) return false
     const amount = invoiceAmountMsat()
-    return amount === null || selectedTotal() >= amount
+    return amount === null || selectedTotal() === amount
+  })
+
+  // covers the invoice but isn't an exact note - Split and pay carves off
+  // exact change (keeping the remainder as a fresh note) before melting
+  const selectionNeedsSplit = createMemo(() => {
+    if (!selectionValid()) return false
+    const amount = invoiceAmountMsat()
+    return amount !== null && selectedTotal() > amount
   })
 
   const toggleSelect = (id: string, isSelected: boolean) => {
@@ -116,74 +124,99 @@ const Melt: Component = () => {
     setSelectedIds(new Set<string>())
   }
 
-  // pays the pasted invoice with the selected note(s): merges them into one
-  // first when more than one is selected (melt only ever takes a single
-  // k1), then - if that's still worth more than the invoice - splits off
-  // exact change so melt's exact-match requirement is met, keeping the
-  // remainder as a fresh note. Per meltNote's own semantics a resolved call
-  // only means the payment is in flight, not confirmed spent, so - same as
-  // BearerCard's melt - the spent note is left in place rather than assumed
-  // gone; refreshing it later confirms the burn
+  // merges the selection into one note worth their sum - a no-op returning
+  // the note itself when only one is selected, since merge only makes
+  // sense for 2+
+  const mergeSelectionIfNeeded = async (
+    picked: ReturnType<typeof selectedBearers>
+  ) => {
+    if (picked.length === 1) return picked[0]
+    const base = picked[0]
+    const total = picked.reduce((sum, b) => sum + b.amount, 0)
+    const merged = await mergeNotes(
+      base.callback,
+      picked.map(b => noteK1(b.url)!)
+    )
+    for (const bearer of picked) removeBearer(bearer.id)
+    return addBearer({
+      url: withNewK1(base.url, merged.k1, total, merged.signature),
+      callback: base.callback,
+      amount: total,
+      verified: true,
+      mintPubkey: base.mintPubkey
+    })
+  }
+
+  // melts the selected note(s) as-is - only valid once they're already
+  // worth exactly the invoice (merged into one first if there's more than
+  // one). Per meltNote's own semantics a resolved call only means the
+  // payment is in flight, not confirmed spent, so - same as BearerCard's
+  // melt - the spent note is left in place rather than assumed gone;
+  // refreshing it later confirms the burn. The invoice itself is kept on
+  // screen rather than cleared, so its outcome stays visible
   const payInvoice = async () => {
     const invoice = pastedInvoice()
     const picked = selectedBearers()
     if (!invoice || !selectionPayable() || picked.length === 0) return
     setPaying(true)
     try {
-      let current = picked[0]
-
-      if (picked.length > 1) {
-        const total = selectedTotal()
-        const merged = await mergeNotes(
-          current.callback,
-          picked.map(b => noteK1(b.url)!)
-        )
-        for (const bearer of picked) removeBearer(bearer.id)
-        current = await addBearer({
-          url: withNewK1(current.url, merged.k1, total, merged.signature),
-          callback: current.callback,
-          amount: total,
-          verified: true,
-          mintPubkey: current.mintPubkey
-        })
-      }
-
-      const target = invoiceAmountMsat()
-      if (target !== null && current.amount > target) {
-        const parts = await splitNote(
-          current.callback,
-          noteK1(current.url)!,
-          target
-        )
-        removeBearer(current.id)
-        await addBearer({
-          url: withNewK1(
-            current.url,
-            parts.change,
-            current.amount - target,
-            parts.changeSignature
-          ),
-          callback: current.callback,
-          amount: current.amount - target,
-          verified: true,
-          mintPubkey: current.mintPubkey
-        })
-        current = await addBearer({
-          url: withNewK1(current.url, parts.k1, target, parts.signature),
-          callback: current.callback,
-          amount: target,
-          verified: true,
-          mintPubkey: current.mintPubkey
-        })
-      }
-
+      const current = await mergeSelectionIfNeeded(picked)
       await meltNote(current.callback, noteK1(current.url)!, invoice)
       notify(
         "Payment requested - it's on its way. Refresh the note in a moment to confirm it's gone.",
         NotifyKind.SUCCESS
       )
-      clearInvoice()
-      navigate('/wallet')
+      setSelectedIds(new Set<string>())
+    } catch (err) {
+      notify((err as Error).message, NotifyKind.ERROR)
+    } finally {
+      setPaying(false)
+    }
+  }
+
+  // for a selection worth more than the invoice: merges it into one note
+  // (if needed), splits off the exact amount owed - keeping the remainder
+  // as a fresh note - then melts that exact piece, all in one click
+  const splitAndPay = async () => {
+    const invoice = pastedInvoice()
+    const picked = selectedBearers()
+    const target = invoiceAmountMsat()
+    if (!invoice || !selectionNeedsSplit() || target === null) return
+    if (picked.length === 0) return
+    setPaying(true)
+    try {
+      const merged = await mergeSelectionIfNeeded(picked)
+      const parts = await splitNote(
+        merged.callback,
+        noteK1(merged.url)!,
+        target
+      )
+      removeBearer(merged.id)
+      await addBearer({
+        url: withNewK1(
+          merged.url,
+          parts.change,
+          merged.amount - target,
+          parts.changeSignature
+        ),
+        callback: merged.callback,
+        amount: merged.amount - target,
+        verified: true,
+        mintPubkey: merged.mintPubkey
+      })
+      const spend = await addBearer({
+        url: withNewK1(merged.url, parts.k1, target, parts.signature),
+        callback: merged.callback,
+        amount: target,
+        verified: true,
+        mintPubkey: merged.mintPubkey
+      })
+      await meltNote(spend.callback, noteK1(spend.url)!, invoice)
+      notify(
+        "Payment requested - it's on its way. Refresh the note in a moment to confirm it's gone.",
+        NotifyKind.SUCCESS
+      )
+      setSelectedIds(new Set<string>())
     } catch (err) {
       notify((err as Error).message, NotifyKind.ERROR)
     } finally {
@@ -256,9 +289,9 @@ const Melt: Component = () => {
             >
               <p class="bearer-hint">
                 Wants {msatToSats(invoiceAmountMsat()!)} sats - select note(s)
-                from one mint worth at least that (2+ get merged into one first,
-                and any excess gets split off as change, since melt spends a
-                single note for exactly the invoice amount).
+                from one mint worth at least that. Melt only spends a note of
+                exactly the invoice amount, so an exact match pays directly and
+                anything over it needs Split and pay first.
               </p>
             </Show>
             <Show
@@ -294,19 +327,36 @@ const Melt: Component = () => {
             <Show when={selectedBearers().length > 0}>
               <p class="bearer-hint">
                 Selected {msatToSats(selectedTotal())} sats
-                <Show when={!selectionPayable()}>
+                <Show when={!selectionPayable() && !selectionNeedsSplit()}>
                   {' '}
                   - not enough selected yet, or spans more than one mint
                 </Show>
               </p>
             </Show>
             <div class="btns">
-              <button
-                disabled={paying() || !selectionPayable()}
-                onClick={payInvoice}
+              <Show
+                when={selectionNeedsSplit()}
+                fallback={
+                  <button
+                    disabled={paying() || !selectionPayable()}
+                    onClick={payInvoice}
+                  >
+                    <Show when={paying()}>
+                      <IoRefreshSharp class="spin" />
+                      &nbsp;
+                    </Show>
+                    Pay invoice
+                  </button>
+                }
               >
-                Pay invoice
-              </button>
+                <button disabled={paying()} onClick={splitAndPay}>
+                  <Show when={paying()}>
+                    <IoRefreshSharp class="spin" />
+                    &nbsp;
+                  </Show>
+                  Split and pay
+                </button>
+              </Show>
               <button onClick={clearInvoice}>Clear</button>
             </div>
           </figure>

@@ -1,6 +1,7 @@
 import type {Component} from 'solid-js'
 import {Show, createSignal} from 'solid-js'
 import {useNavigate, useSearchParams} from '@solidjs/router'
+import {IoRefreshSharp} from 'solid-icons/io'
 
 import {useWallet} from '../WalletContext'
 import {generateSeedPhrase, isValidSeedPhrase} from '../keys'
@@ -112,6 +113,10 @@ const Setup: Component = () => {
                   disabled={busy() || !restorePhrase().trim() || !passwordOk()}
                   onClick={restore}
                 >
+                  <Show when={busy()}>
+                    <IoRefreshSharp class="spin" />
+                    &nbsp;
+                  </Show>
                   Restore wallet
                 </button>
               </div>
@@ -158,6 +163,10 @@ const Setup: Component = () => {
                 disabled={busy() || !confirmed() || !passwordOk()}
                 onClick={() => finishSetup(seedPhrase()!)}
               >
+                <Show when={busy()}>
+                  <IoRefreshSharp class="spin" />
+                  &nbsp;
+                </Show>
                 Continue
               </button>
               <button onClick={() => setSeedPhrase(null)}>Cancel</button>

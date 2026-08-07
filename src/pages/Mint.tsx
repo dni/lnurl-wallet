@@ -1,6 +1,7 @@
 import type {Component} from 'solid-js'
 import {Show, For, createSignal, onCleanup} from 'solid-js'
 import {useNavigate} from '@solidjs/router'
+import {IoRefreshSharp} from 'solid-icons/io'
 
 import {useWallet} from '../WalletContext'
 import type {PayRequestInfo} from '../lnurlcash'
@@ -327,6 +328,10 @@ const Mint: Component = () => {
           />
           <div class="btns">
             <button disabled={busy()} onClick={lookup}>
+              <Show when={busy()}>
+                <IoRefreshSharp class="spin" />
+                &nbsp;
+              </Show>
               Look up mint
             </button>
           </div>
@@ -419,6 +424,10 @@ const Mint: Component = () => {
                     />
                     <div class="btns">
                       <button disabled={busy()} onClick={getInvoice}>
+                        <Show when={busy()}>
+                          <IoRefreshSharp class="spin" />
+                          &nbsp;
+                        </Show>
                         Get invoice
                       </button>
                     </div>
@@ -441,6 +450,10 @@ const Mint: Component = () => {
                     disabled={busy() || !isPreimage(directPreimage())}
                     onClick={claimDirect}
                   >
+                    <Show when={busy()}>
+                      <IoRefreshSharp class="spin" />
+                      &nbsp;
+                    </Show>
                     Claim note
                   </button>
                 </div>
@@ -460,6 +473,10 @@ const Mint: Component = () => {
               </button>
               <Show when={verifyUrl()}>
                 <button disabled={verifying()} onClick={manualCheck}>
+                  <Show when={verifying()}>
+                    <IoRefreshSharp class="spin" />
+                    &nbsp;
+                  </Show>
                   {verifying()
                     ? 'Checking...'
                     : `Check payment (${secondsLeft()}s)`}
@@ -485,6 +502,10 @@ const Mint: Component = () => {
                 disabled={busy() || !isPreimage(preimage())}
                 onClick={() => claim(preimage(), invoicedMsat())}
               >
+                <Show when={busy()}>
+                  <IoRefreshSharp class="spin" />
+                  &nbsp;
+                </Show>
                 Claim note
               </button>
             </div>

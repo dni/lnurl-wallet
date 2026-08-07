@@ -1,7 +1,12 @@
 import type {Component} from 'solid-js'
 import {Show, createSignal} from 'solid-js'
 import {A, useNavigate} from '@solidjs/router'
-import {IoDownloadSharp, IoFolderOpenSharp, IoTrashSharp} from 'solid-icons/io'
+import {
+  IoDownloadSharp,
+  IoFolderOpenSharp,
+  IoTrashSharp,
+  IoRefreshSharp
+} from 'solid-icons/io'
 
 import {useWallet} from '../WalletContext'
 import {buildBackup, applyBackup} from '../storage'
@@ -132,7 +137,9 @@ const Backup: Component = () => {
         />
         <div class="btns">
           <button disabled={busy()} onClick={() => fileRef?.click()}>
-            <IoFolderOpenSharp />
+            <Show when={busy()} fallback={<IoFolderOpenSharp />}>
+              <IoRefreshSharp class="spin" />
+            </Show>
             &nbsp;Select backup file
           </button>
         </div>

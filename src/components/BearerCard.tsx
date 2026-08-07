@@ -291,7 +291,7 @@ const BearerCard: Component<BearerCardProps> = props => {
           disabled={busy()}
           onClick={refresh}
         >
-          <IoRefreshSharp />
+          <IoRefreshSharp classList={{spin: busy()}} />
         </button>
         <div class="bearer-actions">
           <button
@@ -367,6 +367,10 @@ const BearerCard: Component<BearerCardProps> = props => {
           />
           <div class="btns">
             <button disabled={busy()} onClick={melt}>
+              <Show when={busy()}>
+                <IoRefreshSharp class="spin" />
+                &nbsp;
+              </Show>
               Melt
             </button>
           </div>
@@ -384,6 +388,10 @@ const BearerCard: Component<BearerCardProps> = props => {
           />
           <div class="btns">
             <button disabled={busy()} onClick={split}>
+              <Show when={busy()}>
+                <IoRefreshSharp class="spin" />
+                &nbsp;
+              </Show>
               Split
             </button>
           </div>
@@ -398,6 +406,10 @@ const BearerCard: Component<BearerCardProps> = props => {
           </p>
           <div class="btns">
             <button disabled={busy()} onClick={transfer}>
+              <Show when={busy()}>
+                <IoRefreshSharp class="spin" />
+                &nbsp;
+              </Show>
               Rotate &amp; get handover note
             </button>
           </div>

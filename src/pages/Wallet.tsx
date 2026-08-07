@@ -6,7 +6,8 @@ import {
   IoQrCodeSharp,
   IoClipboardSharp,
   IoGitMergeSharp,
-  IoLockOpenSharp
+  IoLockOpenSharp,
+  IoRefreshSharp
 } from 'solid-icons/io'
 
 import {useWallet, groupByServer} from '../WalletContext'
@@ -125,7 +126,9 @@ const Wallet: Component = () => {
                 />
                 <div class="btns">
                   <button type="submit" disabled={unlocking() || !password()}>
-                    <IoLockOpenSharp />
+                    <Show when={unlocking()} fallback={<IoLockOpenSharp />}>
+                      <IoRefreshSharp class="spin" />
+                    </Show>
                     &nbsp;Unlock
                   </button>
                 </div>
@@ -191,7 +194,9 @@ const Wallet: Component = () => {
                   }
                 >
                   <button disabled={combining()} onClick={combine}>
-                    <IoGitMergeSharp />
+                    <Show when={combining()} fallback={<IoGitMergeSharp />}>
+                      <IoRefreshSharp class="spin" />
+                    </Show>
                     &nbsp;Combine
                   </button>
                 </Show>

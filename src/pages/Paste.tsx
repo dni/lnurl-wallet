@@ -4,7 +4,8 @@ import {useNavigate} from '@solidjs/router'
 import {
   IoClipboardSharp,
   IoCloseSharp,
-  IoReturnDownForwardSharp
+  IoReturnDownForwardSharp,
+  IoRefreshSharp
 } from 'solid-icons/io'
 
 import {useWallet} from '../WalletContext'
@@ -137,7 +138,9 @@ const Paste: Component = () => {
               disabled={busy() || value() === '' || !isValid()}
               onClick={handle}
             >
-              <IoReturnDownForwardSharp />
+              <Show when={busy()} fallback={<IoReturnDownForwardSharp />}>
+                <IoRefreshSharp class="spin" />
+              </Show>
             </button>
           </div>
           <Show when={value() !== '' && !isValid()}>
