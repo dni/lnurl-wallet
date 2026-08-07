@@ -466,7 +466,10 @@ const Mint: Component = () => {
             <figcaption>
               1. Pay this invoice with any Lightning wallet
             </figcaption>
-            <Qr value={invoice()!.toUpperCase()} />
+            <Qr
+              value={invoice()!.toUpperCase()}
+              href={`lightning:${invoice()!.toUpperCase()}`}
+            />
             <div class="btns">
               <button onClick={() => copyToClipboard(invoice()!)}>
                 Copy invoice

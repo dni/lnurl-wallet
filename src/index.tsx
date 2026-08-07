@@ -35,7 +35,14 @@ if (import.meta.env.DEV && !(root instanceof HTMLElement)) {
 const App = (props: any) => {
   return (
     <WalletProvider>
-      <Toaster position="top-right" toastOptions={{duration: 5000}} />
+      {/* solid-toast's default top offset sits right under the viewport
+      edge, which the fixed nav (taller still on mobile, see .nav-toggle in
+      style.scss) then overlaps - pushed down past it instead */}
+      <Toaster
+        position="top-right"
+        toastOptions={{duration: 5000}}
+        containerStyle={{top: '64px'}}
+      />
       <Nav />
       {props.children}
       <Footer />

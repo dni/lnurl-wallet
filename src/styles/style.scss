@@ -378,6 +378,11 @@ pre {
     display: block;
   }
 }
+// invisible to layout - .qrcode's own sizing resolves exactly as if this
+// wrapper weren't there, it only adds the tap-to-open-wallet behavior
+.qrcode-link {
+  display: contents;
+}
 .qr-wrapper {
   position: relative;
   display: inline-block;
