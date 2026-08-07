@@ -790,10 +790,19 @@ nav {
   overflow-wrap: anywhere;
 }
 
-.show-notes-btn {
-  margin-left: 8px;
+// the mint-group card's action row (Copy pubkey, Show notes, Select all,
+// Combine, Transfer) - smaller than the app's default buttons so a row of
+// five doesn't dominate the card
+.show-notes-btn,
+.select-all-btn,
+.combine-btn,
+.transfer-btn {
   padding: 4px 10px;
   font-size: 0.9em;
+}
+
+.show-notes-btn {
+  margin-left: 8px;
 }
 
 // .combine-btn sits right after .select-all-btn (a regular button, whose
@@ -811,11 +820,29 @@ nav {
   gap: 21px;
 }
 
+// a bearer note reads as its own small "bill" rather than a generic card -
+// a diagonal mint-to-ink sheen (same palette as everything else, just two
+// stops of it) plus a hairline edge, evoking foil on a banknote without
+// reaching outside the app's existing colors
 .bearer-card {
   display: flex;
   flex-direction: column;
   align-items: center;
   max-width: 300px;
+  background: linear-gradient(
+    135deg,
+    rgba($accent-base, $transparency) 0%,
+    rgba($bg, $transparency) 75%
+  );
+  border: 1px solid rgba($font-color, 0.15);
+  &:hover {
+    background: linear-gradient(
+      135deg,
+      rgba(color.adjust($accent-base, $lightness: 6%), 0.85) 0%,
+      rgba($bg, 0.85) 75%
+    );
+    border-color: rgba($font-color, 0.3);
+  }
 }
 
 .bearer-head {
