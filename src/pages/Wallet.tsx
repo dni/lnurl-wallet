@@ -292,22 +292,6 @@ const Wallet: Component = () => {
                 </div>
               </Show>
             </section>
-            <Show when={selectedBearers().length > 0}>
-              <div class="combine-bar">
-                <span>
-                  {selectedBearers().length} selected&nbsp;·&nbsp;
-                  {msatToSats(selectedTotal())} sats
-                </span>
-                <Show when={combinable()}>
-                  <button disabled={combining()} onClick={combine}>
-                    <Show when={combining()} fallback={<IoGitMergeSharp />}>
-                      <IoRefreshSharp class="spin" />
-                    </Show>
-                    &nbsp;Combine
-                  </button>
-                </Show>
-              </div>
-            </Show>
             <Show
               when={visibleBearers().length > 0}
               fallback={

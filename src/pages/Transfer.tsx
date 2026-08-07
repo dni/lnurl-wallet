@@ -2,6 +2,7 @@ import type {Component} from 'solid-js'
 import {Show, createSignal, createMemo} from 'solid-js'
 import {useNavigate} from '@solidjs/router'
 import {
+  IoScanSharp,
   IoClipboardSharp,
   IoCloseSharp,
   IoReturnDownForwardSharp,
@@ -24,6 +25,8 @@ const Transfer: Component = () => {
   let pasteRef: HTMLInputElement | null = null
   const [value, setValue] = createSignal('')
   const [busy, setBusy] = createSignal(false)
+  // camera access isn't requested until this is deliberately opened
+  const [showScanner, setShowScanner] = createSignal(false)
 
   const isValid = createMemo(
     () =>
@@ -116,18 +119,23 @@ const Transfer: Component = () => {
     <RequireWallet>
       <div id="transfer" class="page">
         <h2>Bring in a bearer note</h2>
-        <figure class="setup-card">
-          <figcaption>
-            Point the camera at a note QR (<code>lnurl1...</code> or{' '}
-            <code>lnurlw://...?k1=...</code>)
-          </figcaption>
-          <Show when={!busy()} fallback={<p>Adding note...</p>}>
-            <Scanner onScan={onScan} accept={isValidNoteInput} />
-          </Show>
-        </figure>
         <figure class="paste-widget">
-          <figcaption>...or paste one instead</figcaption>
+          <figcaption>Scan a note QR, or paste one below</figcaption>
+          <Show when={showScanner()}>
+            <Show when={!busy()} fallback={<p>Adding note...</p>}>
+              <Scanner onScan={onScan} accept={isValidNoteInput} />
+            </Show>
+          </Show>
           <div class="paste-input-row">
+            <button
+              type="button"
+              class="icon-btn"
+              classList={{active: showScanner()}}
+              title={showScanner() ? 'Stop scanning' : 'Scan a note QR'}
+              onClick={() => setShowScanner(v => !v)}
+            >
+              <IoScanSharp />
+            </button>
             <button
               type="button"
               class="icon-btn paste-icon-btn"

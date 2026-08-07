@@ -358,6 +358,12 @@ input[type='checkbox'] {
 .icon-btn {
   padding: 6px;
   margin-right: 0;
+  &.active {
+    background-color: rgba(
+      color.adjust($accent-base, $lightness: -10%),
+      $transparency
+    );
+  }
 }
 
 figcaption {
