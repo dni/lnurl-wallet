@@ -791,6 +791,13 @@ nav {
 .setup-card.mint-group-card {
   max-width: none;
   margin-bottom: 10px;
+  // .btns has no row-gap, so on narrow screens - where five buttons
+  // (pubkey, show notes, select all, combine, transfer) wrap onto more
+  // than one line - they'd otherwise touch with no vertical space between
+  // rows, or against whatever follows once collapsed back down
+  .btns button {
+    margin-bottom: 8px;
+  }
 }
 
 .mint-pubkey code {
@@ -825,6 +832,7 @@ nav {
   flex-wrap: wrap;
   align-items: flex-start;
   gap: 21px;
+  margin-top: 16px;
 }
 
 // a bearer note reads as its own small "bill" rather than a generic card -
