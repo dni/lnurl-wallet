@@ -597,9 +597,12 @@ nav {
       }
     }
   }
-  // Mints/Docs/Backup/Lock: a compact row instead of another stack of
-  // full-width bars, set off from .nav-links above by its own divider
-  // (only when .nav-links actually rendered something to divide from)
+  // Mints/Docs/Backup/Lock: a compact icon-only row instead of another
+  // stack of full-width bars, set off from .nav-links above by its own
+  // divider (only when .nav-links actually rendered something to divide
+  // from). Labels stay hidden like on desktop (.nav-label) - the row's
+  // whole point is to be compact, and bigger icons carry the meaning fine
+  // on their own with a title tooltip for anyone unsure
   .nav-persistent {
     flex-direction: row;
     flex-wrap: wrap;
@@ -610,16 +613,14 @@ nav {
       flex: 1 1 auto;
       justify-content: center;
       margin-right: 0;
-      padding: 14px 10px;
+      padding: 16px 14px;
       min-height: 48px;
+      font-size: 1.6em;
     }
   }
   .nav-links:not(:empty) + .nav-persistent {
     border-top: 1px solid rgba($font-color, 0.15);
     padding-top: 6px;
-  }
-  .nav-label {
-    display: inline;
   }
 }
 
@@ -806,6 +807,13 @@ nav {
 .bearer-amount {
   font-weight: bold;
   font-size: 1.1em;
+}
+
+// bigger select-to-combine hit targets than the checkbox alone (see
+// BearerCard's toggleSelect) - not a global utility class, scoped here
+.bearer-amount.clickable,
+.bearer-server.clickable {
+  cursor: pointer;
 }
 
 .bearer-pending {

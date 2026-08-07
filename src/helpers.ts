@@ -50,3 +50,32 @@ export const satsToMsat = (sats: string | number): number =>
   Math.round(Number(sats) * 1000)
 
 export const formatDate = (ts: number): string => new Date(ts).toLocaleString()
+
+const relativeTimeFormatter = new Intl.RelativeTimeFormat(undefined, {
+  numeric: 'auto'
+})
+const RELATIVE_TIME_UNITS: [Intl.RelativeTimeFormatUnit, number][] = [
+  ['year', 31536000],
+  ['month', 2592000],
+  ['week', 604800],
+  ['day', 86400],
+  ['hour', 3600],
+  ['minute', 60]
+]
+
+// "5 minutes ago", "yesterday", etc, via the built-in locale-aware
+// formatter - always a past timestamp here, so this doesn't handle future
+// ones beyond what RelativeTimeFormat does on its own
+export const formatRelativeTime = (ts: number): string => {
+  const seconds = Math.round((Date.now() - ts) / 1000)
+  if (seconds < 5) return 'just now'
+  for (const [unit, secondsInUnit] of RELATIVE_TIME_UNITS) {
+    if (seconds >= secondsInUnit) {
+      return relativeTimeFormatter.format(
+        -Math.round(seconds / secondsInUnit),
+        unit
+      )
+    }
+  }
+  return relativeTimeFormatter.format(-seconds, 'second')
+}

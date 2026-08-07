@@ -34,6 +34,7 @@ import {
   msatToSats,
   satsToMsat,
   formatDate,
+  formatRelativeTime,
   notify,
   NotifyKind
 } from '../helpers'
@@ -76,6 +77,12 @@ const BearerCard: Component<BearerCardProps> = props => {
   const k1 = () => noteK1(props.bearer.url) || ''
   const hasCallback = () => props.bearer.callback !== ''
   const isSpent = () => !!props.bearer.spent
+  // the amount and server text are also click targets for select-to-combine
+  // - a bigger, more obvious target than the small checkbox alone, which
+  // stays as the visible indicator of the current state either way
+  const toggleSelect = () => {
+    if (!isSpent()) props.onSelect(!props.selected)
+  }
 
   // offline-verifiable iff the note carries a signature AND this wallet
   // already knows the issuing service's mintPubkey - both optional per
@@ -253,7 +260,11 @@ const BearerCard: Component<BearerCardProps> = props => {
           />
         </label>
         <div class="bearer-title">
-          <span class="bearer-amount">
+          <span
+            class="bearer-amount"
+            classList={{clickable: !isSpent()}}
+            onClick={toggleSelect}
+          >
             {msatToSats(props.bearer.amount)} sats
           </span>
           <Show when={!props.bearer.verified}>
@@ -274,7 +285,13 @@ const BearerCard: Component<BearerCardProps> = props => {
               &nbsp;spent
             </span>
           </Show>
-          <span class="bearer-server">{serverOf(props.bearer.url)}</span>
+          <span
+            class="bearer-server"
+            classList={{clickable: !isSpent()}}
+            onClick={toggleSelect}
+          >
+            {serverOf(props.bearer.url)}
+          </span>
         </div>
         <button
           class="icon-btn qr-toggle"
@@ -381,15 +398,15 @@ const BearerCard: Component<BearerCardProps> = props => {
               <IoArrowUndoSharp />
             </button>
           </Show>
-          <button
-            class="icon-btn"
-            title={
-              isSpent() ? 'Clear spent note from wallet' : 'Remove from wallet'
-            }
-            onClick={() => setConfirmDelete(true)}
-          >
-            <IoTrashSharp />
-          </button>
+          <Show when={isSpent()}>
+            <button
+              class="icon-btn"
+              title="Clear spent note from wallet"
+              onClick={() => setConfirmDelete(true)}
+            >
+              <IoTrashSharp />
+            </button>
+          </Show>
         </div>
       </div>
       <Show when={!hasCallback() && !isSpent()}>
@@ -420,21 +437,17 @@ const BearerCard: Component<BearerCardProps> = props => {
       </Show>
       <Show when={confirmDelete()}>
         <p class="warning">
-          {isSpent()
-            ? "Clear this spent note from the wallet? If it turns out it wasn't actually spent, the sats are gone unless you saved the note elsewhere."
-            : 'Remove this note from the wallet? Without a backup (or the note saved elsewhere) the sats behind it are gone.'}
+          Clear this spent note from the wallet? If it turns out it wasn't
+          actually spent, the sats are gone unless you saved the note elsewhere.
         </p>
         <div class="btns">
           <button
             onClick={() => {
               removeBearer(props.bearer.id)
-              notify(
-                isSpent() ? 'Spent note cleared.' : 'Note removed.',
-                NotifyKind.SUCCESS
-              )
+              notify('Spent note cleared.', NotifyKind.SUCCESS)
             }}
           >
-            {isSpent() ? 'Clear' : 'Remove'}
+            Clear
           </button>
           <button onClick={() => setConfirmDelete(false)}>Cancel</button>
         </div>
@@ -502,7 +515,9 @@ const BearerCard: Component<BearerCardProps> = props => {
           </div>
         </div>
       </Show>
-      <p class="bearer-dates">updated {formatDate(props.bearer.updatedAt)}</p>
+      <p class="bearer-dates" title={formatDate(props.bearer.updatedAt)}>
+        updated {formatRelativeTime(props.bearer.updatedAt)}
+      </p>
     </figure>
   )
 }
