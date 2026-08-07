@@ -124,9 +124,10 @@ const MintGroupCard: Component<MintGroupCardProps> = props => {
           >
             <IoCopySharp />
           </button>
-          <button onClick={() => setShowNotes(v => !v)}>
+          <button class="show-notes-btn" onClick={() => setShowNotes(v => !v)}>
             <IoListSharp />
-            &nbsp;{showNotes() ? 'Hide notes' : 'Show notes'}
+            &nbsp;{showNotes() ? 'Hide notes' : 'Show notes'}&nbsp;(
+            {props.group.length})
           </button>
         </div>
         <Show when={showNotes()}>
