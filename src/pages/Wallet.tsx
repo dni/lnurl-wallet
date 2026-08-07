@@ -254,7 +254,7 @@ const Wallet: Component = () => {
                 <div class="btns">
                   <label
                     class="switch-control"
-                    title="Spent notes are locally locked (melted, transferred, or marked by hand) - this just shows or hides them, it doesn't change anything about them"
+                    title="Spent notes are locally locked (melted, or marked by hand) - this just shows or hides them, it doesn't change anything about them"
                   >
                     <IoBanSharp />
                     <span>
@@ -297,14 +297,7 @@ const Wallet: Component = () => {
                   {selectedBearers().length} selected&nbsp;·&nbsp;
                   {msatToSats(selectedTotal())} sats
                 </span>
-                <Show
-                  when={combinable()}
-                  fallback={
-                    <span class="combine-hint">
-                      select 2+ verified notes from the same service to combine
-                    </span>
-                  }
-                >
+                <Show when={combinable()}>
                   <button disabled={combining()} onClick={combine}>
                     <Show when={combining()} fallback={<IoGitMergeSharp />}>
                       <IoRefreshSharp class="spin" />

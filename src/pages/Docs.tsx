@@ -109,13 +109,6 @@ callback?k1=X&k1=Y           merge: all burned, one note worth the sum returned`
             you chose and the change.
           </li>
           <li>
-            <strong>Transfer</strong> rotates the secret: a fresh note to hand
-            over, every old copy burned. The wallet also rotates automatically
-            right after receiving a scanned or pasted note - the informational
-            GET that verified it already put the old secret on the wire, so the
-            previous holder's copy needs burning regardless of who they are.
-          </li>
-          <li>
             <strong>Combine</strong> merges selected same-service notes into
             one, in a single request.
           </li>
@@ -124,7 +117,11 @@ callback?k1=X&k1=Y           merge: all burned, one note worth the sum returned`
           The optional <code>?id=sha256(k1)</code> hash lookup from earlier
           drafts of this spec was removed - every informational GET now puts the
           secret itself on the wire, which is exactly why the wallet treats one
-          as exposure and rotates right after, per the spec's own guidance.
+          as exposure and rotates right after, per the spec's own guidance. That
+          applies just as much right after receiving a scanned or pasted note:
+          the informational GET that verified it already put the old secret on
+          the wire, so the previous holder's copy needs burning regardless of
+          who they are.
         </p>
       </figure>
 
@@ -235,7 +232,7 @@ digest  = sha256(sha256("Lightning Signed Message:" || message))`}</pre>
           A backup protects against a lost device, not against theft of the note
           itself: the issuing service settles for whoever presents a k1 first.
           Rotation is your tool against stale copies - after restoring an old
-          backup, transfer (rotate) anything you still hold.
+          backup, refresh (rotate) anything you still hold.
         </p>
         <h3>Forget this wallet</h3>
         <p>

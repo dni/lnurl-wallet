@@ -8,7 +8,6 @@ import {
   IoRefreshSharp,
   IoFlameSharp,
   IoGitBranchSharp,
-  IoSwapHorizontalSharp,
   IoTrashSharp,
   IoShieldCheckmarkSharp,
   IoBanSharp,
@@ -41,7 +40,7 @@ import {
 import {getTrustedMintPubkey} from '../trustedMints'
 import Qr from './Qr'
 
-type Action = 'melt' | 'split' | 'transfer' | null
+type Action = 'melt' | 'split' | null
 
 export type BearerCardProps = {
   bearer: Bearer
@@ -68,8 +67,6 @@ const BearerCard: Component<BearerCardProps> = props => {
   const [busy, setBusy] = createSignal(false)
   const [meltPr, setMeltPr] = createSignal('')
   const [splitSats, setSplitSats] = createSignal('')
-  // set once a transfer rotated the secret - the fresh note to hand over
-  const [handover, setHandover] = createSignal<string | null>(null)
   const [confirmDelete, setConfirmDelete] = createSignal(false)
   const [confirmUnspend, setConfirmUnspend] = createSignal(false)
 
@@ -211,33 +208,12 @@ const BearerCard: Component<BearerCardProps> = props => {
     }
   }
 
-  const transfer = async () => {
-    setBusy(true)
-    try {
-      const rotated = await rotateNote(props.bearer.callback, k1())
-      // the old secret is dead the moment the service rotates it - keep the
-      // fresh note stored until the holder confirms the handover
-      const url = withNewK1(
-        props.bearer.url,
-        rotated.k1,
-        props.bearer.amount,
-        rotated.signature
-      )
-      await updateBearer(props.bearer.id, {url})
-      setHandover(toBech32Lnurl(url))
-    } catch (err) {
-      notify((err as Error).message, NotifyKind.ERROR)
-    } finally {
-      setBusy(false)
-    }
-  }
-
   // a local-only lock (see storage.ts's Bearer.spent) - no network call,
   // just stops this wallet from acting on a note it considers given away
   const markSpent = () => {
     updateBearer(props.bearer.id, {spent: true})
     notify(
-      'Marked as spent - melt, split, transfer and refresh are locked until unspent.',
+      'Marked as spent - melt, split and refresh are locked until unspent.',
       NotifyKind.SUCCESS
     )
   }
@@ -305,7 +281,7 @@ const BearerCard: Component<BearerCardProps> = props => {
       </div>
       <Show when={showQr()}>
         <div class="qr-wrapper">
-          <Qr value={handover() ?? token()} />
+          <Qr value={token()} />
           <Show when={!revealed()}>
             <button
               class="qr-overlay"
@@ -317,29 +293,11 @@ const BearerCard: Component<BearerCardProps> = props => {
           </Show>
         </div>
       </Show>
-      <Show when={handover()}>
-        <p class="warning">
-          Secret rotated - this QR is the fresh note. Hand it to the recipient;
-          your old copy is already burned.
-        </p>
-        <div class="btns">
-          <button
-            onClick={() => {
-              updateBearer(props.bearer.id, {spent: true})
-              setHandover(null)
-              notify('Marked as handed over and spent.', NotifyKind.SUCCESS)
-            }}
-          >
-            Handed over
-          </button>
-          <button onClick={() => setHandover(null)}>Keep it myself</button>
-        </div>
-      </Show>
       <div class="btns">
         <button
           class="icon-btn"
           title="Copy note (bech32 LNURL)"
-          onClick={() => copyToClipboard(handover() ?? token())}
+          onClick={() => copyToClipboard(token())}
         >
           <IoCopySharp />
         </button>
@@ -367,16 +325,6 @@ const BearerCard: Component<BearerCardProps> = props => {
             onClick={() => setAction(action() === 'split' ? null : 'split')}
           >
             <IoGitBranchSharp />
-          </button>
-          <button
-            class="icon-btn"
-            title="Transfer - rotate the secret and hand the fresh note over"
-            disabled={!hasCallback() || isSpent()}
-            onClick={() =>
-              setAction(action() === 'transfer' ? null : 'transfer')
-            }
-          >
-            <IoSwapHorizontalSharp />
           </button>
           <Show
             when={isSpent()}
@@ -411,14 +359,13 @@ const BearerCard: Component<BearerCardProps> = props => {
       </div>
       <Show when={!hasCallback() && !isSpent()}>
         <p class="bearer-hint">
-          Not verified with its service yet - refresh to enable melt, split and
-          transfer.
+          Not verified with its service yet - refresh to enable melt and split.
         </p>
       </Show>
       <Show when={isSpent() && !confirmUnspend()}>
         <p class="bearer-hint">
-          Locked as spent - refresh, melt, split and transfer are disabled so
-          this copy can't be reused by accident.
+          Locked as spent - refresh, melt and split are disabled so this copy
+          can't be reused by accident.
         </p>
       </Show>
       <Show when={confirmUnspend()}>
@@ -493,24 +440,6 @@ const BearerCard: Component<BearerCardProps> = props => {
                 &nbsp;
               </Show>
               Split
-            </button>
-          </div>
-        </div>
-      </Show>
-      <Show when={action() === 'transfer'}>
-        <div class="form-item">
-          <p class="bearer-hint">
-            Transfer rotates the bearer secret on the service: you get a fresh
-            note to hand over, and every old copy (including a stolen backup) is
-            burned.
-          </p>
-          <div class="btns">
-            <button disabled={busy()} onClick={transfer}>
-              <Show when={busy()}>
-                <IoRefreshSharp class="spin" />
-                &nbsp;
-              </Show>
-              Rotate &amp; get handover note
             </button>
           </div>
         </div>

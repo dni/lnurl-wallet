@@ -71,11 +71,10 @@ const Hero: Component = () => {
         </div>
         <div class="hero-feature">
           <IoGitBranchSharp />
-          <h3>Melt, split, transfer, combine</h3>
+          <h3>Melt, split, combine</h3>
           <p>
-            Melt a note into any bolt11 payment, split it into change, rotate
-            its secret to hand it over safely, or merge same-mint notes into
-            one.
+            Melt a note into any bolt11 payment, split it into change, or merge
+            same-mint notes into one.
           </p>
         </div>
         <div class="hero-feature">

@@ -121,8 +121,9 @@ either order works.
 
 A backup protects against a lost device, not against theft of the note
 itself: the service settles for whoever presents a `k1` first. Rotation
-(the transfer action, and the automatic rotate-on-receive) is the tool
-against stale copies - after restoring an old backup, rotate what you hold.
+(each note's own Refresh action, and the automatic rotate-on-receive) is
+the tool against stale copies - after restoring an old backup, refresh
+what you hold.
 
 ## Note on lnurl-mint
 
