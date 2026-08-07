@@ -2,6 +2,7 @@ import {readFileSync} from 'node:fs'
 import {fileURLToPath} from 'node:url'
 import {defineConfig} from 'vite'
 import solidPlugin from 'vite-plugin-solid'
+import {VitePWA} from 'vite-plugin-pwa'
 
 const pkg = JSON.parse(
   readFileSync(
@@ -11,7 +12,45 @@ const pkg = JSON.parse(
 )
 
 export default defineConfig({
-  plugins: [solidPlugin()],
+  plugins: [
+    solidPlugin(),
+    VitePWA({
+      // 'prompt', not 'autoUpdate': this is a wallet, so a new build must
+      // never silently swap the running JS out from under a signing/melt
+      // action in progress - src/index.tsx wires the prompt to a toast
+      registerType: 'prompt',
+      // precache only the built app shell (JS/CSS/fonts/icons). No
+      // runtimeCaching entries are added on purpose - every fetch() this
+      // app makes is a live LNURL/mint protocol call, and those must always
+      // hit the network, never be served from a cache as if still current
+      workbox: {
+        globPatterns: ['**/*.{js,css,html,woff,woff2,svg,png}']
+      },
+      includeAssets: ['favicon.svg'],
+      manifest: {
+        name: 'LNURLwallet',
+        short_name: 'LNURLwallet',
+        description: pkg.description,
+        // relative to the manifest's own URL, so this resolves correctly
+        // whether served from a domain root or a GitHub Pages subpath
+        start_url: '.',
+        scope: '.',
+        display: 'standalone',
+        background_color: '#002222',
+        theme_color: '#002222',
+        icons: [
+          {src: 'icon-192.png', sizes: '192x192', type: 'image/png'},
+          {src: 'icon-512.png', sizes: '512x512', type: 'image/png'},
+          {
+            src: 'maskable-icon-512.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'maskable'
+          }
+        ]
+      }
+    })
+  ],
   // relative asset paths so the same build works on GitHub Pages
   // (https://user.github.io/lnurl-wallet/) and any other static host -
   // routing is hash-based, so no server-side path handling is needed either

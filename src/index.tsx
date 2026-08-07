@@ -1,9 +1,11 @@
 /* @refresh reload */
 import {render} from 'solid-js/web'
 import {Route, HashRouter} from '@solidjs/router'
-import {Toaster} from 'solid-toast'
+import toast, {Toaster} from 'solid-toast'
+import {registerSW} from 'virtual:pwa-register'
 
 import {WalletProvider} from './WalletContext'
+import {notify, NotifyKind} from './helpers'
 import '@fontsource/noto-sans/400.css'
 import '@fontsource/noto-sans/700.css'
 import './styles/style.scss'
@@ -63,3 +65,29 @@ const cleanup = render(
 if (import.meta.hot) {
   import.meta.hot.dispose(cleanup)
 }
+
+// 'prompt' registerType (see vite.config.ts) means a waiting update never
+// takes over on its own - the reload is only ever whatever this toast's
+// button triggers, so a build never swaps out from under an in-progress
+// signing/melt action
+const updateSW = registerSW({
+  onNeedRefresh: () => {
+    const id = toast.custom(
+      <span>
+        A new version is ready.&nbsp;
+        <button
+          onClick={() => {
+            toast.dismiss(id)
+            updateSW(true)
+          }}
+        >
+          Reload
+        </button>
+      </span>,
+      {duration: Infinity}
+    )
+  },
+  onOfflineReady: () => {
+    notify('Ready to work offline.', NotifyKind.SUCCESS)
+  }
+})
