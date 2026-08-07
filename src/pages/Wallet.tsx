@@ -11,6 +11,7 @@ import {
 } from 'solid-icons/io'
 
 import {useWallet, groupByServer} from '../WalletContext'
+import {serverOf} from '../lnurlcash'
 import {notify, NotifyKind, msatToSats} from '../helpers'
 import MintGroupCard from '../components/MintGroupCard'
 
@@ -38,6 +39,16 @@ const Wallet: Component = () => {
   const mintCount = createMemo(() => groupByServer(spendableBearers()).length)
   const visibleBearers = createMemo(() =>
     showSpent() ? bearers() : spendableBearers()
+  )
+  // groupByServer rebuilds its Map and every [server, group] tuple fresh on
+  // each call, so keying <For> directly off its result would tear down and
+  // remount every MintGroupCard (losing showNotes, etc.) on any bearer
+  // change anywhere in the wallet, not just the affected group. Server
+  // names are plain strings though - stable by value across calls - so
+  // keying on those instead lets <For> recognize an unchanged mint as the
+  // same row and just update its props, not recreate it
+  const serverNames = createMemo(() =>
+    groupByServer(visibleBearers()).map(([server]) => server)
   )
 
   const toggleSelect = (id: string, isSelected: boolean) => {
@@ -248,12 +259,14 @@ const Wallet: Component = () => {
                 </p>
               }
             >
-              <For each={groupByServer(visibleBearers())}>
-                {([server, group]) => (
+              <For each={serverNames()}>
+                {server => (
                   <section class="server-group">
                     <MintGroupCard
                       server={server}
-                      group={group}
+                      group={visibleBearers().filter(
+                        b => serverOf(b.url) === server
+                      )}
                       selected={selected()}
                       onSelect={toggleSelect}
                       onSelectAll={selectMany}
