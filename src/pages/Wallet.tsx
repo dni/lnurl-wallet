@@ -26,12 +26,16 @@ const Wallet: Component = () => {
     bearers().filter(b => selected().has(b.id))
   )
   // merging burns all selected notes in one callback request, so they must
-  // share a service - and each must have been verified (callback known)
+  // share a service, each must have been verified (callback known), and
+  // none can be locally locked as spent - the checkbox is disabled for a
+  // spent note too, this is just a second guard
   const combinable = createMemo(() => {
     const picked = selectedBearers()
     if (picked.length < 2) return false
     const server = serverOf(picked[0].url)
-    return picked.every(b => serverOf(b.url) === server && b.callback !== '')
+    return picked.every(
+      b => serverOf(b.url) === server && b.callback !== '' && !b.spent
+    )
   })
   const selectedTotal = createMemo(() =>
     selectedBearers().reduce((sum, b) => sum + b.amount, 0)

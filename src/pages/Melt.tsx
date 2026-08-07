@@ -84,13 +84,15 @@ const Melt: Component = () => {
     selectedBearers().reduce((sum, b) => sum + b.amount, 0)
   )
   // merging (and, if needed, splitting) burns notes and mints replacements,
-  // so every selected note must come from the same service and already be
-  // verified (callback known) before either action is allowed
+  // so every selected note must come from the same service, already be
+  // verified (callback known), and not be locally locked as spent
   const selectionValid = createMemo(() => {
     const picked = selectedBearers()
     if (picked.length === 0) return false
     const server = serverOf(picked[0].url)
-    return picked.every(b => serverOf(b.url) === server && b.callback !== '')
+    return picked.every(
+      b => serverOf(b.url) === server && b.callback !== '' && !b.spent
+    )
   })
 
   // melt demands an exact match - an invoice amount that fails to decode is
@@ -308,13 +310,14 @@ const Melt: Component = () => {
                           <input
                             type="checkbox"
                             checked={selectedIds().has(bearer.id)}
-                            disabled={!bearer.callback}
+                            disabled={!bearer.callback || bearer.spent}
                             onChange={e =>
                               toggleSelect(bearer.id, e.currentTarget.checked)
                             }
                           />
                           &nbsp;{msatToSats(bearer.amount)} sats
-                          <Show when={!bearer.callback}>
+                          <Show when={bearer.spent}>&nbsp;(spent)</Show>
+                          <Show when={!bearer.callback && !bearer.spent}>
                             &nbsp;(not verified yet)
                           </Show>
                         </label>

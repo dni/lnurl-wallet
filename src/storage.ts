@@ -24,6 +24,12 @@ export type Bearer = {
   // payRequest's optional mintPubkey) - lets a note's ?sig= be checked
   // offline against it without a network round trip
   mintPubkey?: string
+  // a local-only lock, not a server-verified state: true once this wallet
+  // has melted/handed over the note, or the holder marked it manually. It
+  // just disables further mutating actions here so this copy can't be
+  // reused by accident - it says nothing about whether the service has
+  // actually burned it yet
+  spent?: boolean
   createdAt: number
   updatedAt: number
 }

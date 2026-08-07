@@ -9,7 +9,9 @@ import {
   IoGitBranchSharp,
   IoSwapHorizontalSharp,
   IoTrashSharp,
-  IoShieldCheckmarkSharp
+  IoShieldCheckmarkSharp,
+  IoBanSharp,
+  IoArrowUndoSharp
 } from 'solid-icons/io'
 
 import type {Bearer} from '../storage'
@@ -58,10 +60,12 @@ const BearerCard: Component<BearerCardProps> = props => {
   // set once a transfer rotated the secret - the fresh note to hand over
   const [handover, setHandover] = createSignal<string | null>(null)
   const [confirmDelete, setConfirmDelete] = createSignal(false)
+  const [confirmUnspend, setConfirmUnspend] = createSignal(false)
 
   const token = () => toBech32Lnurl(props.bearer.url)
   const k1 = () => noteK1(props.bearer.url) || ''
   const hasCallback = () => props.bearer.callback !== ''
+  const isSpent = () => !!props.bearer.spent
 
   // offline-verifiable iff the note carries a signature AND this wallet
   // already knows the issuing service's mintPubkey - both optional per
@@ -128,14 +132,15 @@ const BearerCard: Component<BearerCardProps> = props => {
       // {"status":"OK"} only means the payment is now in flight - SERVICE
       // finalizes the burn once it settles, or restores the note if it
       // fails, so this isn't confirmation the note is actually spent yet.
-      // Leave it in the wallet rather than assume success: refreshing
-      // shortly will show it as gone once the melt truly completes (or,
-      // if it failed instead, just refresh normally - nothing lost either
-      // way, unlike removing it now would risk).
+      // Leave it in the wallet rather than remove it outright, but lock it
+      // so it can't be acted on again out from under the in-flight payment;
+      // unspend it (see the warning there) if the payment turns out to
+      // have failed and the note is still good
+      await updateBearer(props.bearer.id, {spent: true})
       setAction(null)
       setMeltPr('')
       notify(
-        'Melt requested - the payment is on its way. Refresh in a moment to confirm the note is gone.',
+        'Melt requested and the note is now locked as spent - the payment is on its way.',
         NotifyKind.SUCCESS
       )
     } catch (err) {
@@ -210,6 +215,22 @@ const BearerCard: Component<BearerCardProps> = props => {
     }
   }
 
+  // a local-only lock (see storage.ts's Bearer.spent) - no network call,
+  // just stops this wallet from acting on a note it considers given away
+  const markSpent = () => {
+    updateBearer(props.bearer.id, {spent: true})
+    notify(
+      'Marked as spent - melt, split, transfer and refresh are locked until unspent.',
+      NotifyKind.SUCCESS
+    )
+  }
+
+  const unspend = () => {
+    updateBearer(props.bearer.id, {spent: false})
+    setConfirmUnspend(false)
+    notify('Unspent - actions are available again.', NotifyKind.SUCCESS)
+  }
+
   return (
     <figure class="bearer-card">
       <div class="bearer-head">
@@ -217,6 +238,7 @@ const BearerCard: Component<BearerCardProps> = props => {
           <input
             type="checkbox"
             checked={props.selected}
+            disabled={isSpent()}
             onChange={e => props.onSelect(e.currentTarget.checked)}
           />
         </label>
@@ -234,6 +256,12 @@ const BearerCard: Component<BearerCardProps> = props => {
             >
               <IoShieldCheckmarkSharp />
               &nbsp;signed
+            </span>
+          </Show>
+          <Show when={isSpent()}>
+            <span class="bearer-spent" title="Locally locked - see below">
+              <IoBanSharp />
+              &nbsp;spent
             </span>
           </Show>
           <span class="bearer-server">{serverOf(props.bearer.url)}</span>
@@ -268,11 +296,12 @@ const BearerCard: Component<BearerCardProps> = props => {
         <div class="btns">
           <button
             onClick={() => {
-              removeBearer(props.bearer.id)
-              notify('Note handed over and removed.', NotifyKind.SUCCESS)
+              updateBearer(props.bearer.id, {spent: true})
+              setHandover(null)
+              notify('Marked as handed over and spent.', NotifyKind.SUCCESS)
             }}
           >
-            Handed over - remove
+            Handed over
           </button>
           <button onClick={() => setHandover(null)}>Keep it myself</button>
         </div>
@@ -288,7 +317,7 @@ const BearerCard: Component<BearerCardProps> = props => {
         <button
           class="icon-btn"
           title="Refresh value from the service, then rotate (the GET necessarily exposes k1)"
-          disabled={busy()}
+          disabled={busy() || isSpent()}
           onClick={refresh}
         >
           <IoRefreshSharp classList={{spin: busy()}} />
@@ -297,7 +326,7 @@ const BearerCard: Component<BearerCardProps> = props => {
           <button
             class="icon-btn"
             title="Melt - have the service pay a bolt11 invoice of exactly this note's value"
-            disabled={!hasCallback()}
+            disabled={!hasCallback() || isSpent()}
             onClick={() => setAction(action() === 'melt' ? null : 'melt')}
           >
             <IoFlameSharp />
@@ -305,7 +334,7 @@ const BearerCard: Component<BearerCardProps> = props => {
           <button
             class="icon-btn"
             title="Split into two notes"
-            disabled={!hasCallback()}
+            disabled={!hasCallback() || isSpent()}
             onClick={() => setAction(action() === 'split' ? null : 'split')}
           >
             <IoGitBranchSharp />
@@ -313,41 +342,87 @@ const BearerCard: Component<BearerCardProps> = props => {
           <button
             class="icon-btn"
             title="Transfer - rotate the secret and hand the fresh note over"
-            disabled={!hasCallback()}
+            disabled={!hasCallback() || isSpent()}
             onClick={() =>
               setAction(action() === 'transfer' ? null : 'transfer')
             }
           >
             <IoSwapHorizontalSharp />
           </button>
+          <Show
+            when={isSpent()}
+            fallback={
+              <button
+                class="icon-btn"
+                title="Mark as spent - lock this note without removing it, e.g. if you already handed it out some other way"
+                onClick={markSpent}
+              >
+                <IoBanSharp />
+              </button>
+            }
+          >
+            <button
+              class="icon-btn"
+              title="Unspend - unlock this note again"
+              onClick={() => setConfirmUnspend(true)}
+            >
+              <IoArrowUndoSharp />
+            </button>
+          </Show>
           <button
             class="icon-btn"
-            title="Remove from wallet"
+            title={
+              isSpent() ? 'Clear spent note from wallet' : 'Remove from wallet'
+            }
             onClick={() => setConfirmDelete(true)}
           >
             <IoTrashSharp />
           </button>
         </div>
       </div>
-      <Show when={!hasCallback()}>
+      <Show when={!hasCallback() && !isSpent()}>
         <p class="bearer-hint">
           Not verified with its service yet - refresh to enable melt, split and
           transfer.
         </p>
       </Show>
+      <Show when={isSpent() && !confirmUnspend()}>
+        <p class="bearer-hint">
+          Locked as spent - refresh, melt, split and transfer are disabled so
+          this copy can't be reused by accident.
+        </p>
+      </Show>
+      <Show when={confirmUnspend()}>
+        <p class="warning">
+          This note may already be gone for good - if it was melted, or handed
+          to someone who's since redeemed it, unspending it here won't bring it
+          back (this is a local flag, not a check with the service). And if you
+          handed it over and this wallet spends or rotates it again before the
+          recipient does, their copy gets invalidated instead of yours. Unspend
+          anyway?
+        </p>
+        <div class="btns">
+          <button onClick={unspend}>Unspend anyway</button>
+          <button onClick={() => setConfirmUnspend(false)}>Cancel</button>
+        </div>
+      </Show>
       <Show when={confirmDelete()}>
         <p class="warning">
-          Remove this note from the wallet? Without a backup (or the note saved
-          elsewhere) the sats behind it are gone.
+          {isSpent()
+            ? "Clear this spent note from the wallet? If it turns out it wasn't actually spent, the sats are gone unless you saved the note elsewhere."
+            : 'Remove this note from the wallet? Without a backup (or the note saved elsewhere) the sats behind it are gone.'}
         </p>
         <div class="btns">
           <button
             onClick={() => {
               removeBearer(props.bearer.id)
-              notify('Note removed.', NotifyKind.SUCCESS)
+              notify(
+                isSpent() ? 'Spent note cleared.' : 'Note removed.',
+                NotifyKind.SUCCESS
+              )
             }}
           >
-            Remove
+            {isSpent() ? 'Clear' : 'Remove'}
           </button>
           <button onClick={() => setConfirmDelete(false)}>Cancel</button>
         </div>
