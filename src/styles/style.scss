@@ -109,6 +109,17 @@ h2 {
   }
 }
 
+.wallet-hero-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 14px;
+  h2 {
+    margin: 0;
+  }
+}
+
 .wallet-stats {
   display: flex;
   flex-wrap: wrap;

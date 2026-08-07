@@ -15,7 +15,6 @@ import {
 import {useWallet, groupByServer} from '../WalletContext'
 import {serverOf, noteK1, withNewK1, mergeNotes} from '../lnurlcash'
 import {notify, NotifyKind, msatToSats} from '../helpers'
-import BearerCard from '../components/BearerCard'
 import MintGroupCard from '../components/MintGroupCard'
 
 const Wallet: Component = () => {
@@ -225,7 +224,32 @@ const Wallet: Component = () => {
         >
           <div id="wallet" class="page">
             <section class="wallet-hero">
-              <h2>Your LNURLcash</h2>
+              <div class="wallet-hero-header">
+                <h2>Your LNURLcash</h2>
+                <Show when={spentCount() > 0}>
+                  <button
+                    class="icon-btn"
+                    title={`Clear all ${spentCount()} spent note${spentCount() === 1 ? '' : 's'} from the wallet`}
+                    onClick={() => setConfirmClearSpent(true)}
+                  >
+                    <IoTrashSharp />
+                  </button>
+                </Show>
+              </div>
+              <Show when={confirmClearSpent()}>
+                <p class="warning">
+                  Clear all {spentCount()} spent note
+                  {spentCount() === 1 ? '' : 's'} from the wallet? If any of
+                  them turn out not to have actually been spent, those sats are
+                  gone unless you saved them elsewhere.
+                </p>
+                <div class="btns">
+                  <button onClick={clearAllSpent}>Clear all</button>
+                  <button onClick={() => setConfirmClearSpent(false)}>
+                    Cancel
+                  </button>
+                </div>
+              </Show>
               <div class="wallet-stats">
                 <div class="wallet-stat">
                   <span class="wallet-stat-value">
@@ -270,25 +294,7 @@ const Wallet: Component = () => {
                       <span class="switch-track"></span>
                     </span>
                   </label>
-                  <button onClick={() => setConfirmClearSpent(true)}>
-                    <IoTrashSharp />
-                    &nbsp;Clear all spent
-                  </button>
                 </div>
-                <Show when={confirmClearSpent()}>
-                  <p class="warning">
-                    Clear all {spentCount()} spent note
-                    {spentCount() === 1 ? '' : 's'} from the wallet? If any of
-                    them turn out not to have actually been spent, those sats
-                    are gone unless you saved them elsewhere.
-                  </p>
-                  <div class="btns">
-                    <button onClick={clearAllSpent}>Clear all</button>
-                    <button onClick={() => setConfirmClearSpent(false)}>
-                      Cancel
-                    </button>
-                  </div>
-                </Show>
               </Show>
             </section>
             <Show when={selectedBearers().length > 0}>
@@ -323,21 +329,9 @@ const Wallet: Component = () => {
                       server={server}
                       group={group}
                       selected={selected()}
+                      onSelect={toggleSelect}
                       onSelectAll={selectMany}
                     />
-                    <div class="bearer-list">
-                      <For each={group}>
-                        {bearer => (
-                          <BearerCard
-                            bearer={bearer}
-                            selected={selected().has(bearer.id)}
-                            onSelect={isSelected =>
-                              toggleSelect(bearer.id, isSelected)
-                            }
-                          />
-                        )}
-                      </For>
-                    </div>
                   </section>
                 )}
               </For>
