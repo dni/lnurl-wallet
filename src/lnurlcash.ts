@@ -81,8 +81,8 @@ export const toLud17w = (url: string): string =>
   url.replace(/^https?:\/\//, 'lnurlw://')
 
 // LUD-16: a Lightning Address resolves to its .well-known payRequest URL
-const isEmail = (value: string): boolean =>
-  /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)
+export const isLightningAddress = (value: string): boolean =>
+  /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim())
 
 const lnAddressToUrl = (address: string): string => {
   const [name, domain] = address.trim().split('@')
@@ -97,7 +97,7 @@ export const resolveMintInput = (value: string): string | null => {
   const trimmed = value.trim()
   if (!trimmed) return null
   if (isBech32Lnurl(trimmed)) return fromBech32Lnurl(trimmed)
-  if (isEmail(trimmed)) return lnAddressToUrl(trimmed)
+  if (isLightningAddress(trimmed)) return lnAddressToUrl(trimmed)
   return null
 }
 
@@ -110,7 +110,7 @@ export const resolveLnurlInput = (value: string): string | null => {
   if (/^(lnurlw|lnurlp|lnurlc|keyauth):\/\//i.test(trimmed)) {
     return fromLud17(trimmed)
   }
-  if (isEmail(trimmed)) return lnAddressToUrl(trimmed)
+  if (isLightningAddress(trimmed)) return lnAddressToUrl(trimmed)
   if (/^https?:\/\//i.test(trimmed)) return trimmed
   return null
 }

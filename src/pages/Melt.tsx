@@ -10,8 +10,13 @@ import {
 
 import type {Bearer} from '../storage'
 import {useWallet, groupByServer} from '../WalletContext'
+import type {PayRequestInfo} from '../lnurlcash'
 import {
   isBolt11Invoice,
+  isLightningAddress,
+  resolveMintInput,
+  fetchPayRequest,
+  requestInvoice,
   decodeBolt11AmountMsat,
   serverOf,
   noteK1,
@@ -22,7 +27,13 @@ import {
   rotateNote,
   PendingNoteError
 } from '../lnurlcash'
-import {notify, NotifyKind, msatToSats, pasteFromClipboard} from '../helpers'
+import {
+  notify,
+  NotifyKind,
+  msatToSats,
+  satsToMsat,
+  pasteFromClipboard
+} from '../helpers'
 import ScanToggle from '../components/ScanToggle'
 import RequireWallet from '../components/RequireWallet'
 
@@ -43,6 +54,14 @@ const Melt: Component = () => {
   const [pastedInvoice, setPastedInvoice] = createSignal<string | null>(null)
   const [selectedIds, setSelectedIds] = createSignal<Set<string>>(new Set())
   const [paying, setPaying] = createSignal(false)
+
+  // a Lightning Address has no invoice of its own yet - resolving one just
+  // gets its payRequest, then an amount is needed before an actual invoice
+  // (and thus a pastedInvoice) exists
+  const [lnAddressPayRequest, setLnAddressPayRequest] =
+    createSignal<PayRequestInfo | null>(null)
+  const [lnAddressAmountSats, setLnAddressAmountSats] = createSignal('')
+  const [fetchingInvoice, setFetchingInvoice] = createSignal(false)
 
   // set right after a melt is requested - polled by trying to rotate the
   // (locally already spent-locked) note until we learn which way it went
@@ -125,16 +144,47 @@ const Melt: Component = () => {
     }
   })
 
-  const isValid = createMemo(() => value() === '' || isBolt11Invoice(value()))
+  const isValid = createMemo(
+    () =>
+      value() === '' || isBolt11Invoice(value()) || isLightningAddress(value())
+  )
+
+  // a Lightning Address just gets its payRequest here - getInvoiceFromAddress
+  // below turns that into an actual invoice once an amount is chosen
+  const lookupLnAddress = async (address: string) => {
+    const url = resolveMintInput(address)
+    if (!url) {
+      notify('Not a valid Lightning Address.', NotifyKind.ERROR)
+      return
+    }
+    setFetchingInvoice(true)
+    try {
+      setLnAddressPayRequest(await fetchPayRequest(url))
+    } catch (err) {
+      notify((err as Error).message, NotifyKind.ERROR)
+    } finally {
+      setFetchingInvoice(false)
+    }
+  }
+
+  const handleValue = (raw: string) => {
+    const trimmed = raw.trim()
+    if (isBolt11Invoice(trimmed)) {
+      setPastedInvoice(trimmed)
+      setValue('')
+      return
+    }
+    if (isLightningAddress(trimmed)) {
+      lookupLnAddress(trimmed)
+      setValue('')
+      return
+    }
+    notify('Not a valid bolt11 invoice or Lightning Address.', NotifyKind.ERROR)
+  }
 
   const handle = () => {
     if (value() === '') return
-    if (!isBolt11Invoice(value())) {
-      notify('Not a valid bolt11 invoice.', NotifyKind.ERROR)
-      return
-    }
-    setPastedInvoice(value().trim())
-    setValue('')
+    handleValue(value())
   }
 
   const paste = async () => {
@@ -146,9 +196,37 @@ const Melt: Component = () => {
     }
   }
 
-  // Scanner's own accept already guarantees a valid bolt11, so this skips
-  // straight past the field/handle() validation dance
-  const onScan = (scanned: string) => setPastedInvoice(scanned.trim())
+  const onScan = (scanned: string) => handleValue(scanned)
+
+  // validates lnAddressAmountSats() against the payRequest's bounds, then
+  // turns it into an actual bolt11 - same shape as a directly pasted one
+  const getInvoiceFromAddress = async () => {
+    const info = lnAddressPayRequest()
+    if (!info) return
+    const msat = satsToMsat(lnAddressAmountSats())
+    if (!lnAddressAmountSats() || !Number.isFinite(msat) || msat <= 0) {
+      notify('Enter an amount in sats.', NotifyKind.ERROR)
+      return
+    }
+    if (msat < info.minSendable || msat > info.maxSendable) {
+      notify(
+        `Amount must be between ${msatToSats(info.minSendable)} and ${msatToSats(info.maxSendable)} sats.`,
+        NotifyKind.ERROR
+      )
+      return
+    }
+    setFetchingInvoice(true)
+    try {
+      const result = await requestInvoice(info.callback, msat)
+      setPastedInvoice(result.pr)
+      setLnAddressPayRequest(null)
+      setLnAddressAmountSats('')
+    } catch (err) {
+      notify((err as Error).message, NotifyKind.ERROR)
+    } finally {
+      setFetchingInvoice(false)
+    }
+  }
 
   const onKeydown = (e: KeyboardEvent) => {
     if (e.key === 'Enter') {
@@ -323,7 +401,10 @@ const Melt: Component = () => {
         <h2>Melt - pay an invoice with a bearer note</h2>
         <figure class="paste-widget">
           <div class="paste-input-row">
-            <ScanToggle onScan={onScan} accept={isBolt11Invoice} />
+            <ScanToggle
+              onScan={onScan}
+              accept={v => isBolt11Invoice(v) || isLightningAddress(v)}
+            />
             <button
               type="button"
               class="icon-btn paste-icon-btn"
@@ -338,7 +419,7 @@ const Melt: Component = () => {
                 type="text"
                 class="paste-input"
                 classList={{invalid: value() !== '' && !isValid()}}
-                placeholder="lnbc1..."
+                placeholder="lnbc1... or user@example.com"
                 value={value()}
                 onInput={e => setValue(e.currentTarget.value)}
                 onKeyDown={onKeydown}
@@ -357,15 +438,54 @@ const Melt: Component = () => {
             <button
               type="button"
               class="icon-btn paste-confirm-btn"
-              title="Show invoice"
-              disabled={value() === '' || !isValid()}
+              title="Continue"
+              disabled={value() === '' || !isValid() || fetchingInvoice()}
               onClick={handle}
             >
-              <IoReturnDownForwardSharp />
+              <Show
+                when={fetchingInvoice()}
+                fallback={<IoReturnDownForwardSharp />}
+              >
+                <IoRefreshSharp class="spin" />
+              </Show>
             </button>
           </div>
           <Show when={value() !== '' && !isValid()}>
-            <p class="warning">Not a valid bolt11 invoice.</p>
+            <p class="warning">
+              Not a valid bolt11 invoice or Lightning Address.
+            </p>
+          </Show>
+          <Show when={lnAddressPayRequest()}>
+            {info => (
+              <div class="form-item">
+                <label>
+                  Amount (sats, {msatToSats(info().minSendable)} -{' '}
+                  {msatToSats(info().maxSendable)})
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  placeholder="amount in sats"
+                  value={lnAddressAmountSats()}
+                  onInput={e => setLnAddressAmountSats(e.currentTarget.value)}
+                />
+                <div class="btns">
+                  <button
+                    disabled={fetchingInvoice()}
+                    onClick={getInvoiceFromAddress}
+                  >
+                    <Show when={fetchingInvoice()}>
+                      <IoRefreshSharp class="spin" />
+                      &nbsp;
+                    </Show>
+                    Get invoice
+                  </button>
+                  <button onClick={() => setLnAddressPayRequest(null)}>
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
           </Show>
         </figure>
         <Show when={pastedInvoice()}>
