@@ -4,8 +4,7 @@ import {useNavigate, useSearchParams} from '@solidjs/router'
 import {
   IoClipboardSharp,
   IoCloseSharp,
-  IoReturnDownForwardSharp,
-  IoCopySharp
+  IoReturnDownForwardSharp
 } from 'solid-icons/io'
 
 import {useWallet, groupByServer} from '../WalletContext'
@@ -16,16 +15,10 @@ import {
   noteK1,
   withNewK1,
   meltNote,
-  mergeNotes
+  mergeNotes,
+  splitNote
 } from '../lnurlcash'
-import {
-  notify,
-  NotifyKind,
-  msatToSats,
-  pasteFromClipboard,
-  copyToClipboard
-} from '../helpers'
-import Qr from '../components/Qr'
+import {notify, NotifyKind, msatToSats, pasteFromClipboard} from '../helpers'
 import RequireWallet from '../components/RequireWallet'
 
 const Melt: Component = () => {
@@ -91,8 +84,10 @@ const Melt: Component = () => {
     selectedBearers().reduce((sum, b) => sum + b.amount, 0)
   )
   // melting burns every selected note in one payment (via a merge first if
-  // there's more than one), so they must share a service and each must
-  // already be verified (callback known)
+  // there's more than one, then a split if the combined value overshoots
+  // the invoice - melt itself demands an exact match), so the selection
+  // must share a service and each note must already be verified (callback
+  // known)
   const selectionPayable = createMemo(() => {
     const picked = selectedBearers()
     if (picked.length === 0) return false
@@ -100,9 +95,11 @@ const Melt: Component = () => {
     if (!picked.every(b => serverOf(b.url) === server && b.callback !== ''))
       return false
     // an invoice amount that fails to decode is treated as unknown, not
-    // zero - let the service be the judge rather than block on it here
+    // zero - let the service be the judge rather than block on it here.
+    // Otherwise anything >= what's owed works: a surplus gets split into
+    // exact change plus a note kept for later, an exact match skips that
     const amount = invoiceAmountMsat()
-    return amount === null || selectedTotal() === amount
+    return amount === null || selectedTotal() >= amount
   })
 
   const toggleSelect = (id: string, isSelected: boolean) => {
@@ -119,39 +116,68 @@ const Melt: Component = () => {
     setSelectedIds(new Set<string>())
   }
 
-  // pays the pasted invoice with the selected note(s) - merges them into
-  // one first when more than one is selected, since melt only takes a
-  // single k1, then melts that note against the invoice. Per meltNote's own
-  // semantics a resolved call only means the payment is in flight, not
-  // confirmed spent, so - same as BearerCard's melt - the note is left in
-  // place rather than assumed gone; refreshing it later confirms the burn
+  // pays the pasted invoice with the selected note(s): merges them into one
+  // first when more than one is selected (melt only ever takes a single
+  // k1), then - if that's still worth more than the invoice - splits off
+  // exact change so melt's exact-match requirement is met, keeping the
+  // remainder as a fresh note. Per meltNote's own semantics a resolved call
+  // only means the payment is in flight, not confirmed spent, so - same as
+  // BearerCard's melt - the spent note is left in place rather than assumed
+  // gone; refreshing it later confirms the burn
   const payInvoice = async () => {
     const invoice = pastedInvoice()
     const picked = selectedBearers()
     if (!invoice || !selectionPayable() || picked.length === 0) return
     setPaying(true)
     try {
-      let payCallback = picked[0].callback
-      let payK1 = noteK1(picked[0].url)!
+      let current = picked[0]
+
       if (picked.length > 1) {
-        const [base] = picked
         const total = selectedTotal()
         const merged = await mergeNotes(
-          base.callback,
+          current.callback,
           picked.map(b => noteK1(b.url)!)
         )
         for (const bearer of picked) removeBearer(bearer.id)
-        const newBearer = await addBearer({
-          url: withNewK1(base.url, merged.k1, total, merged.signature),
-          callback: base.callback,
+        current = await addBearer({
+          url: withNewK1(current.url, merged.k1, total, merged.signature),
+          callback: current.callback,
           amount: total,
           verified: true,
-          mintPubkey: base.mintPubkey
+          mintPubkey: current.mintPubkey
         })
-        payCallback = newBearer.callback
-        payK1 = noteK1(newBearer.url)!
       }
-      await meltNote(payCallback, payK1, invoice)
+
+      const target = invoiceAmountMsat()
+      if (target !== null && current.amount > target) {
+        const parts = await splitNote(
+          current.callback,
+          noteK1(current.url)!,
+          target
+        )
+        removeBearer(current.id)
+        await addBearer({
+          url: withNewK1(
+            current.url,
+            parts.change,
+            current.amount - target,
+            parts.changeSignature
+          ),
+          callback: current.callback,
+          amount: current.amount - target,
+          verified: true,
+          mintPubkey: current.mintPubkey
+        })
+        current = await addBearer({
+          url: withNewK1(current.url, parts.k1, target, parts.signature),
+          callback: current.callback,
+          amount: target,
+          verified: true,
+          mintPubkey: current.mintPubkey
+        })
+      }
+
+      await meltNote(current.callback, noteK1(current.url)!, invoice)
       notify(
         "Payment requested - it's on its way. Refresh the note in a moment to confirm it's gone.",
         NotifyKind.SUCCESS
@@ -217,21 +243,6 @@ const Melt: Component = () => {
         </figure>
         <Show when={pastedInvoice()}>
           <figure class="setup-card">
-            <figcaption>
-              Bolt11 invoice - this wallet has no Lightning node of its own, so
-              pay it with another wallet, or select bearer note(s) below to pay
-              it directly
-            </figcaption>
-            <Qr value={pastedInvoice()!.toUpperCase()} />
-            <div class="btns">
-              <button onClick={() => copyToClipboard(pastedInvoice()!)}>
-                <IoCopySharp />
-                &nbsp;Copy invoice
-              </button>
-              <button onClick={clearInvoice}>Clear</button>
-            </div>
-          </figure>
-          <figure class="setup-card">
             <figcaption>Pay with your bearer notes</figcaption>
             <Show
               when={invoiceAmountMsat() !== null}
@@ -244,9 +255,10 @@ const Melt: Component = () => {
               }
             >
               <p class="bearer-hint">
-                Wants exactly {msatToSats(invoiceAmountMsat()!)} sats - select
-                note(s) from one mint that add up to it (2+ get merged into one
-                first, since a melt only ever spends a single note).
+                Wants {msatToSats(invoiceAmountMsat()!)} sats - select note(s)
+                from one mint worth at least that (2+ get merged into one first,
+                and any excess gets split off as change, since melt spends a
+                single note for exactly the invoice amount).
               </p>
             </Show>
             <Show
@@ -284,8 +296,7 @@ const Melt: Component = () => {
                 Selected {msatToSats(selectedTotal())} sats
                 <Show when={!selectionPayable()}>
                   {' '}
-                  - doesn't add up to the invoice yet, or spans more than one
-                  mint
+                  - not enough selected yet, or spans more than one mint
                 </Show>
               </p>
             </Show>
@@ -296,6 +307,7 @@ const Melt: Component = () => {
               >
                 Pay invoice
               </button>
+              <button onClick={clearInvoice}>Clear</button>
             </div>
           </figure>
         </Show>
