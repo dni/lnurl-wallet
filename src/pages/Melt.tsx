@@ -23,6 +23,7 @@ import {
   PendingNoteError
 } from '../lnurlcash'
 import {notify, NotifyKind, msatToSats, pasteFromClipboard} from '../helpers'
+import ScanToggle from '../components/ScanToggle'
 import RequireWallet from '../components/RequireWallet'
 
 // same cadence as Mint.tsx's LUD-21 verify poll - a melted note's fate
@@ -144,6 +145,10 @@ const Melt: Component = () => {
       handle()
     }
   }
+
+  // Scanner's own accept already guarantees a valid bolt11, so this skips
+  // straight past the field/handle() validation dance
+  const onScan = (scanned: string) => setPastedInvoice(scanned.trim())
 
   const onKeydown = (e: KeyboardEvent) => {
     if (e.key === 'Enter') {
@@ -318,6 +323,7 @@ const Melt: Component = () => {
         <h2>Melt - pay an invoice with a bearer note</h2>
         <figure class="paste-widget">
           <div class="paste-input-row">
+            <ScanToggle onScan={onScan} accept={isBolt11Invoice} />
             <button
               type="button"
               class="icon-btn paste-icon-btn"

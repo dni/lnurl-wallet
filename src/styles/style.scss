@@ -452,8 +452,15 @@ pre {
 
 .paste-input-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
+}
+
+// forces a flex-wrap line break so the camera preview sits above the
+// row's buttons/input instead of squeezed inline between them
+.scan-preview {
+  flex: 1 0 100%;
 }
 
 .paste-input-wrapper {
