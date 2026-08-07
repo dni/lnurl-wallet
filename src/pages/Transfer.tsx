@@ -1,29 +1,168 @@
 import type {Component} from 'solid-js'
-import {Show, createSignal, createMemo} from 'solid-js'
+import {Show, For, createSignal, createMemo} from 'solid-js'
 import {useNavigate} from '@solidjs/router'
 import {
   IoClipboardSharp,
   IoCloseSharp,
   IoReturnDownForwardSharp,
-  IoRefreshSharp
+  IoRefreshSharp,
+  IoCopySharp
 } from 'solid-icons/io'
 
-import {useWallet} from '../WalletContext'
-import {isValidNoteInput, isBolt11Invoice} from '../lnurlcash'
+import type {Bearer} from '../storage'
+import {useWallet, groupByServer} from '../WalletContext'
+import {
+  isValidNoteInput,
+  isBolt11Invoice,
+  noteK1,
+  withNewK1,
+  mergeNotes,
+  splitNote,
+  toBech32Lnurl,
+  serverOf
+} from '../lnurlcash'
 import {receiveNote, secureReceivedNote} from '../receive'
-import {notify, NotifyKind, msatToSats, pasteFromClipboard} from '../helpers'
+import {
+  notify,
+  NotifyKind,
+  msatToSats,
+  satsToMsat,
+  pasteFromClipboard,
+  copyToClipboard
+} from '../helpers'
 import ScanToggle from '../components/ScanToggle'
+import Qr from '../components/Qr'
 import RequireWallet from '../components/RequireWallet'
 
 // bringing a note into this wallet, scanned or pasted - same destination
 // either way, so one page covers both instead of sending the holder to
 // pick an input method up front
 const Transfer: Component = () => {
-  const {addBearer, updateBearer, bearers} = useWallet()
+  const {addBearer, updateBearer, removeBearer, bearers} = useWallet()
   const navigate = useNavigate()
   let pasteRef: HTMLInputElement | null = null
   const [value, setValue] = createSignal('')
   const [busy, setBusy] = createSignal(false)
+
+  // prepare-a-note: carve an exact amount out of one or more held notes
+  // (merging and/or splitting as needed) into a single fresh note, ready to
+  // hand over - a merge/split response is a secret that's never been shown
+  // anywhere yet, so unlike a note you've been holding a while, this one
+  // needs no separate rotate step before it's safe to reveal
+  const [prepareAmountSats, setPrepareAmountSats] = createSignal('')
+  const [prepareSelectedIds, setPrepareSelectedIds] = createSignal<Set<string>>(
+    new Set()
+  )
+  const [preparing, setPreparing] = createSignal(false)
+  const [preparedBearer, setPreparedBearer] = createSignal<Bearer | null>(null)
+
+  const prepareAmountMsat = createMemo(() => {
+    const msat = satsToMsat(prepareAmountSats())
+    return prepareAmountSats() && Number.isFinite(msat) && msat > 0
+      ? msat
+      : null
+  })
+  const prepareSelectedBearers = createMemo(() =>
+    bearers().filter(b => prepareSelectedIds().has(b.id))
+  )
+  const prepareSelectedTotal = createMemo(() =>
+    prepareSelectedBearers().reduce((sum, b) => sum + b.amount, 0)
+  )
+  // merging (and, if needed, splitting) burns notes and mints replacements,
+  // so every selected note must come from the same service and already be
+  // verified (callback known)
+  const prepareSelectionValid = createMemo(() => {
+    const picked = prepareSelectedBearers()
+    if (picked.length === 0) return false
+    const server = serverOf(picked[0].url)
+    return picked.every(
+      b => serverOf(b.url) === server && b.callback !== '' && !b.spent
+    )
+  })
+  const canPrepare = createMemo(() => {
+    if (!prepareSelectionValid()) return false
+    const target = prepareAmountMsat()
+    return target !== null && prepareSelectedTotal() >= target
+  })
+
+  const togglePrepareSelect = (id: string, isSelected: boolean) => {
+    setPrepareSelectedIds(prev => {
+      const next = new Set(prev)
+      if (isSelected) next.add(id)
+      else next.delete(id)
+      return next
+    })
+  }
+
+  // a no-op returning the note itself when only one is selected, since
+  // merge only makes sense for 2+
+  const mergePrepareSelectionIfNeeded = async (
+    picked: ReturnType<typeof prepareSelectedBearers>
+  ) => {
+    if (picked.length === 1) return picked[0]
+    const base = picked[0]
+    const total = picked.reduce((sum, b) => sum + b.amount, 0)
+    const merged = await mergeNotes(
+      base.callback,
+      picked.map(b => noteK1(b.url)!)
+    )
+    for (const bearer of picked) removeBearer(bearer.id)
+    return addBearer({
+      url: withNewK1(base.url, merged.k1, total, merged.signature),
+      callback: base.callback,
+      amount: total,
+      verified: true,
+      mintPubkey: base.mintPubkey
+    })
+  }
+
+  const prepareNote = async () => {
+    const picked = prepareSelectedBearers()
+    const target = prepareAmountMsat()
+    if (!canPrepare() || target === null) return
+    setPreparing(true)
+    try {
+      let current = await mergePrepareSelectionIfNeeded(picked)
+      if (current.amount > target) {
+        const parts = await splitNote(
+          current.callback,
+          noteK1(current.url)!,
+          target
+        )
+        removeBearer(current.id)
+        await addBearer({
+          url: withNewK1(
+            current.url,
+            parts.change,
+            current.amount - target,
+            parts.changeSignature
+          ),
+          callback: current.callback,
+          amount: current.amount - target,
+          verified: true,
+          mintPubkey: current.mintPubkey
+        })
+        current = await addBearer({
+          url: withNewK1(current.url, parts.k1, target, parts.signature),
+          callback: current.callback,
+          amount: target,
+          verified: true,
+          mintPubkey: current.mintPubkey
+        })
+      }
+      setPreparedBearer(current)
+      setPrepareSelectedIds(new Set<string>())
+      setPrepareAmountSats('')
+      notify(
+        `Prepared a ${msatToSats(target)} sat note - ready to hand over.`,
+        NotifyKind.SUCCESS
+      )
+    } catch (err) {
+      notify((err as Error).message, NotifyKind.ERROR)
+    } finally {
+      setPreparing(false)
+    }
+  }
 
   const isValid = createMemo(
     () =>
@@ -169,6 +308,96 @@ const Transfer: Component = () => {
             </p>
           </Show>
         </figure>
+
+        <h2>Prepare a bearer note</h2>
+        <figure class="setup-card">
+          <figcaption>
+            Carve an exact amount out of one or more held notes (merging and/or
+            splitting as needed) into a single fresh note, ready to hand over
+          </figcaption>
+          <label>Amount (sats)</label>
+          <input
+            type="number"
+            min="1"
+            placeholder="amount in sats"
+            value={prepareAmountSats()}
+            onInput={e => setPrepareAmountSats(e.currentTarget.value)}
+          />
+          <Show
+            when={bearers().length > 0}
+            fallback={<p>No bearer notes to prepare from yet.</p>}
+          >
+            <For each={groupByServer(bearers())}>
+              {([server, group]) => (
+                <div class="form-item">
+                  <label>{server}</label>
+                  <For each={group}>
+                    {bearer => (
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={prepareSelectedIds().has(bearer.id)}
+                          disabled={!bearer.callback || bearer.spent}
+                          onChange={e =>
+                            togglePrepareSelect(
+                              bearer.id,
+                              e.currentTarget.checked
+                            )
+                          }
+                        />
+                        &nbsp;{msatToSats(bearer.amount)} sats
+                        <Show when={bearer.spent}>&nbsp;(spent)</Show>
+                        <Show when={!bearer.callback && !bearer.spent}>
+                          &nbsp;(not verified yet)
+                        </Show>
+                      </label>
+                    )}
+                  </For>
+                </div>
+              )}
+            </For>
+          </Show>
+          <Show when={prepareSelectedBearers().length > 0}>
+            <p class="bearer-hint">
+              Selected {msatToSats(prepareSelectedTotal())} sats
+              <Show when={!canPrepare()}>
+                {' '}
+                - not enough selected yet, or spans more than one mint
+              </Show>
+            </p>
+          </Show>
+          <div class="btns">
+            <button
+              disabled={!canPrepare() || preparing()}
+              onClick={prepareNote}
+            >
+              <Show when={preparing()}>
+                <IoRefreshSharp class="spin" />
+                &nbsp;
+              </Show>
+              Prepare note
+            </button>
+          </div>
+        </figure>
+        <Show when={preparedBearer()}>
+          <figure class="setup-card">
+            <figcaption>
+              Ready to hand over - {msatToSats(preparedBearer()!.amount)} sats
+            </figcaption>
+            <Qr value={toBech32Lnurl(preparedBearer()!.url)} />
+            <div class="btns">
+              <button
+                onClick={() =>
+                  copyToClipboard(toBech32Lnurl(preparedBearer()!.url))
+                }
+              >
+                <IoCopySharp />
+                &nbsp;Copy note
+              </button>
+              <button onClick={() => setPreparedBearer(null)}>Done</button>
+            </div>
+          </figure>
+        </Show>
       </div>
     </RequireWallet>
   )
