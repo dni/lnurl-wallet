@@ -1,6 +1,6 @@
 {
   "name": "lnurl-wallet",
-  "version": "0.0.7",
+  "version": "0.0.8",
   "description": "LNURLwallet - serverless wallet for LNURLcash bearer tokens",
   "author": "dni",
   "license": "MIT",
