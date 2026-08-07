@@ -24,7 +24,15 @@ export default defineConfig({
       // app makes is a live LNURL/mint protocol call, and those must always
       // hit the network, never be served from a cache as if still current
       workbox: {
-        globPatterns: ['**/*.{js,css,html,woff,woff2,svg,png}']
+        globPatterns: ['**/*.{js,css,html,woff,woff2,svg,png}'],
+        // cleanupOutdatedCaches (on by default) drops the old precache
+        // entries - old bundle files - once a new SW activates. clientsClaim
+        // is what makes that activation actually reach an already-open tab:
+        // without it, skipWaiting() alone still leaves the page controlled
+        // by the previous SW until some unrelated navigation happens, so the
+        // reload the update toast triggers (src/index.tsx) would silently
+        // do nothing
+        clientsClaim: true
       },
       includeAssets: ['favicon.svg'],
       manifest: {
