@@ -2,8 +2,8 @@ import type {Component} from 'solid-js'
 import {Show, createMemo, createSignal} from 'solid-js'
 import {
   IoCopySharp,
-  IoEyeSharp,
   IoEyeOffSharp,
+  IoQrCodeSharp,
   IoRefreshSharp,
   IoFlameSharp,
   IoGitBranchSharp,
@@ -18,7 +18,6 @@ import type {Bearer} from '../storage'
 import {useWallet} from '../WalletContext'
 import {
   toBech32Lnurl,
-  toLud17w,
   noteK1,
   noteSignature,
   serverOf,
@@ -50,8 +49,10 @@ export type BearerCardProps = {
 
 const BearerCard: Component<BearerCardProps> = props => {
   const {updateBearer, removeBearer, addBearer} = useWallet()
-  // the QR is the bearer note itself - keep it behind an overlay until
-  // deliberately revealed, like lnurl_server's hideable QRs
+  // the QR is the bearer note itself - not rendered at all until
+  // deliberately revealed via the corner toggle, both so a shoulder-surfed
+  // screen doesn't leak it and so a long list of notes doesn't reserve a
+  // square of space per card it mostly won't need, especially on mobile
   const [showQr, setShowQr] = createSignal(false)
   const [action, setAction] = createSignal<Action>(null)
   const [busy, setBusy] = createSignal(false)
@@ -266,28 +267,25 @@ const BearerCard: Component<BearerCardProps> = props => {
           </Show>
           <span class="bearer-server">{serverOf(props.bearer.url)}</span>
         </div>
-      </div>
-      <div class="qr-wrapper">
-        <Qr value={handover() ?? token()} />
-        <Show when={!showQr()}>
-          <button
-            class="qr-overlay"
-            title="Show QR code - it IS the bearer note, anyone who scans it can spend it"
-            onClick={() => setShowQr(true)}
-          >
-            <IoEyeSharp />
-          </button>
-        </Show>
-        <Show when={showQr()}>
-          <button
-            class="icon-btn qr-visibility-toggle"
-            title="Hide QR code"
-            onClick={() => setShowQr(false)}
-          >
+        <button
+          class="icon-btn qr-toggle"
+          title={
+            showQr()
+              ? 'Hide QR code'
+              : 'Show QR code - it IS the bearer note, anyone who scans it can spend it'
+          }
+          onClick={() => setShowQr(v => !v)}
+        >
+          <Show when={showQr()} fallback={<IoQrCodeSharp />}>
             <IoEyeOffSharp />
-          </button>
-        </Show>
+          </Show>
+        </button>
       </div>
+      <Show when={showQr()}>
+        <div class="qr-wrapper">
+          <Qr value={handover() ?? token()} />
+        </div>
+      </Show>
       <Show when={handover()}>
         <p class="warning">
           Secret rotated - this QR is the fresh note. Hand it to the recipient;
@@ -490,11 +488,7 @@ const BearerCard: Component<BearerCardProps> = props => {
           </div>
         </div>
       </Show>
-      <p class="bearer-dates">
-        {toLud17w(props.bearer.url).split('?')[0]}
-        <br />
-        updated {formatDate(props.bearer.updatedAt)}
-      </p>
+      <p class="bearer-dates">updated {formatDate(props.bearer.updatedAt)}</p>
     </figure>
   )
 }

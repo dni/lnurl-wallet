@@ -384,29 +384,7 @@ pre {
   display: contents;
 }
 .qr-wrapper {
-  position: relative;
   display: inline-block;
-}
-.qr-overlay {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin: 0;
-  border-radius: 0;
-  background: rgba($bg, 0.9);
-  backdrop-filter: blur(6px);
-  font-size: 1.8em;
-  color: $font-color;
-  &:hover {
-    background: rgba($bg, 0.95);
-  }
-}
-.qr-visibility-toggle {
-  position: absolute;
-  top: 8px;
-  right: 8px;
 }
 
 // ---- paste widget (same structure as lnurl_server's Paste) ----
@@ -584,14 +562,13 @@ nav {
   }
   // .nav-links can be empty (nothing to show before the wallet is
   // unlocked) - .nav-persistent's Docs link always renders regardless of
-  // wallet state, so the dropdown is never entirely empty when opened
-  .nav-links,
-  .nav-persistent {
+  // wallet state, so the dropdown is never entirely empty when opened.
+  // Rows sized for a thumb, not a cursor, with a divider between them so
+  // adjacent large tap targets still read as separate rows
+  .nav-links {
     flex-direction: column;
     align-items: stretch;
     margin-left: 0;
-    // rows sized for a thumb, not a cursor, with a divider between them so
-    // adjacent large tap targets still read as separate rows
     a {
       margin-right: 0;
       padding: 16px 20px;
@@ -602,6 +579,27 @@ nav {
         border-bottom: none;
       }
     }
+  }
+  // Mints/Docs/Backup/Lock: a compact row instead of another stack of
+  // full-width bars, set off from .nav-links above by its own divider
+  // (only when .nav-links actually rendered something to divide from)
+  .nav-persistent {
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: stretch;
+    margin-left: 0;
+    a {
+      flex: 1 1 auto;
+      justify-content: center;
+      margin-right: 0;
+      padding: 14px 10px;
+      min-height: 48px;
+    }
+  }
+  .nav-links:not(:empty) + .nav-persistent {
+    border-top: 1px solid rgba($font-color, 0.15);
+    padding-top: 6px;
   }
   .nav-label {
     display: inline;
@@ -783,6 +781,11 @@ nav {
   min-width: 0;
 }
 
+.qr-toggle {
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
 .bearer-amount {
   font-weight: bold;
   font-size: 1.1em;
@@ -830,6 +833,7 @@ nav {
 }
 
 .bearer-dates {
+  align-self: flex-start;
   font-size: 0.75em;
   opacity: 0.5;
   margin: 8px 0 0 0;
