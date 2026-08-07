@@ -805,6 +805,14 @@ nav {
   font-size: 0.9em;
 }
 
+// .combine-btn sits right after .select-all-btn (a regular button, whose
+// own margin-right already spaces it out), but .transfer-btn follows
+// another .icon-btn - those have margin-right:0, so without this the two
+// would touch with no gap between them
+.transfer-btn {
+  margin-left: 8px;
+}
+
 .bearer-list {
   display: flex;
   flex-wrap: wrap;

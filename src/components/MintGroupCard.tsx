@@ -129,10 +129,9 @@ const MintGroupCard: Component<MintGroupCardProps> = props => {
             &nbsp;{showNotes() ? 'Hide notes' : 'Show notes'}&nbsp;(
             {props.group.length})
           </button>
-        </div>
-        <Show when={showNotes()}>
-          <div class="btns">
+          <Show when={showNotes()}>
             <button
+              class="select-all-btn"
               disabled={selectableIds().length === 0}
               title={
                 allSelected()
@@ -141,13 +140,13 @@ const MintGroupCard: Component<MintGroupCardProps> = props => {
               }
               onClick={() => props.onSelectAll(selectableIds(), !allSelected())}
             >
-              <Show when={allSelected()} fallback={<IoCheckboxSharp />}>
-                <IoSquareOutline />
+              <Show when={allSelected()} fallback={<IoSquareOutline />}>
+                <IoCheckboxSharp />
               </Show>
               &nbsp;{allSelected() ? 'Deselect all' : 'Select all'}
             </button>
             <button
-              class="icon-btn"
+              class="icon-btn combine-btn"
               disabled={!canCombine() || combining()}
               title={
                 canCombine()
@@ -164,7 +163,7 @@ const MintGroupCard: Component<MintGroupCardProps> = props => {
               </Show>
             </button>
             <button
-              class="icon-btn"
+              class="icon-btn transfer-btn"
               disabled={!canTransfer()}
               title={
                 canTransfer()
@@ -175,7 +174,9 @@ const MintGroupCard: Component<MintGroupCardProps> = props => {
             >
               <IoSwapHorizontalSharp />
             </button>
-          </div>
+          </Show>
+        </div>
+        <Show when={showNotes()}>
           <div class="bearer-list">
             <For each={props.group}>
               {bearer => (

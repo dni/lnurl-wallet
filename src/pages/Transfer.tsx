@@ -74,13 +74,10 @@ const Transfer: Component = () => {
   const goToMelt = (pr: string) =>
     navigate(`/melt?pr=${encodeURIComponent(pr.trim())}`)
 
-  const onScan = (scanned: string) => {
-    if (isBolt11Invoice(scanned)) {
-      goToMelt(scanned)
-      return
-    }
-    receiveIntoWallet(scanned)
-  }
+  // scanning stays bearer-notes-only (a camera pointed at someone else's
+  // invoice to pay is an unlikely scenario anyway) - pasting is the one
+  // that also takes a bolt11, since that's realistically typed/pasted in
+  const onScan = (scanned: string) => receiveIntoWallet(scanned)
 
   const handlePaste = async () => {
     if (value() === '') return
@@ -122,14 +119,10 @@ const Transfer: Component = () => {
         <figure class="setup-card">
           <figcaption>
             Point the camera at a note QR (<code>lnurl1...</code> or{' '}
-            <code>lnurlw://...?k1=...</code>) - a bolt11 invoice QR goes
-            straight to Melt instead
+            <code>lnurlw://...?k1=...</code>)
           </figcaption>
           <Show when={!busy()} fallback={<p>Adding note...</p>}>
-            <Scanner
-              onScan={onScan}
-              accept={v => isValidNoteInput(v) || isBolt11Invoice(v)}
-            />
+            <Scanner onScan={onScan} accept={isValidNoteInput} />
           </Show>
         </figure>
         <figure class="paste-widget">
