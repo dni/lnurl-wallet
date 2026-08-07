@@ -384,7 +384,24 @@ pre {
   display: contents;
 }
 .qr-wrapper {
+  position: relative;
   display: inline-block;
+}
+.qr-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  border-radius: 0;
+  background: rgba($bg, 0.9);
+  backdrop-filter: blur(6px);
+  font-size: 1.8em;
+  color: $font-color;
+  &:hover {
+    background: rgba($bg, 0.95);
+  }
 }
 
 // ---- paste widget (same structure as lnurl_server's Paste) ----
