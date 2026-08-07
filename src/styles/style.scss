@@ -775,21 +775,6 @@ nav {
 
 // ---- wallet page ----
 
-.combine-bar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 14px;
-  padding: 10px 14px;
-  margin-bottom: 21px;
-  border-radius: 5px;
-  background: rgba($bg, 0.8);
-  border: 1px solid rgba($font-color, 0.5);
-  button {
-    margin-right: 0;
-  }
-}
-
 .server-group {
   margin-bottom: 21px;
 }

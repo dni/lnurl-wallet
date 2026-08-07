@@ -4,7 +4,6 @@ import {A} from '@solidjs/router'
 import {
   IoAddCircleSharp,
   IoSwapHorizontalSharp,
-  IoGitMergeSharp,
   IoLockOpenSharp,
   IoRefreshSharp,
   IoBanSharp,
@@ -12,16 +11,14 @@ import {
 } from 'solid-icons/io'
 
 import {useWallet, groupByServer} from '../WalletContext'
-import {serverOf, noteK1, withNewK1, mergeNotes} from '../lnurlcash'
 import {notify, NotifyKind, msatToSats} from '../helpers'
 import MintGroupCard from '../components/MintGroupCard'
 
 const Wallet: Component = () => {
-  const {state, bearers, unlock, addBearer, removeBearer} = useWallet()
+  const {state, bearers, unlock, removeBearer} = useWallet()
   const [password, setPassword] = createSignal('')
   const [unlocking, setUnlocking] = createSignal(false)
   const [selected, setSelected] = createSignal<Set<string>>(new Set())
-  const [combining, setCombining] = createSignal(false)
   const [showSpent, setShowSpent] = createSignal(false)
   const [confirmClearSpent, setConfirmClearSpent] = createSignal(false)
 
@@ -41,25 +38,6 @@ const Wallet: Component = () => {
   const mintCount = createMemo(() => groupByServer(spendableBearers()).length)
   const visibleBearers = createMemo(() =>
     showSpent() ? bearers() : spendableBearers()
-  )
-
-  const selectedBearers = createMemo(() =>
-    bearers().filter(b => selected().has(b.id))
-  )
-  // merging burns all selected notes in one callback request, so they must
-  // share a service, each must have been verified (callback known), and
-  // none can be locally locked as spent - the checkbox is disabled for a
-  // spent note too, this is just a second guard
-  const combinable = createMemo(() => {
-    const picked = selectedBearers()
-    if (picked.length < 2) return false
-    const server = serverOf(picked[0].url)
-    return picked.every(
-      b => serverOf(b.url) === server && b.callback !== '' && !b.spent
-    )
-  })
-  const selectedTotal = createMemo(() =>
-    selectedBearers().reduce((sum, b) => sum + b.amount, 0)
   )
 
   const toggleSelect = (id: string, isSelected: boolean) => {
@@ -94,37 +72,6 @@ const Wallet: Component = () => {
       notify('Incorrect password.', NotifyKind.ERROR)
     } finally {
       setUnlocking(false)
-    }
-  }
-
-  // LUD-XX merge: one callback request with every selected k1 - all burned,
-  // one fresh note worth their sum comes back (value derived locally, as
-  // the spec's response intentionally carries no amounts)
-  const combine = async () => {
-    const picked = selectedBearers()
-    if (!combinable()) return
-    setCombining(true)
-    try {
-      const [base] = picked
-      const total = selectedTotal()
-      const merged = await mergeNotes(
-        base.callback,
-        picked.map(b => noteK1(b.url)!)
-      )
-      for (const bearer of picked) removeBearer(bearer.id)
-      await addBearer({
-        url: withNewK1(base.url, merged.k1, total, merged.signature),
-        callback: base.callback,
-        amount: total,
-        verified: true,
-        mintPubkey: base.mintPubkey
-      })
-      setSelected(new Set<string>())
-      notify(`Combined ${picked.length} notes into one.`, NotifyKind.SUCCESS)
-    } catch (err) {
-      notify((err as Error).message, NotifyKind.ERROR)
-    } finally {
-      setCombining(false)
     }
   }
 
