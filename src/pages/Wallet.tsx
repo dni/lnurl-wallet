@@ -7,7 +7,8 @@ import {
   IoClipboardSharp,
   IoGitMergeSharp,
   IoLockOpenSharp,
-  IoRefreshSharp
+  IoRefreshSharp,
+  IoBanSharp
 } from 'solid-icons/io'
 
 import {useWallet, groupByServer} from '../WalletContext'
@@ -21,6 +22,19 @@ const Wallet: Component = () => {
   const [unlocking, setUnlocking] = createSignal(false)
   const [selected, setSelected] = createSignal<Set<string>>(new Set())
   const [combining, setCombining] = createSignal(false)
+  const [showSpent, setShowSpent] = createSignal(false)
+
+  // the header total is always the spendable balance (excludes spent
+  // notes), regardless of whether the toggle is currently revealing them -
+  // otherwise "Your LNURLcash" would count sats that aren't actually yours
+  // to spend anymore
+  const spendableBearers = createMemo(() => bearers().filter(b => !b.spent))
+  const spentCount = createMemo(
+    () => bearers().length - spendableBearers().length
+  )
+  const visibleBearers = createMemo(() =>
+    showSpent() ? bearers() : spendableBearers()
+  )
 
   const selectedBearers = createMemo(() =>
     bearers().filter(b => selected().has(b.id))
@@ -178,10 +192,30 @@ const Wallet: Component = () => {
               <h2>
                 Your LNURLcash&nbsp;·&nbsp;
                 {msatToSats(
-                  bearers().reduce((sum, b) => sum + b.amount, 0)
+                  spendableBearers().reduce((sum, b) => sum + b.amount, 0)
                 )}{' '}
                 sats
               </h2>
+              <Show when={spentCount() > 0}>
+                <label
+                  class="switch-control"
+                  title="Spent notes are locally locked (melted, transferred, or marked by hand) - this just shows or hides them, it doesn't change anything about them"
+                >
+                  <IoBanSharp />
+                  <span>
+                    Show spent
+                    <Show when={!showSpent()}>&nbsp;({spentCount()})</Show>
+                  </span>
+                  <span class="switch">
+                    <input
+                      type="checkbox"
+                      checked={showSpent()}
+                      onChange={e => setShowSpent(e.currentTarget.checked)}
+                    />
+                    <span class="switch-track"></span>
+                  </span>
+                </label>
+              </Show>
             </div>
             <Show when={selectedBearers().length > 0}>
               <div class="combine-bar">
@@ -206,32 +240,42 @@ const Wallet: Component = () => {
                 </Show>
               </div>
             </Show>
-            <For each={groupByServer(bearers())}>
-              {([server, group]) => (
-                <section class="server-group">
-                  <h4>
-                    {server}&nbsp;·&nbsp;
-                    {msatToSats(
-                      group.reduce((sum, b) => sum + b.amount, 0)
-                    )}{' '}
-                    sats
-                  </h4>
-                  <div class="bearer-list">
-                    <For each={group}>
-                      {bearer => (
-                        <BearerCard
-                          bearer={bearer}
-                          selected={selected().has(bearer.id)}
-                          onSelect={isSelected =>
-                            toggleSelect(bearer.id, isSelected)
-                          }
-                        />
-                      )}
-                    </For>
-                  </div>
-                </section>
-              )}
-            </For>
+            <Show
+              when={visibleBearers().length > 0}
+              fallback={
+                <p class="bearer-hint">
+                  Every note here is marked spent - toggle "Show spent" above to
+                  see them.
+                </p>
+              }
+            >
+              <For each={groupByServer(visibleBearers())}>
+                {([server, group]) => (
+                  <section class="server-group">
+                    <h4>
+                      {server}&nbsp;·&nbsp;
+                      {msatToSats(
+                        group.reduce((sum, b) => sum + b.amount, 0)
+                      )}{' '}
+                      sats
+                    </h4>
+                    <div class="bearer-list">
+                      <For each={group}>
+                        {bearer => (
+                          <BearerCard
+                            bearer={bearer}
+                            selected={selected().has(bearer.id)}
+                            onSelect={isSelected =>
+                              toggleSelect(bearer.id, isSelected)
+                            }
+                          />
+                        )}
+                      </For>
+                    </div>
+                  </section>
+                )}
+              </For>
+            </Show>
           </div>
         </Show>
       </Show>
