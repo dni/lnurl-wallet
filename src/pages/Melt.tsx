@@ -1,5 +1,5 @@
 import type {Component} from 'solid-js'
-import {Show, For, createSignal, createMemo, onMount} from 'solid-js'
+import {Show, For, createSignal, createMemo, onMount, onCleanup} from 'solid-js'
 import {useNavigate, useSearchParams} from '@solidjs/router'
 import {
   IoClipboardSharp,
@@ -8,6 +8,7 @@ import {
   IoRefreshSharp
 } from 'solid-icons/io'
 
+import type {Bearer} from '../storage'
 import {useWallet, groupByServer} from '../WalletContext'
 import {
   isBolt11Invoice,
@@ -17,10 +18,16 @@ import {
   withNewK1,
   meltNote,
   mergeNotes,
-  splitNote
+  splitNote,
+  rotateNote,
+  PendingNoteError
 } from '../lnurlcash'
 import {notify, NotifyKind, msatToSats, pasteFromClipboard} from '../helpers'
 import RequireWallet from '../components/RequireWallet'
+
+// same cadence as Mint.tsx's LUD-21 verify poll - a melted note's fate
+// (settled vs failed) is discovered the same way here: try to rotate it
+const PENDING_POLL_SECONDS = 10
 
 const Melt: Component = () => {
   const {addBearer, updateBearer, removeBearer, bearers} = useWallet()
@@ -35,6 +42,78 @@ const Melt: Component = () => {
   const [pastedInvoice, setPastedInvoice] = createSignal<string | null>(null)
   const [selectedIds, setSelectedIds] = createSignal<Set<string>>(new Set())
   const [paying, setPaying] = createSignal(false)
+
+  // set right after a melt is requested - polled by trying to rotate the
+  // (locally already spent-locked) note until we learn which way it went
+  const [pendingNote, setPendingNote] = createSignal<Bearer | null>(null)
+  const [secondsLeft, setSecondsLeft] = createSignal(PENDING_POLL_SECONDS)
+  const [checkingPending, setCheckingPending] = createSignal(false)
+  let pollTimer: ReturnType<typeof setInterval> | null = null
+
+  const stopPolling = () => {
+    if (pollTimer) clearInterval(pollTimer)
+    pollTimer = null
+  }
+
+  // a melt's {"status":"OK"} only means the payment is in flight (see
+  // meltNote) - rotating the note is how its actual fate gets discovered:
+  // if the rotate itself SUCCEEDS, the note was still there to burn, so the
+  // melt must have failed - unspend it and swap in the fresh secret the
+  // rotate just minted. If the rotate FAILS with anything other than
+  // "pending" (unknown k1, already spent, ...), the note is genuinely gone,
+  // which is exactly what a settled melt looks like from the outside
+  const checkPending = async () => {
+    const note = pendingNote()
+    if (!note || checkingPending()) return
+    setCheckingPending(true)
+    try {
+      const rotated = await rotateNote(note.callback, noteK1(note.url)!)
+      stopPolling()
+      setPendingNote(null)
+      await updateBearer(note.id, {
+        url: withNewK1(note.url, rotated.k1, note.amount, rotated.signature),
+        spent: false
+      })
+      setSelectedIds(new Set([note.id]))
+      notify(
+        'Payment failed - the note is still yours (freshly rotated). Select it again to retry.',
+        NotifyKind.ERROR
+      )
+    } catch (err) {
+      if (err instanceof PendingNoteError) return // still in flight - next tick
+      stopPolling()
+      setPendingNote(null)
+      notify('Payment confirmed - the note is gone.', NotifyKind.SUCCESS)
+      navigate('/wallet')
+    } finally {
+      setCheckingPending(false)
+    }
+  }
+
+  const startPolling = (note: Bearer) => {
+    stopPolling()
+    setPendingNote(note)
+    setSecondsLeft(PENDING_POLL_SECONDS)
+    pollTimer = setInterval(() => {
+      setSecondsLeft(s => {
+        if (s <= 1) {
+          checkPending()
+          return PENDING_POLL_SECONDS
+        }
+        return s - 1
+      })
+    }, 1000)
+  }
+
+  // manual click: check right away, then restart the countdown so the next
+  // automatic tick isn't immediately on its heels
+  const manualCheckPending = () => {
+    checkPending()
+    const note = pendingNote()
+    if (note) startPolling(note)
+  }
+
+  onCleanup(stopPolling)
 
   // arriving from Paste.tsx's own bolt11 detection, invoice carried as a
   // query param rather than duplicating this whole dialog there
@@ -123,6 +202,8 @@ const Melt: Component = () => {
   }
 
   const clearInvoice = () => {
+    stopPolling()
+    setPendingNote(null)
     setPastedInvoice(null)
     setSelectedIds(new Set<string>())
   }
@@ -155,10 +236,8 @@ const Melt: Component = () => {
   // one). Per meltNote's own semantics a resolved call only means the
   // payment is in flight, not confirmed spent, so - same as BearerCard's
   // melt - the note is left in the wallet rather than removed, but locked
-  // as spent so it can't be acted on again out from under the in-flight
-  // payment (unspend it from the Wallet page if the payment turns out to
-  // have failed) - which is also where a successful payment sends you, to
-  // see that note now sitting there locked
+  // as spent so it can't be acted on again out from under it. checkPending
+  // then polls to find out how it actually went and redirects once it does
   const payInvoice = async () => {
     const invoice = pastedInvoice()
     const picked = selectedBearers()
@@ -168,12 +247,12 @@ const Melt: Component = () => {
       const current = await mergeSelectionIfNeeded(picked)
       await meltNote(current.callback, noteK1(current.url)!, invoice)
       await updateBearer(current.id, {spent: true})
-      notify(
-        "Payment requested and the note is now locked as spent - it's on its way.",
-        NotifyKind.SUCCESS
-      )
       setSelectedIds(new Set<string>())
-      navigate('/wallet')
+      notify(
+        'Payment requested and the note is locked as spent - confirming...',
+        NotifyKind.LOADING
+      )
+      startPolling(current)
     } catch (err) {
       notify((err as Error).message, NotifyKind.ERROR)
     } finally {
@@ -220,12 +299,12 @@ const Melt: Component = () => {
       })
       await meltNote(spend.callback, noteK1(spend.url)!, invoice)
       await updateBearer(spend.id, {spent: true})
-      notify(
-        "Payment requested and the note is now locked as spent - it's on its way.",
-        NotifyKind.SUCCESS
-      )
       setSelectedIds(new Set<string>())
-      navigate('/wallet')
+      notify(
+        'Payment requested and the note is locked as spent - confirming...',
+        NotifyKind.LOADING
+      )
+      startPolling(spend)
     } catch (err) {
       notify((err as Error).message, NotifyKind.ERROR)
     } finally {
@@ -284,92 +363,120 @@ const Melt: Component = () => {
           </Show>
         </figure>
         <Show when={pastedInvoice()}>
-          <figure class="setup-card">
-            <figcaption>Pay with your bearer notes</figcaption>
-            <Show
-              when={invoiceAmountMsat() !== null}
-              fallback={
+          <Show
+            when={!pendingNote()}
+            fallback={
+              <figure class="setup-card">
+                <figcaption>Confirming payment</figcaption>
                 <p class="bearer-hint">
-                  Couldn't read an amount from this invoice - select note(s)
-                  from one mint and the service will judge whether they cover
-                  it.
+                  Trying to rotate the locked note to find out what happened:
+                  succeeding means it's still yours (the payment failed) -
+                  anything else means the service already burned it.
                 </p>
-              }
-            >
-              <p class="bearer-hint">
-                Wants {msatToSats(invoiceAmountMsat()!)} sats - select note(s)
-                from one mint worth at least that. Melt only spends a note of
-                exactly the invoice amount, so an exact match pays directly and
-                anything over it needs Split and pay first.
-              </p>
-            </Show>
-            <Show
-              when={bearers().length > 0}
-              fallback={<p>No bearer notes to pay with yet.</p>}
-            >
-              <For each={groupByServer(bearers())}>
-                {([server, group]) => (
-                  <div class="form-item">
-                    <label>{server}</label>
-                    <For each={group}>
-                      {bearer => (
-                        <label>
-                          <input
-                            type="checkbox"
-                            checked={selectedIds().has(bearer.id)}
-                            disabled={!bearer.callback || bearer.spent}
-                            onChange={e =>
-                              toggleSelect(bearer.id, e.currentTarget.checked)
-                            }
-                          />
-                          &nbsp;{msatToSats(bearer.amount)} sats
-                          <Show when={bearer.spent}>&nbsp;(spent)</Show>
-                          <Show when={!bearer.callback && !bearer.spent}>
-                            &nbsp;(not verified yet)
-                          </Show>
-                        </label>
-                      )}
-                    </For>
-                  </div>
-                )}
-              </For>
-            </Show>
-            <Show when={selectedBearers().length > 0}>
-              <p class="bearer-hint">
-                Selected {msatToSats(selectedTotal())} sats
-                <Show when={!selectionPayable() && !selectionNeedsSplit()}>
-                  {' '}
-                  - not enough selected yet, or spans more than one mint
-                </Show>
-              </p>
-            </Show>
-            <div class="btns">
-              <Show
-                when={selectionNeedsSplit()}
-                fallback={
+                <div class="btns">
                   <button
-                    disabled={paying() || !selectionPayable()}
-                    onClick={payInvoice}
+                    disabled={checkingPending()}
+                    onClick={manualCheckPending}
                   >
+                    <Show when={checkingPending()}>
+                      <IoRefreshSharp class="spin" />
+                      &nbsp;
+                    </Show>
+                    {checkingPending()
+                      ? 'Checking...'
+                      : `Check payment (${secondsLeft()}s)`}
+                  </button>
+                </div>
+              </figure>
+            }
+          >
+            <figure class="setup-card">
+              <figcaption>Pay with your bearer notes</figcaption>
+              <Show
+                when={invoiceAmountMsat() !== null}
+                fallback={
+                  <p class="bearer-hint">
+                    Couldn't read an amount from this invoice - select note(s)
+                    from one mint and the service will judge whether they cover
+                    it.
+                  </p>
+                }
+              >
+                <p class="bearer-hint">
+                  Wants {msatToSats(invoiceAmountMsat()!)} sats - select note(s)
+                  from one mint worth at least that. Melt only spends a note of
+                  exactly the invoice amount, so an exact match pays directly
+                  and anything over it needs Split and pay first.
+                </p>
+              </Show>
+              <Show
+                when={bearers().length > 0}
+                fallback={<p>No bearer notes to pay with yet.</p>}
+              >
+                <For each={groupByServer(bearers())}>
+                  {([server, group]) => (
+                    <div class="form-item">
+                      <label>{server}</label>
+                      <For each={group}>
+                        {bearer => (
+                          <label>
+                            <input
+                              type="checkbox"
+                              checked={selectedIds().has(bearer.id)}
+                              disabled={!bearer.callback || bearer.spent}
+                              onChange={e =>
+                                toggleSelect(bearer.id, e.currentTarget.checked)
+                              }
+                            />
+                            &nbsp;{msatToSats(bearer.amount)} sats
+                            <Show when={bearer.spent}>&nbsp;(spent)</Show>
+                            <Show when={!bearer.callback && !bearer.spent}>
+                              &nbsp;(not verified yet)
+                            </Show>
+                          </label>
+                        )}
+                      </For>
+                    </div>
+                  )}
+                </For>
+              </Show>
+              <Show when={selectedBearers().length > 0}>
+                <p class="bearer-hint">
+                  Selected {msatToSats(selectedTotal())} sats
+                  <Show when={!selectionPayable() && !selectionNeedsSplit()}>
+                    {' '}
+                    - not enough selected yet, or spans more than one mint
+                  </Show>
+                </p>
+              </Show>
+              <div class="btns">
+                <Show
+                  when={selectionNeedsSplit()}
+                  fallback={
+                    <button
+                      disabled={paying() || !selectionPayable()}
+                      onClick={payInvoice}
+                    >
+                      <Show when={paying()}>
+                        <IoRefreshSharp class="spin" />
+                        &nbsp;
+                      </Show>
+                      Pay invoice
+                    </button>
+                  }
+                >
+                  <button disabled={paying()} onClick={splitAndPay}>
                     <Show when={paying()}>
                       <IoRefreshSharp class="spin" />
                       &nbsp;
                     </Show>
-                    Pay invoice
+                    Split and pay
                   </button>
-                }
-              >
-                <button disabled={paying()} onClick={splitAndPay}>
-                  <Show when={paying()}>
-                    <IoRefreshSharp class="spin" />
-                    &nbsp;
-                  </Show>
-                  Split and pay
-                </button>
-              </Show>
-              <button onClick={clearInvoice}>Clear</button>
-            </div>
-          </figure>
+                </Show>
+                <button onClick={clearInvoice}>Clear</button>
+              </div>
+            </figure>
+          </Show>
         </Show>
       </div>
     </RequireWallet>

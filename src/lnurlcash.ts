@@ -326,6 +326,19 @@ export type WithdrawSuccessResponse = {
   changeSignature?: string
 }
 
+// thrown for the exact {"status":"ERROR","reason":"pending"} case (see
+// meltNote) - distinct from any other Error so callers polling a mid-melt
+// note (Melt.tsx) can tell "still in flight, try again shortly" apart from
+// every other failure, which instead means the k1 is gone for good
+export class PendingNoteError extends Error {
+  constructor() {
+    super(
+      'This note has another operation in progress - try again in a moment.'
+    )
+    this.name = 'PendingNoteError'
+  }
+}
+
 const callbackRequest = async (
   callback: string,
   params: [string, string][]
@@ -340,9 +353,7 @@ const callbackRequest = async (
     // a k1 already mid-melt (see meltNote) rejects any other callback
     // naming it with this exact reason string, verbatim per spec
     if ((err as Error).message === 'pending') {
-      throw new Error(
-        'This note has another operation in progress - try again in a moment.'
-      )
+      throw new PendingNoteError()
     }
     throw err
   }
