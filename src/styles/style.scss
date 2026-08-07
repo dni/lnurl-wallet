@@ -758,10 +758,17 @@ nav {
 
 .server-group {
   margin-bottom: 21px;
-  > h4 {
-    margin: 0 0 10px 0;
-    opacity: 0.85;
-  }
+}
+
+// .setup-card.mint-group-card (not .mint-group-card alone) so this wins
+// over .setup-card's own max-width regardless of stylesheet order
+.setup-card.mint-group-card {
+  max-width: none;
+  margin-bottom: 10px;
+}
+
+.mint-pubkey code {
+  overflow-wrap: anywhere;
 }
 
 .bearer-list {

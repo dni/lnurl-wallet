@@ -15,6 +15,7 @@ import {useWallet, groupByServer} from '../WalletContext'
 import {serverOf, noteK1, withNewK1, mergeNotes} from '../lnurlcash'
 import {notify, NotifyKind, msatToSats} from '../helpers'
 import BearerCard from '../components/BearerCard'
+import MintGroupCard from '../components/MintGroupCard'
 
 const Wallet: Component = () => {
   const {state, bearers, unlock, addBearer, removeBearer} = useWallet()
@@ -252,13 +253,7 @@ const Wallet: Component = () => {
               <For each={groupByServer(visibleBearers())}>
                 {([server, group]) => (
                   <section class="server-group">
-                    <h4>
-                      {server}&nbsp;·&nbsp;
-                      {msatToSats(
-                        group.reduce((sum, b) => sum + b.amount, 0)
-                      )}{' '}
-                      sats
-                    </h4>
+                    <MintGroupCard server={server} group={group} />
                     <div class="bearer-list">
                       <For each={group}>
                         {bearer => (
