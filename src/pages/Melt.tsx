@@ -23,7 +23,7 @@ import {notify, NotifyKind, msatToSats, pasteFromClipboard} from '../helpers'
 import RequireWallet from '../components/RequireWallet'
 
 const Melt: Component = () => {
-  const {addBearer, removeBearer, bearers} = useWallet()
+  const {addBearer, updateBearer, removeBearer, bearers} = useWallet()
   const [searchParams] = useSearchParams()
   let pasteRef: HTMLInputElement | null = null
 
@@ -153,9 +153,11 @@ const Melt: Component = () => {
   // worth exactly the invoice (merged into one first if there's more than
   // one). Per meltNote's own semantics a resolved call only means the
   // payment is in flight, not confirmed spent, so - same as BearerCard's
-  // melt - the spent note is left in place rather than assumed gone;
-  // refreshing it later confirms the burn. The invoice itself is kept on
-  // screen rather than cleared, so its outcome stays visible
+  // melt - the note is left in the wallet rather than removed, but locked
+  // as spent so it can't be acted on again out from under the in-flight
+  // payment (unspend it from the Wallet page if the payment turns out to
+  // have failed). The invoice itself is kept on screen rather than
+  // cleared, so its outcome stays visible
   const payInvoice = async () => {
     const invoice = pastedInvoice()
     const picked = selectedBearers()
@@ -164,8 +166,9 @@ const Melt: Component = () => {
     try {
       const current = await mergeSelectionIfNeeded(picked)
       await meltNote(current.callback, noteK1(current.url)!, invoice)
+      await updateBearer(current.id, {spent: true})
       notify(
-        "Payment requested - it's on its way. Refresh the note in a moment to confirm it's gone.",
+        "Payment requested and the note is now locked as spent - it's on its way.",
         NotifyKind.SUCCESS
       )
       setSelectedIds(new Set<string>())
@@ -214,8 +217,9 @@ const Melt: Component = () => {
         mintPubkey: merged.mintPubkey
       })
       await meltNote(spend.callback, noteK1(spend.url)!, invoice)
+      await updateBearer(spend.id, {spent: true})
       notify(
-        "Payment requested - it's on its way. Refresh the note in a moment to confirm it's gone.",
+        "Payment requested and the note is now locked as spent - it's on its way.",
         NotifyKind.SUCCESS
       )
       setSelectedIds(new Set<string>())
