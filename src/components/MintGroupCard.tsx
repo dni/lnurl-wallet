@@ -116,8 +116,40 @@ const MintGroupCard: Component<MintGroupCardProps> = props => {
   return (
     <>
       <figure class="setup-card mint-group-card">
-        <figcaption>
-          {props.server}&nbsp;·&nbsp;{msatToSats(total())} sats
+        <figcaption class="mint-group-caption">
+          <span>
+            {props.server}&nbsp;·&nbsp;{msatToSats(total())} sats
+          </span>
+          <span class="mint-group-caption-links">
+            <button
+              class="icon-btn"
+              title="Copy mint pubkey"
+              disabled={!mintPubkey()}
+              onClick={() => copyToClipboard(mintPubkey()!)}
+            >
+              <IoCopySharp />
+            </button>
+            <a
+              class="icon-btn"
+              title="Open this mint"
+              href={`https://${props.server}`}
+              target="_blank"
+              rel="noreferrer"
+            >
+              <IoGlobeSharp />
+            </a>
+            <Show when={mintPubkey()}>
+              <a
+                class="icon-btn"
+                title="Look up this mint's Lightning node on mempool.space"
+                href={mempoolNodeUrl(mintPubkey()!)}
+                target="_blank"
+                rel="noreferrer"
+              >
+                <IoOpenSharp />
+              </a>
+            </Show>
+          </span>
         </figcaption>
         <Show when={mintPubkey()}>
           <p class="bearer-hint mint-pubkey">
@@ -125,34 +157,6 @@ const MintGroupCard: Component<MintGroupCardProps> = props => {
           </p>
         </Show>
         <div class="btns">
-          <button
-            class="icon-btn"
-            title="Copy mint pubkey"
-            disabled={!mintPubkey()}
-            onClick={() => copyToClipboard(mintPubkey()!)}
-          >
-            <IoCopySharp />
-          </button>
-          <a
-            class="icon-btn"
-            title="Open this mint"
-            href={`https://${props.server}`}
-            target="_blank"
-            rel="noreferrer"
-          >
-            <IoGlobeSharp />
-          </a>
-          <Show when={mintPubkey()}>
-            <a
-              class="icon-btn"
-              title="Look up this mint's Lightning node on mempool.space"
-              href={mempoolNodeUrl(mintPubkey()!)}
-              target="_blank"
-              rel="noreferrer"
-            >
-              <IoOpenSharp />
-            </a>
-          </Show>
           <button class="show-notes-btn" onClick={() => setShowNotes(v => !v)}>
             <IoListSharp />
             &nbsp;{showNotes() ? 'Hide notes' : 'Show notes'}&nbsp;(

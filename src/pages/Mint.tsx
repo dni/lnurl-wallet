@@ -550,7 +550,7 @@ const Mint: Component = () => {
                   <IoGlobeSharp />
                 </a>
                 <a
-                  class="icon-btn"
+                  class="icon-btn icon-btn-gap"
                   title="Look up this Lightning node on mempool.space"
                   href={mempoolNodeUrl(pending().mintPubkey)}
                   target="_blank"

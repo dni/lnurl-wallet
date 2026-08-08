@@ -810,10 +810,10 @@ nav {
 .setup-card.mint-group-card {
   max-width: none;
   margin-bottom: 10px;
-  // .btns has no row-gap, so on narrow screens - where five buttons
-  // (pubkey, show notes, select all, combine, transfer) wrap onto more
-  // than one line - they'd otherwise touch with no vertical space between
-  // rows, or against whatever follows once collapsed back down
+  // .btns has no row-gap, so on narrow screens - where its buttons (show
+  // notes, select all, combine, transfer) wrap onto more than one line -
+  // they'd otherwise touch with no vertical space between rows, or against
+  // whatever follows once collapsed back down
   .btns button {
     margin-bottom: 8px;
   }
@@ -821,6 +821,28 @@ nav {
 
 .mint-pubkey code {
   overflow-wrap: anywhere;
+}
+
+// server name + balance on the left, the mint's own external links (open
+// mint, mempool.space) grouped on the right - figcaption is a plain block
+// by default, so this is what actually lets the icon-btns sit inline with
+// the text instead of dropping to their own line
+.mint-group-caption {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+// the link icons themselves stay close together as a group - without this,
+// justify-content:space-between on the figcaption above would spread all
+// three children (text + two icons) evenly instead of keeping the icons
+// paired
+.mint-group-caption-links {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 // the mint-group card's action row (Copy pubkey, Show notes, Select all,
