@@ -39,6 +39,7 @@ import {
   trustedMints,
   PUBLIC_MINTS
 } from '../trustedMints'
+import {offlineMode} from '../offlineMode'
 import Qr from '../components/Qr'
 import ScanToggle from '../components/ScanToggle'
 import RequireWallet from '../components/RequireWallet'
@@ -371,8 +372,8 @@ const Mint: Component = () => {
             <button
               type="button"
               class="icon-btn paste-confirm-btn"
-              title="Look up mint"
-              disabled={busy() || mintInput() === ''}
+              title={offlineMode() ? 'Offline mode is on' : 'Look up mint'}
+              disabled={busy() || mintInput() === '' || offlineMode()}
               onClick={lookup}
             >
               <Show when={busy()} fallback={<IoReturnDownForwardSharp />}>
@@ -388,7 +389,7 @@ const Mint: Component = () => {
               <For each={trustedMints()}>
                 {mint => (
                   <button
-                    disabled={busy()}
+                    disabled={busy() || offlineMode()}
                     onClick={() => selectMint(guessMintAddress(mint.server))}
                   >
                     {mint.server}
@@ -403,7 +404,10 @@ const Mint: Component = () => {
           <div class="mint-picker">
             <For each={PUBLIC_MINTS}>
               {address => (
-                <button disabled={busy()} onClick={() => selectMint(address)}>
+                <button
+                  disabled={busy() || offlineMode()}
+                  onClick={() => selectMint(address)}
+                >
                   {address}
                 </button>
               )}
@@ -486,7 +490,10 @@ const Mint: Component = () => {
                       onInput={e => setAmountSats(e.currentTarget.value)}
                     />
                     <div class="btns">
-                      <button disabled={busy()} onClick={getInvoice}>
+                      <button
+                        disabled={busy() || offlineMode()}
+                        onClick={getInvoice}
+                      >
                         <Show when={busy()}>
                           <IoRefreshSharp class="spin" />
                           &nbsp;
@@ -510,7 +517,9 @@ const Mint: Component = () => {
                 />
                 <div class="btns">
                   <button
-                    disabled={busy() || !isPreimage(directPreimage())}
+                    disabled={
+                      busy() || !isPreimage(directPreimage()) || offlineMode()
+                    }
                     onClick={claimDirect}
                   >
                     <Show when={busy()}>
@@ -538,7 +547,10 @@ const Mint: Component = () => {
                 Copy invoice
               </button>
               <Show when={verifyUrl()}>
-                <button disabled={verifying()} onClick={manualCheck}>
+                <button
+                  disabled={verifying() || offlineMode()}
+                  onClick={manualCheck}
+                >
                   <Show when={verifying()}>
                     <IoRefreshSharp class="spin" />
                     &nbsp;
@@ -565,7 +577,7 @@ const Mint: Component = () => {
             />
             <div class="btns">
               <button
-                disabled={busy() || !isPreimage(preimage())}
+                disabled={busy() || !isPreimage(preimage()) || offlineMode()}
                 onClick={() => claim(preimage(), invoicedMsat())}
               >
                 <Show when={busy()}>

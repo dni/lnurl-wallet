@@ -34,6 +34,7 @@ import {
   satsToMsat,
   pasteFromClipboard
 } from '../helpers'
+import {offlineMode} from '../offlineMode'
 import ScanToggle from '../components/ScanToggle'
 import RequireWallet from '../components/RequireWallet'
 
@@ -438,8 +439,13 @@ const Melt: Component = () => {
             <button
               type="button"
               class="icon-btn paste-confirm-btn"
-              title="Continue"
-              disabled={value() === '' || !isValid() || fetchingInvoice()}
+              title={offlineMode() ? 'Offline mode is on' : 'Continue'}
+              disabled={
+                value() === '' ||
+                !isValid() ||
+                fetchingInvoice() ||
+                offlineMode()
+              }
               onClick={handle}
             >
               <Show
@@ -471,7 +477,7 @@ const Melt: Component = () => {
                 />
                 <div class="btns">
                   <button
-                    disabled={fetchingInvoice()}
+                    disabled={fetchingInvoice() || offlineMode()}
                     onClick={getInvoiceFromAddress}
                   >
                     <Show when={fetchingInvoice()}>
@@ -501,7 +507,7 @@ const Melt: Component = () => {
                 </p>
                 <div class="btns">
                   <button
-                    disabled={checkingPending()}
+                    disabled={checkingPending() || offlineMode()}
                     onClick={manualCheckPending}
                   >
                     <Show when={checkingPending()}>
@@ -580,7 +586,9 @@ const Melt: Component = () => {
                   when={selectionNeedsSplit()}
                   fallback={
                     <button
-                      disabled={paying() || !selectionPayable()}
+                      disabled={
+                        paying() || !selectionPayable() || offlineMode()
+                      }
                       onClick={payInvoice}
                     >
                       <Show when={paying()}>
@@ -591,7 +599,10 @@ const Melt: Component = () => {
                     </button>
                   }
                 >
-                  <button disabled={paying()} onClick={splitAndPay}>
+                  <button
+                    disabled={paying() || offlineMode()}
+                    onClick={splitAndPay}
+                  >
                     <Show when={paying()}>
                       <IoRefreshSharp class="spin" />
                       &nbsp;

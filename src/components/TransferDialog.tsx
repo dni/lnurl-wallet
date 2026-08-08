@@ -23,6 +23,7 @@ import {
 } from '../lnurlcash'
 import {notify, NotifyKind, msatToSats, copyToClipboard} from '../helpers'
 import {isMintTrusted, addTrustedMint, trustedMints} from '../trustedMints'
+import {offlineMode} from '../offlineMode'
 import Qr from './Qr'
 
 export type TransferDialogProps = {
@@ -314,7 +315,7 @@ const TransferDialog: Component<TransferDialogProps> = props => {
           onKeyDown={e => e.key === 'Enter' && lookup()}
         />
         <div class="btns">
-          <button disabled={busy()} onClick={lookup}>
+          <button disabled={busy() || offlineMode()} onClick={lookup}>
             <Show when={busy()}>
               <IoRefreshSharp class="spin" />
               &nbsp;
@@ -328,7 +329,7 @@ const TransferDialog: Component<TransferDialogProps> = props => {
             <For each={trustedMints()}>
               {mint => (
                 <button
-                  disabled={busy()}
+                  disabled={busy() || offlineMode()}
                   onClick={() => selectMint(`mint@${mint.server}`)}
                 >
                   {mint.server}
@@ -362,7 +363,10 @@ const TransferDialog: Component<TransferDialogProps> = props => {
                 it - this can't be undone.
               </p>
               <div class="btns">
-                <button disabled={busy()} onClick={startTransfer}>
+                <button
+                  disabled={busy() || offlineMode()}
+                  onClick={startTransfer}
+                >
                   <Show when={busy()}>
                     <IoRefreshSharp class="spin" />
                     &nbsp;
@@ -384,7 +388,7 @@ const TransferDialog: Component<TransferDialogProps> = props => {
           <button onClick={() => copyToClipboard(invoice()!)}>
             Copy invoice
           </button>
-          <button disabled={checking()} onClick={manualCheck}>
+          <button disabled={checking() || offlineMode()} onClick={manualCheck}>
             <Show when={checking()}>
               <IoRefreshSharp class="spin" />
               &nbsp;
@@ -405,7 +409,7 @@ const TransferDialog: Component<TransferDialogProps> = props => {
           />
           <div class="btns">
             <button
-              disabled={!isPreimage(preimage())}
+              disabled={!isPreimage(preimage()) || offlineMode()}
               onClick={() => claimDestination(preimage())}
             >
               Claim at destination

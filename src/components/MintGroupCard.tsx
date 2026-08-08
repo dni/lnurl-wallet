@@ -16,6 +16,7 @@ import type {Bearer} from '../storage'
 import {useWallet} from '../WalletContext'
 import {noteK1, withNewK1, mergeNotes} from '../lnurlcash'
 import {getTrustedMintPubkey} from '../trustedMints'
+import {offlineMode} from '../offlineMode'
 import {
   notify,
   NotifyKind,
@@ -175,11 +176,13 @@ const MintGroupCard: Component<MintGroupCardProps> = props => {
             </button>
             <button
               class="icon-btn combine-btn"
-              disabled={!canCombine() || combining()}
+              disabled={!canCombine() || combining() || offlineMode()}
               title={
-                canCombine()
-                  ? 'Combine the selected notes into one'
-                  : 'Select 2+ verified, unspent notes here to combine'
+                offlineMode()
+                  ? 'Offline mode is on'
+                  : canCombine()
+                    ? 'Combine the selected notes into one'
+                    : 'Select 2+ verified, unspent notes here to combine'
               }
               onClick={combineSelected}
             >
@@ -192,11 +195,13 @@ const MintGroupCard: Component<MintGroupCardProps> = props => {
             </button>
             <button
               class="icon-btn transfer-btn"
-              disabled={!canTransfer()}
+              disabled={!canTransfer() || offlineMode()}
               title={
-                canTransfer()
-                  ? 'Transfer the selected note to a different mint'
-                  : 'Select exactly 1 note here to transfer'
+                offlineMode()
+                  ? 'Offline mode is on'
+                  : canTransfer()
+                    ? 'Transfer the selected note to a different mint'
+                    : 'Select exactly 1 note here to transfer'
               }
               onClick={() => setTransferSource(selectedEligible()[0])}
             >

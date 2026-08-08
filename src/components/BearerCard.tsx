@@ -38,6 +38,7 @@ import {
   NotifyKind
 } from '../helpers'
 import {getTrustedMintPubkey} from '../trustedMints'
+import {offlineMode} from '../offlineMode'
 import Qr from './Qr'
 
 type Action = 'melt' | 'split' | null
@@ -303,8 +304,12 @@ const BearerCard: Component<BearerCardProps> = props => {
         </button>
         <button
           class="icon-btn"
-          title="Refresh value from the service, then rotate (the GET necessarily exposes k1)"
-          disabled={busy() || isSpent()}
+          title={
+            offlineMode()
+              ? 'Offline mode is on'
+              : 'Refresh value from the service, then rotate (the GET necessarily exposes k1)'
+          }
+          disabled={busy() || isSpent() || offlineMode()}
           onClick={refresh}
         >
           <IoRefreshSharp classList={{spin: busy()}} />
@@ -312,16 +317,22 @@ const BearerCard: Component<BearerCardProps> = props => {
         <div class="bearer-actions">
           <button
             class="icon-btn"
-            title="Melt - have the service pay a bolt11 invoice of exactly this note's value"
-            disabled={!hasCallback() || isSpent()}
+            title={
+              offlineMode()
+                ? 'Offline mode is on'
+                : "Melt - have the service pay a bolt11 invoice of exactly this note's value"
+            }
+            disabled={!hasCallback() || isSpent() || offlineMode()}
             onClick={() => setAction(action() === 'melt' ? null : 'melt')}
           >
             <IoFlameSharp />
           </button>
           <button
             class="icon-btn"
-            title="Split into two notes"
-            disabled={!hasCallback() || isSpent()}
+            title={
+              offlineMode() ? 'Offline mode is on' : 'Split into two notes'
+            }
+            disabled={!hasCallback() || isSpent() || offlineMode()}
             onClick={() => setAction(action() === 'split' ? null : 'split')}
           >
             <IoGitBranchSharp />
@@ -413,7 +424,7 @@ const BearerCard: Component<BearerCardProps> = props => {
             onInput={e => setMeltPr(e.currentTarget.value)}
           />
           <div class="btns">
-            <button disabled={busy()} onClick={melt}>
+            <button disabled={busy() || offlineMode()} onClick={melt}>
               <Show when={busy()}>
                 <IoRefreshSharp class="spin" />
                 &nbsp;
@@ -434,7 +445,7 @@ const BearerCard: Component<BearerCardProps> = props => {
             onInput={e => setSplitSats(e.currentTarget.value)}
           />
           <div class="btns">
-            <button disabled={busy()} onClick={split}>
+            <button disabled={busy() || offlineMode()} onClick={split}>
               <Show when={busy()}>
                 <IoRefreshSharp class="spin" />
                 &nbsp;

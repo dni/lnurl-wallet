@@ -11,6 +11,7 @@ import {
 } from '../trustedMints'
 import {resolveMintInput, fetchPayRequest, serverOf} from '../lnurlcash'
 import {notify, NotifyKind, formatDate} from '../helpers'
+import {offlineMode} from '../offlineMode'
 
 const Mints: Component = () => {
   const [server, setServer] = createSignal('')
@@ -106,8 +107,16 @@ const Mints: Component = () => {
               const alreadyTrusted = () => !!url && isMintTrusted(serverOf(url))
               return (
                 <button
-                  disabled={trusting() === address || alreadyTrusted()}
-                  title={alreadyTrusted() ? 'Already in your trusted list' : ''}
+                  disabled={
+                    trusting() === address || alreadyTrusted() || offlineMode()
+                  }
+                  title={
+                    offlineMode()
+                      ? 'Offline mode is on'
+                      : alreadyTrusted()
+                        ? 'Already in your trusted list'
+                        : ''
+                  }
                   onClick={() => trustPublicMint(address)}
                 >
                   <Show when={alreadyTrusted()}>

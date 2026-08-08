@@ -588,8 +588,22 @@ nav {
   display: flex;
   align-items: center;
   margin-left: auto;
-  a:last-child {
+  a:last-child,
+  .switch-control:last-child {
     margin-right: 0;
+  }
+  // same treatment as the a's around it (font-size 0.9em set on
+  // .switch-control itself would otherwise shrink it against its siblings,
+  // which just inherit nav's own 1.2em)
+  .switch-control {
+    font-size: inherit;
+    margin-right: 8px;
+    padding: 6px 12px;
+    border-radius: 5px;
+    transition: all 0.5s ease-in-out;
+    &:hover {
+      background: rgba($font-color, $transparency);
+    }
   }
 }
 
@@ -656,13 +670,19 @@ nav {
     justify-content: center;
     align-items: stretch;
     margin-left: 0;
-    a {
+    a,
+    .switch-control {
       flex: 1 1 auto;
       justify-content: center;
       margin-right: 0;
       padding: 16px 14px;
       min-height: 48px;
       font-size: 1.6em;
+    }
+    // the switch itself is sized in px, not em - left alone it'd inflate
+    // to match the 1.6em icon around it
+    .switch-control .switch {
+      font-size: 1rem;
     }
   }
   .nav-links:not(:empty) + .nav-persistent {

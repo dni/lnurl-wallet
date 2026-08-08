@@ -31,6 +31,7 @@ import {
   pasteFromClipboard,
   copyToClipboard
 } from '../helpers'
+import {offlineMode} from '../offlineMode'
 import ScanToggle from '../components/ScanToggle'
 import Qr from '../components/Qr'
 import RequireWallet from '../components/RequireWallet'
@@ -303,8 +304,8 @@ const Transfer: Component = () => {
             <button
               type="button"
               class="icon-btn paste-confirm-btn"
-              title="Add to wallet"
-              disabled={busy() || value() === '' || !isValid()}
+              title={offlineMode() ? 'Offline mode is on' : 'Add to wallet'}
+              disabled={busy() || value() === '' || !isValid() || offlineMode()}
               onClick={handlePaste}
             >
               <Show when={busy()} fallback={<IoReturnDownForwardSharp />}>
@@ -386,7 +387,7 @@ const Transfer: Component = () => {
                 </button>
               </Show>
               <button
-                disabled={!canPrepare() || preparing()}
+                disabled={!canPrepare() || preparing() || offlineMode()}
                 onClick={prepareNote}
               >
                 <Show when={preparing()}>

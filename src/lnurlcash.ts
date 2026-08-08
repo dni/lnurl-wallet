@@ -2,6 +2,7 @@ import {bech32} from '@scure/base'
 import {sha256} from '@noble/hashes/sha2.js'
 import {secp256k1} from '@noble/curves/secp256k1.js'
 import {bytesToHex, hexToBytes, utf8ToBytes} from '@noble/hashes/utils.js'
+import {offlineMode} from './offlineMode'
 
 // LUD-XX LNURLcash - bearer assets (draft, see luds/XX.md).
 //
@@ -263,6 +264,11 @@ export const verifyNoteSignature = (
 // ---- protocol requests ----
 
 const lnurlFetch = async (url: string | URL): Promise<any> => {
+  if (offlineMode()) {
+    throw new Error(
+      'Offline mode is on - turn it off in the nav to reach a service.'
+    )
+  }
   let res: Response
   try {
     res = await fetch(url.toString())
@@ -291,9 +297,9 @@ export type WithdrawRequestInfo = {
 }
 
 // the informational GET (LUD-03 step 1) - never burns, rotates or alters
-// the note. Per spec this always exposes k1 on the wire now (the optional
-// hash-based lookup was dropped) - callers that keep holding the note
-// afterward SHOULD rotate it (see receive.ts / BearerCard's refresh).
+// the note. Per spec this puts k1 on the wire - callers that keep holding
+// the note afterward SHOULD rotate it (see receive.ts / BearerCard's
+// refresh).
 export const fetchNoteInfo = async (
   url: string
 ): Promise<WithdrawRequestInfo> => {

@@ -10,9 +10,11 @@ import {
   IoLockClosedSharp,
   IoSaveSharp,
   IoBookSharp,
-  IoShieldCheckmarkSharp
+  IoShieldCheckmarkSharp,
+  IoCloudOfflineSharp
 } from 'solid-icons/io'
 import {useWallet} from '../WalletContext'
+import {offlineMode, setOfflineMode} from '../offlineMode'
 
 const Nav = () => {
   const {state, encrypted, lock} = useWallet()
@@ -69,6 +71,25 @@ const Nav = () => {
           </Show>
         </div>
         <div class="nav-persistent">
+          <label
+            class="switch-control"
+            title={
+              offlineMode()
+                ? 'Offline mode is on - no requests reach any service until you turn it off'
+                : 'Offline mode - block rotate, melt, split, merge and every other service request'
+            }
+          >
+            <IoCloudOfflineSharp />
+            <span class="nav-label">&nbsp;Offline mode</span>
+            <span class="switch">
+              <input
+                type="checkbox"
+                checked={offlineMode()}
+                onChange={e => setOfflineMode(e.currentTarget.checked)}
+              />
+              <span class="switch-track"></span>
+            </span>
+          </label>
           <A href="/mints" title="Trusted mints">
             <IoShieldCheckmarkSharp />
             <span class="nav-label">&nbsp;Mints</span>
