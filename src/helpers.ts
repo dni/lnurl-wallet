@@ -68,6 +68,12 @@ export const msatToSats = (msat: number): string =>
 export const satsToMsat = (sats: string | number): number =>
   Math.round(Number(sats) * 1000)
 
+// rounds up to the next whole sat - for an msat amount about to be
+// requested as an invoice, where sub-sat precision (e.g. from a mint fee's
+// percentage cut, see grossUpForMintFee) isn't reliably payable
+export const ceilMsatToSat = (msat: number): number =>
+  Math.ceil(msat / 1000) * 1000
+
 export const formatDate = (ts: number): string => new Date(ts).toLocaleString()
 
 const relativeTimeFormatter = new Intl.RelativeTimeFormat(undefined, {

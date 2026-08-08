@@ -38,6 +38,7 @@ import {
   NotifyKind,
   msatToSats,
   satsToMsat,
+  ceilMsatToSat,
   copyToClipboard,
   pasteFromClipboard,
   mempoolNodeUrl
@@ -271,16 +272,19 @@ const Mint: Component = () => {
   // see mintFee on PayRequestInfo) those diverge, so the actual invoice
   // requested is grossed up to net exactly the typed amount once the fee
   // comes out. Bounds are checked against the grossed-up amount, since
-  // that's what's actually invoiced.
+  // that's what's actually invoiced. A fee's percentage cut can land the
+  // gross-up on a sub-sat msat value - not reliably payable, so the invoice
+  // is always requested for a whole sat, rounded up (never down, so the
+  // note still nets at least what was asked for).
   const amountBreakdown = createMemo(() => {
     const info = payRequest()
     const netMsat = satsToMsat(amountSats())
     if (!info || !amountSats() || !Number.isFinite(netMsat) || netMsat <= 0) {
       return null
     }
-    const grossMsat = info.mintFee
-      ? grossUpForMintFee(netMsat, info.mintFee)
-      : netMsat
+    const grossMsat = ceilMsatToSat(
+      info.mintFee ? grossUpForMintFee(netMsat, info.mintFee) : netMsat
+    )
     return {netMsat, grossMsat, feeMsat: grossMsat - netMsat}
   })
 
