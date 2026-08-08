@@ -6,7 +6,8 @@ import {
   IoCloseSharp,
   IoReturnDownForwardSharp,
   IoRefreshSharp,
-  IoCopySharp
+  IoCopySharp,
+  IoEyeSharp
 } from 'solid-icons/io'
 
 import type {Bearer} from '../storage'
@@ -92,6 +93,16 @@ const Transfer: Component = () => {
       else next.delete(id)
       return next
     })
+  }
+
+  // a single selected note needs no merge/split (and no amount typed in) to
+  // be handed over - just show what's already there
+  const unveilSelectedNow = () => {
+    const picked = prepareSelectedBearers()
+    if (picked.length !== 1) return
+    setPreparedBearer(picked[0])
+    setPrepareSelectedIds(new Set<string>())
+    setPrepareAmountSats('')
   }
 
   // a no-op returning the note itself when only one is selected, since
@@ -323,61 +334,69 @@ const Transfer: Component = () => {
             value={prepareAmountSats()}
             onInput={e => setPrepareAmountSats(e.currentTarget.value)}
           />
-          <Show
-            when={bearers().length > 0}
-            fallback={<p>No bearer notes to prepare from yet.</p>}
-          >
-            <For each={groupByServer(bearers())}>
-              {([server, group]) => (
-                <div class="form-item">
-                  <label>{server}</label>
-                  <For each={group}>
-                    {bearer => (
-                      <label>
-                        <input
-                          type="checkbox"
-                          checked={prepareSelectedIds().has(bearer.id)}
-                          disabled={!bearer.callback || bearer.spent}
-                          onChange={e =>
-                            togglePrepareSelect(
-                              bearer.id,
-                              e.currentTarget.checked
-                            )
-                          }
-                        />
-                        &nbsp;{msatToSats(bearer.amount)} sats
-                        <Show when={bearer.spent}>&nbsp;(spent)</Show>
-                        <Show when={!bearer.callback && !bearer.spent}>
-                          &nbsp;(not verified yet)
-                        </Show>
-                      </label>
-                    )}
-                  </For>
-                </div>
-              )}
-            </For>
-          </Show>
-          <Show when={prepareSelectedBearers().length > 0}>
-            <p class="bearer-hint">
-              Selected {msatToSats(prepareSelectedTotal())} sats
-              <Show when={!canPrepare()}>
-                {' '}
-                - not enough selected yet, or spans more than one mint
-              </Show>
-            </p>
-          </Show>
-          <div class="btns">
-            <button
-              disabled={!canPrepare() || preparing()}
-              onClick={prepareNote}
+          <Show when={prepareAmountMsat() !== null}>
+            <Show
+              when={bearers().length > 0}
+              fallback={<p>No bearer notes to prepare from yet.</p>}
             >
-              <Show when={preparing()}>
-                <IoRefreshSharp class="spin" />
-                &nbsp;
+              <For each={groupByServer(bearers())}>
+                {([server, group]) => (
+                  <div class="form-item">
+                    <label>{server}</label>
+                    <For each={group}>
+                      {bearer => (
+                        <label>
+                          <input
+                            type="checkbox"
+                            checked={prepareSelectedIds().has(bearer.id)}
+                            disabled={!bearer.callback || bearer.spent}
+                            onChange={e =>
+                              togglePrepareSelect(
+                                bearer.id,
+                                e.currentTarget.checked
+                              )
+                            }
+                          />
+                          &nbsp;{msatToSats(bearer.amount)} sats
+                          <Show when={bearer.spent}>&nbsp;(spent)</Show>
+                          <Show when={!bearer.callback && !bearer.spent}>
+                            &nbsp;(not verified yet)
+                          </Show>
+                        </label>
+                      )}
+                    </For>
+                  </div>
+                )}
+              </For>
+            </Show>
+            <Show when={prepareSelectedBearers().length > 0}>
+              <p class="bearer-hint">
+                Selected {msatToSats(prepareSelectedTotal())} sats
+                <Show when={!canPrepare()}>
+                  {' '}
+                  - not enough selected yet, or spans more than one mint
+                </Show>
+              </p>
+            </Show>
+            <div class="btns">
+              <Show when={prepareSelectedBearers().length === 1}>
+                <button onClick={unveilSelectedNow}>
+                  <IoEyeSharp />
+                  &nbsp;Unveil now
+                </button>
               </Show>
-              Prepare note
-            </button>
-          </div>
+              <button
+                disabled={!canPrepare() || preparing()}
+                onClick={prepareNote}
+              >
+                <Show when={preparing()}>
+                  <IoRefreshSharp class="spin" />
+                  &nbsp;
+                </Show>
+                Prepare note
+              </button>
+            </div>
+          </Show>
         </figure>
         <Show when={preparedBearer()}>
           <figure class="setup-card">
@@ -394,7 +413,15 @@ const Transfer: Component = () => {
                 <IoCopySharp />
                 &nbsp;Copy note
               </button>
-              <button onClick={() => setPreparedBearer(null)}>Done</button>
+              <button
+                onClick={() => {
+                  updateBearer(preparedBearer()!.id, {spent: true})
+                  setPreparedBearer(null)
+                  notify('Marked as handed over and spent.', NotifyKind.SUCCESS)
+                }}
+              >
+                Done
+              </button>
             </div>
           </figure>
         </Show>
