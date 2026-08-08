@@ -596,7 +596,8 @@ const Mint: Component = () => {
                     This mint withholds a fee on minting:{' '}
                     {describeMintFee(fee())}. The note you end up holding is
                     worth less than what you pay - amounts below are already
-                    adjusted for it.
+                    adjusted for it. Melts won't have any additional fees - this
+                    is only charged once, on minting.
                   </p>
                 )}
               </Show>
