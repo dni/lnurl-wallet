@@ -1,7 +1,7 @@
 # LNURLwallet
 
 A **serverless** wallet for **LNURLcash** bearer notes
-([LUD-XX draft](https://github.com/lnurl/luds/blob/luds/XX.md)). It is a
+([LUD-XX draft](https://github.com/lnurl/luds/blob/663264923edf3e8e8fc22835a68ef98238b8d692/XX.md)). It is a
 single static page - no backend, no database, no accounts - deployed
 straight to GitHub Pages. Everything it holds lives **encrypted** in your
 browser's local storage, and every network request goes directly from your
@@ -45,8 +45,10 @@ payment is now on its way, not that the note is confirmed spent - the
 service pays it out asynchronously and only finalizes the burn once that
 settles, restoring the note if it fails instead (rejecting any other
 callback naming that `k1` with `{"status":"ERROR","reason":"pending"}` in
-the meantime). This wallet leaves a just-melted note in place rather than
-assume success; refresh confirms it once the note is actually gone.
+the meantime). This wallet locks a just-melted note as spent right away
+rather than assume success - refresh and further actions on it stay
+disabled until you unspend it again, e.g. if the payment turns out to have
+failed.
 
 **Minting**: a [LUD-06](https://github.com/lnurl/luds/blob/luds/06.md)
 payRequest advertising `withdrawLink` mints notes - the **payment
@@ -81,8 +83,7 @@ The wallet follows the spec's security guidance:
 - Received (scanned/pasted) notes are **rotated immediately** after the
   informational GET that verifies them - that GET necessarily puts the old
   secret on the wire, so the previous holder's copy needs burning regardless
-  of who they are. (An earlier draft of the spec let this be avoided via an
-  `?id=sha256(k1)` hash lookup; that option was since removed.)
+  of who they are.
 - One wallet holds notes from **any number of independent mints** side by
   side, grouped per service; combine (merge) works across selected
   same-mint notes in a single request.

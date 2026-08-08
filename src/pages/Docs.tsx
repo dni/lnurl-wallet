@@ -22,7 +22,7 @@ const Docs: Component = () => {
         <h3>
           LNURLcash bearer notes (
           <a
-            href="https://github.com/lnurl/luds/blob/luds/XX.md"
+            href="https://github.com/lnurl/luds/blob/663264923edf3e8e8fc22835a68ef98238b8d692/XX.md"
             target="_blank"
           >
             LUD-XX draft
@@ -64,8 +64,10 @@ callback?k1=X&k1=Y           merge: all burned, one note worth the sum returned`
           only means the payment is now on its way, not that the note is
           confirmed spent yet: the service pays it out asynchronously and only
           finalizes the burn once that settles, restoring the note if it fails
-          instead. The wallet leaves a just-melted note in place rather than
-          assume success - refresh it in a moment to confirm it's actually gone.
+          instead. The wallet locks a just-melted note as spent right away
+          rather than assume success - refresh and further actions on it stay
+          disabled until you unspend it again, e.g. if the payment turns out to
+          have failed.
         </p>
         <ul>
           <li>
@@ -112,17 +114,13 @@ callback?k1=X&k1=Y           merge: all burned, one note worth the sum returned`
             <strong>Combine</strong> merges selected same-service notes into
             one, in a single request.
           </li>
+          <li>
+            <strong>Receive</strong>: a scanned or pasted note is rotated
+            immediately after the informational GET that verifies it - that GET
+            already put the old secret on the wire, so whoever handed the note
+            over needs burning out regardless of who they are.
+          </li>
         </ul>
-        <p>
-          The optional <code>?id=sha256(k1)</code> hash lookup from earlier
-          drafts of this spec was removed - every informational GET now puts the
-          secret itself on the wire, which is exactly why the wallet treats one
-          as exposure and rotates right after, per the spec's own guidance. That
-          applies just as much right after receiving a scanned or pasted note:
-          the informational GET that verified it already put the old secret on
-          the wire, so the previous holder's copy needs burning regardless of
-          who they are.
-        </p>
       </figure>
 
       <figure class="docs-card">
