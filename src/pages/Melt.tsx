@@ -127,8 +127,13 @@ const Melt: Component = () => {
   }
 
   // manual click: check right away, then restart the countdown so the next
-  // automatic tick isn't immediately on its heels
+  // automatic tick isn't immediately on its heels. checkPending's own guard
+  // stops a second concurrent rotate, but on its own that still lets a
+  // rapid double-click (or a click landing right as the automatic tick was
+  // about to fire) restart the interval twice in a row - guard here too so
+  // the whole "check + restart" action only happens once per click
   const manualCheckPending = () => {
+    if (checkingPending()) return
     checkPending()
     const note = pendingNote()
     if (note) startPolling(note)
