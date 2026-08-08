@@ -2,13 +2,21 @@ import type {Component} from 'solid-js'
 import {For, Show, createSignal} from 'solid-js'
 import {IoAddCircleSharp, IoTrashSharp, IoLockClosedSharp} from 'solid-icons/io'
 
-import {trustedMints, addTrustedMint, removeTrustedMint} from '../trustedMints'
+import {
+  trustedMints,
+  addTrustedMint,
+  removeTrustedMint,
+  isMintTrusted,
+  PUBLIC_MINTS
+} from '../trustedMints'
+import {resolveMintInput, fetchPayRequest, serverOf} from '../lnurlcash'
 import {notify, NotifyKind, formatDate} from '../helpers'
 
 const Mints: Component = () => {
   const [server, setServer] = createSignal('')
   const [pubkey, setPubkey] = createSignal('')
   const [confirmDelete, setConfirmDelete] = createSignal<string | null>(null)
+  const [trusting, setTrusting] = createSignal<string | null>(null)
 
   const add = () => {
     try {
@@ -28,6 +36,27 @@ const Mints: Component = () => {
       notify('Mint removed from your trusted list.', NotifyKind.SUCCESS)
     } catch (err) {
       notify((err as Error).message, NotifyKind.ERROR)
+    }
+  }
+
+  // looks the address up to fetch its published signing key, same as
+  // Mint.tsx's own lookup - this list is just addresses, not server+pubkey
+  // pairs, so there's no key to trust until this call comes back
+  const trustPublicMint = async (address: string) => {
+    setTrusting(address)
+    try {
+      const url = resolveMintInput(address)
+      if (!url) throw new Error('Could not resolve this mint address.')
+      const info = await fetchPayRequest(url)
+      if (!info.mintPubkey) {
+        throw new Error('This mint does not publish a signing key.')
+      }
+      addTrustedMint(serverOf(url), info.mintPubkey)
+      notify('Mint added to your trusted list.', NotifyKind.SUCCESS)
+    } catch (err) {
+      notify((err as Error).message, NotifyKind.ERROR)
+    } finally {
+      setTrusting(null)
     }
   }
 
@@ -62,6 +91,34 @@ const Mints: Component = () => {
             <IoAddCircleSharp />
             &nbsp;Add mint
           </button>
+        </div>
+      </figure>
+      <figure class="setup-card">
+        <h4>Public mints</h4>
+        <p>
+          A small curated list, for a quick start - looks up and trusts the
+          mint's published signing key in one step.
+        </p>
+        <div class="mint-picker">
+          <For each={PUBLIC_MINTS}>
+            {address => {
+              const url = resolveMintInput(address)
+              const alreadyTrusted = () => !!url && isMintTrusted(serverOf(url))
+              return (
+                <button
+                  disabled={trusting() === address || alreadyTrusted()}
+                  title={alreadyTrusted() ? 'Already in your trusted list' : ''}
+                  onClick={() => trustPublicMint(address)}
+                >
+                  <Show when={alreadyTrusted()}>
+                    <IoLockClosedSharp />
+                    &nbsp;
+                  </Show>
+                  {address}
+                </button>
+              )
+            }}
+          </For>
         </div>
       </figure>
       <Show

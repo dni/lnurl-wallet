@@ -33,7 +33,12 @@ import {
   pasteFromClipboard,
   mempoolNodeUrl
 } from '../helpers'
-import {isMintTrusted, addTrustedMint, trustedMints} from '../trustedMints'
+import {
+  isMintTrusted,
+  addTrustedMint,
+  trustedMints,
+  PUBLIC_MINTS
+} from '../trustedMints'
 import Qr from '../components/Qr'
 import ScanToggle from '../components/ScanToggle'
 import RequireWallet from '../components/RequireWallet'
@@ -43,11 +48,6 @@ type Mode = 'invoice' | 'preimage'
 // LUD-21 auto-poll interval, in seconds - both the countdown shown on the
 // button and the cadence of the automatic check
 const VERIFY_POLL_SECONDS = 10
-
-// A small curated list of known public mints, for a one-click quick start -
-// unrelated to the trusted-mints registry (a mint appearing here says
-// nothing about its signing key or whether you've ever used it).
-const PUBLIC_MINTS = ['mint@mint.600.wtf']
 
 // trustedMints only stores a bare hostname (see trustedMints.ts) - there's
 // no record of *how* it was originally reached, so re-selecting one guesses

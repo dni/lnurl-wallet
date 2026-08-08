@@ -15,6 +15,12 @@ export type TrustedMint = {
   locked: boolean
 }
 
+// A small curated list of known public mints, for a one-click quick start -
+// unrelated to whether any given entry ends up in the trusted-mints
+// registry above (appearing here says nothing about a mint's signing key or
+// whether this wallet has ever used it).
+export const PUBLIC_MINTS = ['mint@mint.600.wtf']
+
 const STORAGE_KEY = 'lnurlcash_trusted_mints'
 
 // 33-byte compressed secp256k1 pubkey, hex
