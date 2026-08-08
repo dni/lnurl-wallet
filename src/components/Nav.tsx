@@ -56,10 +56,12 @@ const Nav = () => {
             </A>
           </Show>
           <Show when={state() === 'unlocked'}>
-            <A href="/mint" class="nav-link">
-              <IoAddCircleSharp />
-              &nbsp;Mint
-            </A>
+            <Show when={!offlineMode()}>
+              <A href="/mint" class="nav-link">
+                <IoAddCircleSharp />
+                &nbsp;Mint
+              </A>
+            </Show>
             <A href="/melt" class="nav-link">
               <IoFlameSharp />
               &nbsp;Melt

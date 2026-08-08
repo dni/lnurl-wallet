@@ -1,5 +1,5 @@
 import type {Component} from 'solid-js'
-import {Show, For, createSignal, onCleanup} from 'solid-js'
+import {Show, For, createSignal, createEffect, onCleanup} from 'solid-js'
 import {useNavigate} from '@solidjs/router'
 import {
   IoRefreshSharp,
@@ -67,6 +67,15 @@ const guessMintAddress = (server: string): string => `mint@${server}`
 const Mint: Component = () => {
   const {addBearer} = useWallet()
   const navigate = useNavigate()
+
+  // minting is nothing but service calls end to end (look up, get invoice,
+  // verify, claim) - there's no useful offline state for this page to sit
+  // in, so it's hidden from the nav (see Nav.tsx) and bounced straight back
+  // if reached anyway (a stale link, or the toggle flipped on while here)
+  createEffect(() => {
+    if (offlineMode()) navigate('/wallet')
+  })
+
   const [mintInput, setMintInput] = createSignal('')
   const [payRequest, setPayRequest] = createSignal<PayRequestInfo | null>(null)
   const [mode, setMode] = createSignal<Mode>('invoice')
