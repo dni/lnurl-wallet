@@ -55,6 +55,13 @@ export const pasteFromClipboard = async (): Promise<string | null> => {
   }
 }
 
+// a mint's published mintPubkey is its Lightning node's own identity key
+// (signing happens via that node's signmessage RPC - see lnurlcash.ts's
+// verifyNoteSignature) - mempool.space's explorer is a quick way to look up
+// what that node actually is before trusting it
+export const mempoolNodeUrl = (pubkey: string): string =>
+  `https://mempool.space/lightning/node/${pubkey}`
+
 export const msatToSats = (msat: number): string =>
   (msat / 1000).toLocaleString()
 

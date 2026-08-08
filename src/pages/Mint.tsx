@@ -5,7 +5,9 @@ import {
   IoRefreshSharp,
   IoClipboardSharp,
   IoCloseSharp,
-  IoReturnDownForwardSharp
+  IoReturnDownForwardSharp,
+  IoOpenSharp,
+  IoGlobeSharp
 } from 'solid-icons/io'
 
 import {useWallet} from '../WalletContext'
@@ -28,7 +30,8 @@ import {
   msatToSats,
   satsToMsat,
   copyToClipboard,
-  pasteFromClipboard
+  pasteFromClipboard,
+  mempoolNodeUrl
 } from '../helpers'
 import {isMintTrusted, addTrustedMint, trustedMints} from '../trustedMints'
 import Qr from '../components/Qr'
@@ -421,6 +424,24 @@ const Mint: Component = () => {
               <div class="btns">
                 <button onClick={confirmTrust}>Trust this mint</button>
                 <button onClick={cancelTrust}>Cancel</button>
+                <a
+                  class="icon-btn"
+                  title="Open this mint"
+                  href={`https://${pending().server}`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  <IoGlobeSharp />
+                </a>
+                <a
+                  class="icon-btn"
+                  title="Look up this Lightning node on mempool.space"
+                  href={mempoolNodeUrl(pending().mintPubkey)}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  <IoOpenSharp />
+                </a>
               </div>
             </figure>
           )}

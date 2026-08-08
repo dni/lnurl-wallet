@@ -7,14 +7,22 @@ import {
   IoRefreshSharp,
   IoCheckboxSharp,
   IoSquareOutline,
-  IoListSharp
+  IoListSharp,
+  IoOpenSharp,
+  IoGlobeSharp
 } from 'solid-icons/io'
 
 import type {Bearer} from '../storage'
 import {useWallet} from '../WalletContext'
 import {noteK1, withNewK1, mergeNotes} from '../lnurlcash'
 import {getTrustedMintPubkey} from '../trustedMints'
-import {notify, NotifyKind, msatToSats, copyToClipboard} from '../helpers'
+import {
+  notify,
+  NotifyKind,
+  msatToSats,
+  copyToClipboard,
+  mempoolNodeUrl
+} from '../helpers'
 import BearerCard from './BearerCard'
 import TransferDialog from './TransferDialog'
 
@@ -124,6 +132,26 @@ const MintGroupCard: Component<MintGroupCardProps> = props => {
           >
             <IoCopySharp />
           </button>
+          <a
+            class="icon-btn"
+            title="Open this mint"
+            href={`https://${props.server}`}
+            target="_blank"
+            rel="noreferrer"
+          >
+            <IoGlobeSharp />
+          </a>
+          <Show when={mintPubkey()}>
+            <a
+              class="icon-btn"
+              title="Look up this mint's Lightning node on mempool.space"
+              href={mempoolNodeUrl(mintPubkey()!)}
+              target="_blank"
+              rel="noreferrer"
+            >
+              <IoOpenSharp />
+            </a>
+          </Show>
           <button class="show-notes-btn" onClick={() => setShowNotes(v => !v)}>
             <IoListSharp />
             &nbsp;{showNotes() ? 'Hide notes' : 'Show notes'}&nbsp;(

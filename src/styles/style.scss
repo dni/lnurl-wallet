@@ -200,13 +200,15 @@ h4 {
   }
 }
 
-button {
+button,
+a.icon-btn {
   background-color: rgba($accent-base, $transparency);
   border-radius: 5px;
   color: $font-color;
   font-size: $font-size;
   font-family: $font;
   border: none;
+  text-decoration: none;
   padding: 6px 14px;
   cursor: pointer;
   display: inline-flex;
