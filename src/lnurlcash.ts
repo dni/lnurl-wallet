@@ -451,6 +451,11 @@ export const mergeNotes = async (
 
 // ---- minting via LUD-06 payRequest ----
 
+export type MintFee = {
+  baseFeeMsat: number
+  feePpm: number
+}
+
 export type PayRequestInfo = {
   tag: 'payRequest'
   callback: string
@@ -467,6 +472,67 @@ export type PayRequestInfo = {
   // merged notes. Kept optional here too since nothing forbids a SERVICE
   // from including it anyway.
   mintPubkey?: string
+  // LUD-XX (optional): parsed from metadata (see parseMintFee) - absent
+  // means SERVICE didn't advertise one, which the spec says to read as
+  // fee-free, not "unknown"
+  mintFee?: MintFee
+}
+
+// LUD-XX mint fees (optional): SERVICE signals what it withholds on minting
+// via an extra ["text/plain", "Mint fees: <base_fee_msat>,<fee_percent_ppm>"]
+// entry in a payRequest's metadata array, so a WALLET can warn the payer up
+// front that the note it ends up holding may be worth less than the invoice
+// it paid. A SERVICE that omits the entry is assumed fee-free.
+export const parseMintFee = (metadata: string): MintFee | null => {
+  let entries: unknown
+  try {
+    entries = JSON.parse(metadata)
+  } catch {
+    return null
+  }
+  if (!Array.isArray(entries)) return null
+  for (const entry of entries) {
+    if (!Array.isArray(entry) || entry[0] !== 'text/plain') continue
+    const match =
+      typeof entry[1] === 'string' &&
+      entry[1].match(/^Mint fees:\s*(\d+)\s*,\s*(\d+)\s*$/)
+    if (!match) continue
+    const baseFeeMsat = Number(match[1])
+    const feePpm = Number(match[2])
+    if (!Number.isFinite(baseFeeMsat) || !Number.isFinite(feePpm)) continue
+    // an explicit "Mint fees: 0,0" has the exact same effect as omitting
+    // the entry entirely - treat it identically, so callers don't need to
+    // special-case a fee that's technically present but withholds nothing
+    if (baseFeeMsat === 0 && feePpm === 0) return null
+    return {baseFeeMsat, feePpm}
+  }
+  return null
+}
+
+// the note value SERVICE is expected to credit after withholding its
+// advertised fee - per the spec text, "amount - base_fee_msat - amount *
+// fee_percent_ppm / 1_000_000". Floored since msat is necessarily an
+// integer and SERVICE presumably can't credit a fractional one; this is
+// only ever an estimate to display before paying - the authoritative value
+// is always whatever the informational GET reports after claiming (see
+// Mint.tsx's claim)
+export const applyMintFee = (grossMsat: number, fee: MintFee): number =>
+  Math.max(
+    0,
+    grossMsat - fee.baseFeeMsat - Math.floor((grossMsat * fee.feePpm) / 1e6)
+  )
+
+// the inverse: how big an invoice needs to be so the note it mints nets
+// netMsat once SERVICE's fee comes out. The linear formula is only a
+// starting estimate - flooring in applyMintFee means it can land either a
+// hair short or a hair over, so this walks to the exact minimal gross
+// amount that nets netMsat (applyMintFee is non-decreasing in gross with
+// per-msat steps of 0 or 1, so that gross always exists and is unique)
+export const grossUpForMintFee = (netMsat: number, fee: MintFee): number => {
+  let gross = Math.round((netMsat + fee.baseFeeMsat) / (1 - fee.feePpm / 1e6))
+  while (applyMintFee(gross, fee) < netMsat) gross++
+  while (gross > 0 && applyMintFee(gross - 1, fee) >= netMsat) gross--
+  return gross
 }
 
 export const fetchPayRequest = async (url: string): Promise<PayRequestInfo> => {
@@ -474,7 +540,9 @@ export const fetchPayRequest = async (url: string): Promise<PayRequestInfo> => {
   if (body?.tag !== 'payRequest' || typeof body.callback !== 'string') {
     throw new Error('Not a payRequest (unexpected response).')
   }
-  return body as PayRequestInfo
+  const mintFee =
+    typeof body.metadata === 'string' ? parseMintFee(body.metadata) : null
+  return {...body, mintFee: mintFee ?? undefined} as PayRequestInfo
 }
 
 export type InvoiceResult = {

@@ -100,7 +100,11 @@ callback?k1=X&k1=Y           merge: all burned, one note worth the sum returned`
             who merely knows the payment hash - not proof of payment - would let
             them steal the note first), in which case verify just confirms the
             payment settled and pasting the preimage by hand remains the way to
-            claim.
+            claim. A mint MAY also withhold a fee on minting, advertised as an
+            extra <code>Mint fees: base_msat,ppm</code> entry in the
+            payRequest's metadata - when present, this wallet shows it and
+            requests a bigger invoice so the note you end up holding still nets
+            the amount you asked for.
           </li>
           <li>
             <strong>Melt</strong> has the service pay a bolt11 invoice of

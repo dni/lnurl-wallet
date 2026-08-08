@@ -1,5 +1,12 @@
 import type {Component} from 'solid-js'
-import {Show, For, createSignal, createEffect, onCleanup} from 'solid-js'
+import {
+  Show,
+  For,
+  createSignal,
+  createMemo,
+  createEffect,
+  onCleanup
+} from 'solid-js'
 import {useNavigate} from '@solidjs/router'
 import {
   IoRefreshSharp,
@@ -11,7 +18,7 @@ import {
 } from 'solid-icons/io'
 
 import {useWallet} from '../WalletContext'
-import type {PayRequestInfo} from '../lnurlcash'
+import type {PayRequestInfo, MintFee} from '../lnurlcash'
 import {
   resolveMintInput,
   fetchPayRequest,
@@ -22,7 +29,9 @@ import {
   fetchNoteInfo,
   rotateNote,
   serverOf,
-  isPreimage
+  isPreimage,
+  applyMintFee,
+  grossUpForMintFee
 } from '../lnurlcash'
 import {
   notify,
@@ -58,6 +67,24 @@ const VERIFY_POLL_SECONDS = 10
 // just fails normally and the holder can type the real address by hand.
 const guessMintAddress = (server: string): string => `mint@${server}`
 
+// fee_percent_ppm is parts-per-million - /10_000 for a percent, then trim
+// the trailing zeros toFixed leaves behind (2000 ppm -> "0.2000" -> "0.2")
+const formatFeePercent = (ppm: number): string =>
+  (ppm / 10_000).toFixed(4).replace(/\.?0+$/, '')
+
+// parseMintFee already collapses a fully-zero fee down to null (see
+// lnurlcash.ts), so by the time one reaches here at least one of the two
+// components is set - only mention the one(s) that actually are
+const describeMintFee = (fee: MintFee): string =>
+  [
+    fee.baseFeeMsat > 0 ? `${msatToSats(fee.baseFeeMsat)} sat flat` : null,
+    fee.feePpm > 0
+      ? `${formatFeePercent(fee.feePpm)}% of the amount paid`
+      : null
+  ]
+    .filter(Boolean)
+    .join(' + ')
+
 // LUD-XX minting: pay a payRequest that advertises `withdrawLink` - the
 // payment preimage IS the bearer secret. This wallet has no node of its
 // own, so the invoice is paid externally and the preimage (which every
@@ -81,7 +108,12 @@ const Mint: Component = () => {
   const [mode, setMode] = createSignal<Mode>('invoice')
   const [amountSats, setAmountSats] = createSignal('')
   const [invoice, setInvoice] = createSignal<string | null>(null)
+  // net note value the holder asked for, and the (possibly grossed-up, see
+  // amountBreakdown) gross msat actually invoiced for it - both needed at
+  // claim time: the former to catch the service crediting something other
+  // than what was expected, the latter to work out the fee actually paid
   const [invoicedMsat, setInvoicedMsat] = createSignal(0)
+  const [invoicedGrossMsat, setInvoicedGrossMsat] = createSignal(0)
   const [preimage, setPreimage] = createSignal('')
   const [directPreimage, setDirectPreimage] = createSignal('')
   const [busy, setBusy] = createSignal(false)
@@ -125,7 +157,7 @@ const Mint: Component = () => {
             'Payment settled - claiming automatically...',
             NotifyKind.LOADING
           )
-          await claim(result.preimage, invoicedMsat())
+          await claim(result.preimage, invoicedMsat(), invoicedGrossMsat())
         } else {
           notify(
             'Payment settled - paste the preimage your wallet revealed to claim the note.',
@@ -234,34 +266,66 @@ const Mint: Component = () => {
     notify('Mint not trusted - lookup cancelled.', NotifyKind.ERROR)
   }
 
-  // validates amountSats() against payRequest's bounds, shared by both the
-  // "request an invoice" and "I already paid" paths
-  const parseAmount = (info: PayRequestInfo): number | null => {
-    const msat = satsToMsat(amountSats())
-    if (!amountSats() || !Number.isFinite(msat) || msat <= 0) {
+  // what amountSats() is typed as is the note value the holder wants to end
+  // up with, not the invoice amount - if the mint advertises a fee (LUD-XX,
+  // see mintFee on PayRequestInfo) those diverge, so the actual invoice
+  // requested is grossed up to net exactly the typed amount once the fee
+  // comes out. Bounds are checked against the grossed-up amount, since
+  // that's what's actually invoiced.
+  const amountBreakdown = createMemo(() => {
+    const info = payRequest()
+    const netMsat = satsToMsat(amountSats())
+    if (!info || !amountSats() || !Number.isFinite(netMsat) || netMsat <= 0) {
+      return null
+    }
+    const grossMsat = info.mintFee
+      ? grossUpForMintFee(netMsat, info.mintFee)
+      : netMsat
+    return {netMsat, grossMsat, feeMsat: grossMsat - netMsat}
+  })
+
+  // re-derives amountBreakdown() and bounds-checks it against payRequest,
+  // notifying on the way out instead of silently returning null - the
+  // memo itself stays notification-free so it's also safe to read for the
+  // live preview below
+  const parseAmount = (
+    info: PayRequestInfo
+  ): {netMsat: number; grossMsat: number} | null => {
+    const amount = amountBreakdown()
+    if (!amount) {
       notify('Enter an amount in sats.', NotifyKind.ERROR)
       return null
     }
-    if (msat < info.minSendable || msat > info.maxSendable) {
+    if (
+      amount.grossMsat < info.minSendable ||
+      amount.grossMsat > info.maxSendable
+    ) {
+      const minNet = info.mintFee
+        ? applyMintFee(info.minSendable, info.mintFee)
+        : info.minSendable
+      const maxNet = info.mintFee
+        ? applyMintFee(info.maxSendable, info.mintFee)
+        : info.maxSendable
       notify(
-        `Amount must be between ${msatToSats(info.minSendable)} and ${msatToSats(info.maxSendable)} sats.`,
+        `Amount must be between ${msatToSats(minNet)} and ${msatToSats(maxNet)} sats.`,
         NotifyKind.ERROR
       )
       return null
     }
-    return msat
+    return amount
   }
 
   const getInvoice = async () => {
     const info = payRequest()
     if (!info) return
-    const msat = parseAmount(info)
-    if (msat === null) return
+    const amount = parseAmount(info)
+    if (amount === null) return
     setBusy(true)
     try {
-      const result = await requestInvoice(info.callback, msat)
+      const result = await requestInvoice(info.callback, amount.grossMsat)
       setInvoice(result.pr)
-      setInvoicedMsat(msat)
+      setInvoicedMsat(amount.netMsat)
+      setInvoicedGrossMsat(amount.grossMsat)
       if (result.verify) startPolling(result.verify)
     } catch (err) {
       notify((err as Error).message, NotifyKind.ERROR)
@@ -272,8 +336,16 @@ const Mint: Component = () => {
 
   // shared by the manual "Claim note" buttons and checkVerify's automatic
   // claim once LUD-21 verify returns a preimage - rotates unconditionally
-  // right after verifying, in both cases, no separate confirmation step
-  const claim = async (preimageValue: string, amountMsat?: number) => {
+  // right after verifying, in both cases, no separate confirmation step.
+  // expectedNetMsat/grossPaidMsat are only known coming from this page's own
+  // "Create new invoice" flow (see getInvoice) - the direct-preimage path
+  // (claimDirect) has no invoice of its own to compare against, so both are
+  // left undefined there and the checks below are skipped entirely
+  const claim = async (
+    preimageValue: string,
+    expectedNetMsat?: number,
+    grossPaidMsat?: number
+  ) => {
     const info = payRequest()
     if (!info?.withdrawLink) return
     if (!isPreimage(preimageValue)) {
@@ -287,11 +359,34 @@ const Mint: Component = () => {
       const declaredUrl = buildNoteUrl(
         info.withdrawLink,
         preimageValue,
-        amountMsat
+        expectedNetMsat
       )
       // verify with the service - this settles a freshly paid invoice on
-      // exactly this k1, and its maxWithdrawable is the authoritative value
+      // exactly this k1, and its maxWithdrawable is the authoritative value.
+      // Always cross-check it against whatever was expected: SERVICE's own
+      // fee math might not match this wallet's estimate (or diverge from
+      // what it advertised in the first place), and the note being minted
+      // is worth exactly maxWithdrawable regardless - better to say so
+      // plainly than let a silent mismatch pass
       const noteInfo = await fetchNoteInfo(declaredUrl)
+      if (
+        expectedNetMsat !== undefined &&
+        noteInfo.maxWithdrawable !== expectedNetMsat
+      ) {
+        notify(
+          `Amount changed: expected a ${msatToSats(expectedNetMsat)} sat note, the service reports ${msatToSats(noteInfo.maxWithdrawable)} sats.`,
+          NotifyKind.ERROR
+        )
+      }
+      if (grossPaidMsat !== undefined) {
+        const feePaidMsat = grossPaidMsat - noteInfo.maxWithdrawable
+        if (feePaidMsat > 0) {
+          notify(
+            `Mint fee paid: ${msatToSats(feePaidMsat)} sats (paid ${msatToSats(grossPaidMsat)}, note is worth ${msatToSats(noteInfo.maxWithdrawable)}).`,
+            NotifyKind.SUCCESS
+          )
+        }
+      }
       const mintPubkey = noteInfo.mintPubkey
       let url = withNewK1(declaredUrl, noteInfo.k1, noteInfo.maxWithdrawable)
       // that informational GET just put the preimage on the wire (server
@@ -482,13 +577,34 @@ const Mint: Component = () => {
                   I already have a preimage
                 </button>
               </div>
+              <Show when={info().mintFee}>
+                {fee => (
+                  <p class="warning">
+                    This mint withholds a fee on minting:{' '}
+                    {describeMintFee(fee())}. The note you end up holding is
+                    worth less than what you pay - amounts below are already
+                    adjusted for it.
+                  </p>
+                )}
+              </Show>
               <Show
                 when={mode() === 'preimage'}
                 fallback={
                   <>
                     <label>
-                      Amount (sats, {msatToSats(info().minSendable)} -{' '}
-                      {msatToSats(info().maxSendable)})
+                      Note value (sats,{' '}
+                      {msatToSats(
+                        info().mintFee
+                          ? applyMintFee(info().minSendable, info().mintFee!)
+                          : info().minSendable
+                      )}{' '}
+                      -{' '}
+                      {msatToSats(
+                        info().mintFee
+                          ? applyMintFee(info().maxSendable, info().mintFee!)
+                          : info().maxSendable
+                      )}
+                      )
                     </label>
                     <input
                       type="number"
@@ -497,6 +613,17 @@ const Mint: Component = () => {
                       value={amountSats()}
                       onInput={e => setAmountSats(e.currentTarget.value)}
                     />
+                    <Show when={amountBreakdown()}>
+                      {amount => (
+                        <Show when={amount().feeMsat > 0}>
+                          <p class="bearer-hint">
+                            Invoice: {msatToSats(amount().grossMsat)} sats
+                            (includes a {msatToSats(amount().feeMsat)} sat mint
+                            fee) - note: {msatToSats(amount().netMsat)} sats
+                          </p>
+                        </Show>
+                      )}
+                    </Show>
                     <div class="btns">
                       <button
                         disabled={busy() || offlineMode()}
@@ -586,7 +713,9 @@ const Mint: Component = () => {
             <div class="btns">
               <button
                 disabled={busy() || !isPreimage(preimage()) || offlineMode()}
-                onClick={() => claim(preimage(), invoicedMsat())}
+                onClick={() =>
+                  claim(preimage(), invoicedMsat(), invoicedGrossMsat())
+                }
               >
                 <Show when={busy()}>
                   <IoRefreshSharp class="spin" />

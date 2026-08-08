@@ -21,7 +21,10 @@ import {
   verifyNoteSignature,
   isPreimage,
   isBolt11Invoice,
-  decodeBolt11AmountMsat
+  decodeBolt11AmountMsat,
+  parseMintFee,
+  applyMintFee,
+  grossUpForMintFee
 } from './lnurlcash'
 
 const K1 = 'a'.repeat(64)
@@ -173,6 +176,59 @@ describe('bolt11 invoice', () => {
     expect(decodeBolt11AmountMsat('lnbc1p0examplebech32data')).toBeNull()
     expect(decodeBolt11AmountMsat('lntb1p0examplenoamount')).toBeNull()
     expect(decodeBolt11AmountMsat('not an invoice')).toBeNull()
+  })
+})
+
+describe('LUD-XX mint fees', () => {
+  it('parses the flat and ppm components from a metadata entry', () => {
+    const metadata = JSON.stringify([
+      ['text/plain', 'a mint'],
+      ['text/plain', 'Mint fees: 1000,2000']
+    ])
+    expect(parseMintFee(metadata)).toEqual({baseFeeMsat: 1000, feePpm: 2000})
+  })
+
+  it('is null for metadata with no fee entry, or invalid JSON', () => {
+    expect(parseMintFee(JSON.stringify([['text/plain', 'a mint']]))).toBeNull()
+    expect(parseMintFee('not json')).toBeNull()
+    expect(parseMintFee('{}')).toBeNull()
+  })
+
+  it('treats an explicit 0,0 fee the same as no fee entry at all', () => {
+    const metadata = JSON.stringify([['text/plain', 'Mint fees: 0,0']])
+    expect(parseMintFee(metadata)).toBeNull()
+  })
+
+  it('still parses a fee with only one of the two components set', () => {
+    expect(
+      parseMintFee(JSON.stringify([['text/plain', 'Mint fees: 1000,0']]))
+    ).toEqual({baseFeeMsat: 1000, feePpm: 0})
+    expect(
+      parseMintFee(JSON.stringify([['text/plain', 'Mint fees: 0,2000']]))
+    ).toEqual({baseFeeMsat: 0, feePpm: 2000})
+  })
+
+  it('applies a flat fee plus a percentage of the gross amount', () => {
+    const fee = {baseFeeMsat: 1000, feePpm: 2000} // 1 sat + 0.2%
+    expect(applyMintFee(100_000, fee)).toBe(100_000 - 1000 - 200)
+    expect(applyMintFee(0, fee)).toBe(0) // never goes negative
+  })
+
+  it('grosses up so the net amount survives the fee exactly', () => {
+    const fees = [
+      {baseFeeMsat: 1000, feePpm: 2000},
+      {baseFeeMsat: 0, feePpm: 500_000}, // 50%, no flat component
+      {baseFeeMsat: 5000, feePpm: 0}, // flat-only, no percentage
+      {baseFeeMsat: 0, feePpm: 0} // no fee at all - gross-up is a no-op
+    ]
+    for (const fee of fees) {
+      for (const net of [1, 1000, 21_000, 1_000_000]) {
+        const gross = grossUpForMintFee(net, fee)
+        expect(applyMintFee(gross, fee)).toBe(net)
+      }
+    }
+    // the no-fee case specifically shouldn't inflate the amount at all
+    expect(grossUpForMintFee(21_000, {baseFeeMsat: 0, feePpm: 0})).toBe(21_000)
   })
 })
 
