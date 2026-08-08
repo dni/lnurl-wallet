@@ -344,7 +344,6 @@ const Mint: Component = () => {
       <div id="mint" class="page">
         <h2>Mint a bearer note</h2>
         <figure class="paste-widget">
-          <label>Mint (LNURL or Lightning Address)</label>
           <div class="paste-input-row">
             <ScanToggle
               onScan={selectMint}

@@ -268,7 +268,6 @@ const Transfer: Component = () => {
       <div id="transfer" class="page">
         <h2>Bring in a bearer note</h2>
         <figure class="paste-widget">
-          <figcaption>Scan a note QR, or paste one below</figcaption>
           <div class="paste-input-row">
             <ScanToggle onScan={onScan} accept={isValidNoteInput} />
             <button

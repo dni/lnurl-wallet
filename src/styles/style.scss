@@ -506,6 +506,7 @@ pre {
   }
 }
 
+.paste-scan-btn,
 .paste-icon-btn,
 .paste-confirm-btn {
   flex: 0 0 auto;
@@ -513,7 +514,10 @@ pre {
   height: 40px;
   padding: 0;
   margin-right: 0;
-  border-radius: 50%;
+  // edgy, like the QR toggle on a bearer card - not the fully round
+  // .paste-clear-btn, which is a small inline affordance, not a peer of
+  // this row's other icons
+  border-radius: 5px;
   display: inline-flex;
   align-items: center;
   justify-content: center;

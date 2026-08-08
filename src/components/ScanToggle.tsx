@@ -33,7 +33,7 @@ const ScanToggle: Component<ScanToggleProps> = props => {
       </Show>
       <button
         type="button"
-        class="icon-btn"
+        class="icon-btn paste-scan-btn"
         classList={{active: showScanner()}}
         title={showScanner() ? 'Stop scanning' : 'Scan a QR code'}
         onClick={() => setShowScanner(v => !v)}
