@@ -74,6 +74,12 @@ export const satsToMsat = (sats: string | number): number =>
 export const ceilMsatToSat = (msat: number): number =>
   Math.ceil(msat / 1000) * 1000
 
+// rounds down to the nearest whole sat - for a fee-adjusted amount shown
+// as an upper bound: rounding up there would advertise a note value that
+// isn't actually reachable
+export const floorMsatToSat = (msat: number): number =>
+  Math.floor(msat / 1000) * 1000
+
 export const formatDate = (ts: number): string => new Date(ts).toLocaleString()
 
 const relativeTimeFormatter = new Intl.RelativeTimeFormat(undefined, {

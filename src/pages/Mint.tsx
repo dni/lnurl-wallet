@@ -39,6 +39,7 @@ import {
   msatToSats,
   satsToMsat,
   ceilMsatToSat,
+  floorMsatToSat,
   copyToClipboard,
   pasteFromClipboard,
   mempoolNodeUrl
@@ -309,14 +310,17 @@ const Mint: Component = () => {
       amount.grossMsat < info.minSendable ||
       amount.grossMsat > info.maxSendable
     ) {
-      const minNet = info.mintFee
-        ? applyMintFee(info.minSendable, info.mintFee)
-        : info.minSendable
+      // the low end is left as minSendable itself, not its (slightly
+      // smaller) fee-adjusted equivalent - simpler, and still a safe floor
+      // to type. The high end does need the fee-adjusted figure - typing
+      // maxSendable itself as a *net* target would gross up past it - and
+      // is rounded down to a whole sat so it never advertises a value that
+      // isn't actually reachable
       const maxNet = info.mintFee
-        ? applyMintFee(info.maxSendable, info.mintFee)
+        ? floorMsatToSat(applyMintFee(info.maxSendable, info.mintFee))
         : info.maxSendable
       notify(
-        `Amount must be between ${msatToSats(minNet)} and ${msatToSats(maxNet)} sats.`,
+        `Amount must be between ${msatToSats(info.minSendable)} and ${msatToSats(maxNet)} sats.`,
         NotifyKind.ERROR
       )
       return null
@@ -601,16 +605,12 @@ const Mint: Component = () => {
                 fallback={
                   <>
                     <label>
-                      Note value (sats,{' '}
+                      Note value (sats, {msatToSats(info().minSendable)} -{' '}
                       {msatToSats(
                         info().mintFee
-                          ? applyMintFee(info().minSendable, info().mintFee!)
-                          : info().minSendable
-                      )}{' '}
-                      -{' '}
-                      {msatToSats(
-                        info().mintFee
-                          ? applyMintFee(info().maxSendable, info().mintFee!)
+                          ? floorMsatToSat(
+                              applyMintFee(info().maxSendable, info().mintFee!)
+                            )
                           : info().maxSendable
                       )}
                       )
