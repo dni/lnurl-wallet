@@ -200,8 +200,11 @@ h4 {
   }
 }
 
+// :where() keeps a.icon-btn's contribution to specificity at just `a` - so
+// .icon-btn below (and its own padding/margin overrides) still wins on an
+// <a>, exactly as it already does on a <button>
 button,
-a.icon-btn {
+a:where(.icon-btn) {
   background-color: rgba($accent-base, $transparency);
   border-radius: 5px;
   color: $font-color;
@@ -556,7 +559,8 @@ nav {
 
 .nav-links,
 .nav-persistent {
-  a {
+  a,
+  .nav-icon-toggle {
     display: flex;
     align-items: center;
     margin-right: 8px;
@@ -569,6 +573,13 @@ nav {
       color: $bg;
     }
   }
+}
+
+// on: same look as a hover, but held - a glance at the row shows whether
+// it's active without needing to hover first
+.nav-icon-toggle.active {
+  background: rgba($font-color, $transparency);
+  color: $bg;
 }
 
 // wraps .nav-links + .nav-persistent so both collapse into one dropdown on
@@ -589,21 +600,8 @@ nav {
   align-items: center;
   margin-left: auto;
   a:last-child,
-  .switch-control:last-child {
+  .nav-icon-toggle:last-child {
     margin-right: 0;
-  }
-  // same treatment as the a's around it (font-size 0.9em set on
-  // .switch-control itself would otherwise shrink it against its siblings,
-  // which just inherit nav's own 1.2em)
-  .switch-control {
-    font-size: inherit;
-    margin-right: 8px;
-    padding: 6px 12px;
-    border-radius: 5px;
-    transition: all 0.5s ease-in-out;
-    &:hover {
-      background: rgba($font-color, $transparency);
-    }
   }
 }
 
@@ -671,18 +669,13 @@ nav {
     align-items: stretch;
     margin-left: 0;
     a,
-    .switch-control {
+    .nav-icon-toggle {
       flex: 1 1 auto;
       justify-content: center;
       margin-right: 0;
       padding: 16px 14px;
       min-height: 48px;
       font-size: 1.6em;
-    }
-    // the switch itself is sized in px, not em - left alone it'd inflate
-    // to match the 1.6em icon around it
-    .switch-control .switch {
-      font-size: 1rem;
     }
   }
   .nav-links:not(:empty) + .nav-persistent {

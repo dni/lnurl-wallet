@@ -71,25 +71,20 @@ const Nav = () => {
           </Show>
         </div>
         <div class="nav-persistent">
-          <label
-            class="switch-control"
+          <button
+            type="button"
+            class="nav-icon-toggle"
+            classList={{active: offlineMode()}}
             title={
               offlineMode()
                 ? 'Offline mode is on - no requests reach any service until you turn it off'
                 : 'Offline mode - block rotate, melt, split, merge and every other service request'
             }
+            onClick={() => setOfflineMode(!offlineMode())}
           >
             <IoCloudOfflineSharp />
             <span class="nav-label">&nbsp;Offline mode</span>
-            <span class="switch">
-              <input
-                type="checkbox"
-                checked={offlineMode()}
-                onChange={e => setOfflineMode(e.currentTarget.checked)}
-              />
-              <span class="switch-track"></span>
-            </span>
-          </label>
+          </button>
           <A href="/mints" title="Trusted mints">
             <IoShieldCheckmarkSharp />
             <span class="nav-label">&nbsp;Mints</span>
