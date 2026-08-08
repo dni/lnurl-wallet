@@ -34,9 +34,21 @@ export const copyToClipboard = (text: string): void => {
   }
 }
 
+// every caller of this pastes an lnurl/invoice/lightning-address value. A
+// `lightning:` URI scheme prefix (how some wallets/QR readers hand these
+// off) is always stripped. The rest is lowercased only when it's bech32
+// (LNURL, bolt11) or a Lightning Address, both case-insensitive by spec -
+// a raw lnurlw://, lnurlp://, lnurlc://, keyauth:// or http(s):// URL
+// carries a query string (e.g. a note's own k1 secret) that isn't
+// guaranteed to be, so those are left exactly as pasted
+const CASE_SENSITIVE_SCHEME = /^(https?|lnurlw|lnurlp|lnurlc|keyauth):\/\//i
+
 export const pasteFromClipboard = async (): Promise<string | null> => {
   try {
-    return await navigator.clipboard.readText()
+    const text = (await navigator.clipboard.readText())
+      .trim()
+      .replace(/^lightning:/i, '')
+    return CASE_SENSITIVE_SCHEME.test(text) ? text : text.toLowerCase()
   } catch (err) {
     notify('Failed to paste from clipboard.', NotifyKind.ERROR)
     return null
