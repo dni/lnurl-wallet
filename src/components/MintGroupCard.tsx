@@ -206,28 +206,6 @@ const MintGroupCard: Component<MintGroupCardProps> = props => {
             <button onClick={() => setConfirmClearSpent(false)}>Cancel</button>
           </div>
         </Show>
-        <Show when={spentCount() > 0}>
-          <div class="btns">
-            <label
-              class="switch-control"
-              title="Spent notes are locally locked (melted, or marked by hand) - this just shows or hides them, it doesn't change anything about them"
-            >
-              <IoBanSharp />
-              <span>
-                Show spent
-                <Show when={!showSpent()}>&nbsp;({spentCount()})</Show>
-              </span>
-              <span class="switch">
-                <input
-                  type="checkbox"
-                  checked={showSpent()}
-                  onChange={e => setShowSpent(e.currentTarget.checked)}
-                />
-                <span class="switch-track"></span>
-              </span>
-            </label>
-          </div>
-        </Show>
         <div class="btns">
           <button class="show-notes-btn" onClick={() => setShowNotes(v => !v)}>
             <IoListSharp />
@@ -235,6 +213,26 @@ const MintGroupCard: Component<MintGroupCardProps> = props => {
             {visibleGroup().length})
           </button>
           <Show when={showNotes()}>
+            <Show when={spentCount() > 0}>
+              <label
+                class="switch-control"
+                title="Spent notes are locally locked (melted, or marked by hand) - this just shows or hides them, it doesn't change anything about them"
+              >
+                <IoBanSharp />
+                <span>
+                  Show spent
+                  <Show when={!showSpent()}>&nbsp;({spentCount()})</Show>
+                </span>
+                <span class="switch">
+                  <input
+                    type="checkbox"
+                    checked={showSpent()}
+                    onChange={e => setShowSpent(e.currentTarget.checked)}
+                  />
+                  <span class="switch-track"></span>
+                </span>
+              </label>
+            </Show>
             <button
               class="select-all-btn"
               disabled={selectableIds().length === 0}
