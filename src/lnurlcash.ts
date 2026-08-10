@@ -3,6 +3,7 @@ import {sha256} from '@noble/hashes/sha2.js'
 import {secp256k1} from '@noble/curves/secp256k1.js'
 import {bytesToHex, hexToBytes, utf8ToBytes} from '@noble/hashes/utils.js'
 import {offlineMode} from './offlineMode'
+import {msatToSats} from './helpers'
 
 // LUD-XX LNURLcash - bearer assets (draft, see luds/XX.md).
 //
@@ -534,6 +535,24 @@ export const grossUpForMintFee = (netMsat: number, fee: MintFee): number => {
   while (gross > 0 && applyMintFee(gross - 1, fee) >= netMsat) gross--
   return gross
 }
+
+// fee_percent_ppm is parts-per-million - /10_000 for a percent, then trim
+// the trailing zeros toFixed leaves behind (2000 ppm -> "0.2000" -> "0.2")
+export const formatFeePercent = (ppm: number): string =>
+  (ppm / 10_000).toFixed(4).replace(/\.?0+$/, '')
+
+// parseMintFee already collapses a fully-zero fee down to null, so by the
+// time one reaches here at least one of the two components is set - only
+// mention the one(s) that actually are
+export const describeMintFee = (fee: MintFee): string =>
+  [
+    fee.baseFeeMsat > 0 ? `${msatToSats(fee.baseFeeMsat)} sat flat` : null,
+    fee.feePpm > 0
+      ? `${formatFeePercent(fee.feePpm)}% of the amount paid`
+      : null
+  ]
+    .filter(Boolean)
+    .join(' + ')
 
 export const fetchPayRequest = async (url: string): Promise<PayRequestInfo> => {
   const body = await lnurlFetch(url)

@@ -19,6 +19,8 @@ import {
   noteK1,
   serverOf,
   isPreimage,
+  applyMintFee,
+  describeMintFee,
   PendingNoteError
 } from '../lnurlcash'
 import {notify, NotifyKind, msatToSats, copyToClipboard} from '../helpers'
@@ -143,6 +145,19 @@ const TransferDialog: Component<TransferDialogProps> = props => {
   const readyPayRequest = createMemo(() =>
     !pendingTrust() ? payRequest() : null
   )
+
+  // meltNote pays `pr` of exactly the note's value, so unlike Mint.tsx
+  // there's no invoice amount to gross up here - the destination is always
+  // invoiced for the full source amount. What its mint fee (if any) does
+  // instead is shrink the note that comes out the other end, which this
+  // estimates so the payer isn't surprised (the authoritative value is
+  // whatever the destination's informational GET reports once claimed)
+  const expectedNet = createMemo(() => {
+    const info = payRequest()
+    return info?.mintFee
+      ? applyMintFee(props.sourceBearer.amount, info.mintFee)
+      : props.sourceBearer.amount
+  })
 
   // fires the transfer: get an invoice for exactly the note's value, then
   // melt the note to pay it - the source is locked as spent immediately,
@@ -357,10 +372,23 @@ const TransferDialog: Component<TransferDialogProps> = props => {
         <Show when={readyPayRequest()}>
           {info => (
             <>
+              <Show when={info().mintFee}>
+                {fee => (
+                  <p class="warning">
+                    {serverOf(info().callback)} withholds a fee on minting:{' '}
+                    {describeMintFee(fee())}. The note you end up holding
+                    there will be worth less than the one you're melting.
+                  </p>
+                )}
+              </Show>
               <p class="bearer-hint">
                 Transfer exactly {msatToSats(props.sourceBearer.amount)} sats to{' '}
                 {serverOf(info().callback)}? The source note is melted to fund
                 it - this can't be undone.
+                <Show when={info().mintFee}>
+                  {' '}
+                  You'll end up with ~{msatToSats(expectedNet())} sats there.
+                </Show>
               </p>
               <div class="btns">
                 <button

@@ -18,7 +18,7 @@ import {
 } from 'solid-icons/io'
 
 import {useWallet} from '../WalletContext'
-import type {PayRequestInfo, MintFee} from '../lnurlcash'
+import type {PayRequestInfo} from '../lnurlcash'
 import {
   resolveMintInput,
   fetchPayRequest,
@@ -31,7 +31,8 @@ import {
   serverOf,
   isPreimage,
   applyMintFee,
-  grossUpForMintFee
+  grossUpForMintFee,
+  describeMintFee
 } from '../lnurlcash'
 import {
   notify,
@@ -68,24 +69,6 @@ const VERIFY_POLL_SECONDS = 10
 // guarantee: if a given mint uses a different username, the lookup below
 // just fails normally and the holder can type the real address by hand.
 const guessMintAddress = (server: string): string => `mint@${server}`
-
-// fee_percent_ppm is parts-per-million - /10_000 for a percent, then trim
-// the trailing zeros toFixed leaves behind (2000 ppm -> "0.2000" -> "0.2")
-const formatFeePercent = (ppm: number): string =>
-  (ppm / 10_000).toFixed(4).replace(/\.?0+$/, '')
-
-// parseMintFee already collapses a fully-zero fee down to null (see
-// lnurlcash.ts), so by the time one reaches here at least one of the two
-// components is set - only mention the one(s) that actually are
-const describeMintFee = (fee: MintFee): string =>
-  [
-    fee.baseFeeMsat > 0 ? `${msatToSats(fee.baseFeeMsat)} sat flat` : null,
-    fee.feePpm > 0
-      ? `${formatFeePercent(fee.feePpm)}% of the amount paid`
-      : null
-  ]
-    .filter(Boolean)
-    .join(' + ')
 
 // LUD-XX minting: pay a payRequest that advertises `withdrawLink` - the
 // payment preimage IS the bearer secret. This wallet has no node of its

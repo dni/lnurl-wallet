@@ -1037,6 +1037,12 @@ nav {
   }
 }
 
+// TransferDialog puts a .mint-picker directly under a .btns row (Mint.tsx's
+// copies sit under their own h4 instead, which already has spacing below it)
+.btns + .mint-picker {
+  margin-top: 10px;
+}
+
 // ---- setup / mint / backup / docs ----
 
 .setup-card {
