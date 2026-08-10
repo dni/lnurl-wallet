@@ -230,6 +230,7 @@ const TransferDialog: Component<TransferDialogProps> = props => {
         NotifyKind.SUCCESS
       )
       navigate('/wallet')
+      props.onClose()
     } catch (err) {
       notify((err as Error).message, NotifyKind.ERROR)
     }
