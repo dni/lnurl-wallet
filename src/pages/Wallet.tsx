@@ -6,7 +6,6 @@ import {
   IoSwapHorizontalSharp,
   IoLockOpenSharp,
   IoRefreshSharp,
-  IoBanSharp,
   IoTrashSharp
 } from 'solid-icons/io'
 
@@ -20,13 +19,12 @@ const Wallet: Component = () => {
   const [password, setPassword] = createSignal('')
   const [unlocking, setUnlocking] = createSignal(false)
   const [selected, setSelected] = createSignal<Set<string>>(new Set())
-  const [showSpent, setShowSpent] = createSignal(false)
   const [confirmClearSpent, setConfirmClearSpent] = createSignal(false)
 
   // the hero's balance/mint count is always the spendable view (excludes
-  // spent notes), regardless of whether the toggle is currently revealing
-  // them - otherwise "Total balance" would count sats that aren't actually
-  // yours to spend anymore
+  // spent notes) - "Total balance" shouldn't count sats that aren't
+  // actually yours to spend anymore. Per-mint spent visibility is handled
+  // inside MintGroupCard instead of here (see its own showSpent signal)
   const spendableBearers = createMemo(() => bearers().filter(b => !b.spent))
   const spentBearers = createMemo(() => bearers().filter(b => b.spent))
   const spentCount = createMemo(() => spentBearers().length)
@@ -37,18 +35,17 @@ const Wallet: Component = () => {
     spentBearers().reduce((sum, b) => sum + b.amount, 0)
   )
   const mintCount = createMemo(() => groupByServer(spendableBearers()).length)
-  const visibleBearers = createMemo(() =>
-    showSpent() ? bearers() : spendableBearers()
-  )
   // groupByServer rebuilds its Map and every [server, group] tuple fresh on
   // each call, so keying <For> directly off its result would tear down and
   // remount every MintGroupCard (losing showNotes, etc.) on any bearer
   // change anywhere in the wallet, not just the affected group. Server
   // names are plain strings though - stable by value across calls - so
   // keying on those instead lets <For> recognize an unchanged mint as the
-  // same row and just update its props, not recreate it
+  // same row and just update its props, not recreate it. Grouped from all
+  // bearers (not just spendable) so a mint holding only spent notes still
+  // gets a card - its own showSpent toggle is what reveals them
   const serverNames = createMemo(() =>
-    groupByServer(visibleBearers()).map(([server]) => server)
+    groupByServer(bearers()).map(([server]) => server)
   )
 
   const toggleSelect = (id: string, isSelected: boolean) => {
@@ -93,7 +90,6 @@ const Wallet: Component = () => {
     const spent = spentBearers()
     for (const bearer of spent) removeBearer(bearer.id)
     setConfirmClearSpent(false)
-    setShowSpent(false)
     notify(
       `Cleared ${spent.length} spent note${spent.length === 1 ? '' : 's'}.`,
       NotifyKind.SUCCESS
@@ -227,54 +223,20 @@ const Wallet: Component = () => {
                   </div>
                 </Show>
               </div>
-              <Show when={spentCount() > 0}>
-                <div class="btns">
-                  <label
-                    class="switch-control"
-                    title="Spent notes are locally locked (melted, or marked by hand) - this just shows or hides them, it doesn't change anything about them"
-                  >
-                    <IoBanSharp />
-                    <span>
-                      Show spent
-                      <Show when={!showSpent()}>&nbsp;({spentCount()})</Show>
-                    </span>
-                    <span class="switch">
-                      <input
-                        type="checkbox"
-                        checked={showSpent()}
-                        onChange={e => setShowSpent(e.currentTarget.checked)}
-                      />
-                      <span class="switch-track"></span>
-                    </span>
-                  </label>
-                </div>
-              </Show>
             </section>
-            <Show
-              when={visibleBearers().length > 0}
-              fallback={
-                <p class="bearer-hint">
-                  Every note here is marked spent - toggle "Show spent" above to
-                  see them.
-                </p>
-              }
-            >
-              <For each={serverNames()}>
-                {server => (
-                  <section class="server-group">
-                    <MintGroupCard
-                      server={server}
-                      group={visibleBearers().filter(
-                        b => serverOf(b.url) === server
-                      )}
-                      selected={selected()}
-                      onSelect={toggleSelect}
-                      onSelectAll={selectMany}
-                    />
-                  </section>
-                )}
-              </For>
-            </Show>
+            <For each={serverNames()}>
+              {server => (
+                <section class="server-group">
+                  <MintGroupCard
+                    server={server}
+                    group={bearers().filter(b => serverOf(b.url) === server)}
+                    selected={selected()}
+                    onSelect={toggleSelect}
+                    onSelectAll={selectMany}
+                  />
+                </section>
+              )}
+            </For>
           </div>
         </Show>
       </Show>

@@ -376,8 +376,8 @@ const TransferDialog: Component<TransferDialogProps> = props => {
                 {fee => (
                   <p class="warning">
                     {serverOf(info().callback)} withholds a fee on minting:{' '}
-                    {describeMintFee(fee())}. The note you end up holding
-                    there will be worth less than the one you're melting.
+                    {describeMintFee(fee())}. The note you end up holding there
+                    will be worth less than the one you're melting.
                   </p>
                 )}
               </Show>

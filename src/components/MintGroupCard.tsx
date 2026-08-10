@@ -9,7 +9,9 @@ import {
   IoSquareOutline,
   IoListSharp,
   IoOpenSharp,
-  IoGlobeSharp
+  IoGlobeSharp,
+  IoBanSharp,
+  IoTrashSharp
 } from 'solid-icons/io'
 
 import type {Bearer} from '../storage'
@@ -41,15 +43,42 @@ const MintGroupCard: Component<MintGroupCardProps> = props => {
   // collapsed by default - a long wallet would otherwise render every
   // note's full card (QR toggle, actions, ...) up front for nothing
   const [showNotes, setShowNotes] = createSignal(false)
+  // per-mint spent visibility (was a single wallet-wide toggle - each mint
+  // group now controls its own, mirroring the per-mint clear button below)
+  const [showSpent, setShowSpent] = createSignal(false)
+  const [confirmClearSpent, setConfirmClearSpent] = createSignal(false)
   // captured once Transfer is clicked, independent of live selection -
   // starting a transfer immediately marks the source spent, which would
   // otherwise drop it out of selectedEligible() and yank the dialog out
   // from under itself mid-flight
   const [transferSource, setTransferSource] = createSignal<Bearer | null>(null)
 
-  const total = createMemo(() =>
-    props.group.reduce((sum, b) => sum + b.amount, 0)
+  // props.group holds every note for this mint, spent or not - "Total"
+  // stays spendable-only regardless of the showSpent toggle, same as the
+  // wallet-wide hero total
+  const spendableGroup = createMemo(() => props.group.filter(b => !b.spent))
+  const spentGroup = createMemo(() => props.group.filter(b => b.spent))
+  const spentCount = createMemo(() => spentGroup().length)
+  const visibleGroup = createMemo(() =>
+    showSpent() ? props.group : spendableGroup()
   )
+  const total = createMemo(() =>
+    spendableGroup().reduce((sum, b) => sum + b.amount, 0)
+  )
+
+  // a per-mint version of Wallet.tsx's own bulk Clear - each spent note is
+  // just a local record at this point (see storage.ts's Bearer.spent), so
+  // this is a plain local removal, not a service call
+  const clearMintSpent = () => {
+    const spent = spentGroup()
+    for (const bearer of spent) removeBearer(bearer.id)
+    setConfirmClearSpent(false)
+    setShowSpent(false)
+    notify(
+      `Cleared ${spent.length} spent note${spent.length === 1 ? '' : 's'} from ${props.server}.`,
+      NotifyKind.SUCCESS
+    )
+  }
 
   // the trusted-mints registry can hold a newer key than any one bearer's
   // own cached copy (e.g. a sibling note refreshed more recently) - same
@@ -149,6 +178,15 @@ const MintGroupCard: Component<MintGroupCardProps> = props => {
                 <IoOpenSharp />
               </a>
             </Show>
+            <Show when={spentCount() > 0}>
+              <button
+                class="icon-btn"
+                title={`Clear all ${spentCount()} spent note${spentCount() === 1 ? '' : 's'} from ${props.server}`}
+                onClick={() => setConfirmClearSpent(true)}
+              >
+                <IoTrashSharp />
+              </button>
+            </Show>
           </span>
         </figcaption>
         <Show when={mintPubkey()}>
@@ -156,11 +194,45 @@ const MintGroupCard: Component<MintGroupCardProps> = props => {
             <code>{mintPubkey()}</code>
           </p>
         </Show>
+        <Show when={confirmClearSpent()}>
+          <p class="warning">
+            Clear all {spentCount()} spent note
+            {spentCount() === 1 ? '' : 's'} from {props.server}? If any of them
+            turn out not to have actually been spent, those sats are gone unless
+            you saved them elsewhere.
+          </p>
+          <div class="btns">
+            <button onClick={clearMintSpent}>Clear all</button>
+            <button onClick={() => setConfirmClearSpent(false)}>Cancel</button>
+          </div>
+        </Show>
+        <Show when={spentCount() > 0}>
+          <div class="btns">
+            <label
+              class="switch-control"
+              title="Spent notes are locally locked (melted, or marked by hand) - this just shows or hides them, it doesn't change anything about them"
+            >
+              <IoBanSharp />
+              <span>
+                Show spent
+                <Show when={!showSpent()}>&nbsp;({spentCount()})</Show>
+              </span>
+              <span class="switch">
+                <input
+                  type="checkbox"
+                  checked={showSpent()}
+                  onChange={e => setShowSpent(e.currentTarget.checked)}
+                />
+                <span class="switch-track"></span>
+              </span>
+            </label>
+          </div>
+        </Show>
         <div class="btns">
           <button class="show-notes-btn" onClick={() => setShowNotes(v => !v)}>
             <IoListSharp />
             &nbsp;{showNotes() ? 'Hide notes' : 'Show notes'}&nbsp;(
-            {props.group.length})
+            {visibleGroup().length})
           </button>
           <Show when={showNotes()}>
             <button
@@ -215,7 +287,7 @@ const MintGroupCard: Component<MintGroupCardProps> = props => {
         </div>
         <Show when={showNotes()}>
           <div class="bearer-list">
-            <For each={props.group}>
+            <For each={visibleGroup()}>
               {bearer => (
                 <BearerCard
                   bearer={bearer}
