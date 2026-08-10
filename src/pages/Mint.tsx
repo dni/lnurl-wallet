@@ -60,7 +60,7 @@ type Mode = 'invoice' | 'preimage'
 
 // LUD-21 auto-poll interval, in seconds - both the countdown shown on the
 // button and the cadence of the automatic check
-const VERIFY_POLL_SECONDS = 10
+const VERIFY_POLL_SECONDS = 5
 
 // trustedMints only stores a bare hostname (see trustedMints.ts) - there's
 // no record of *how* it was originally reached, so re-selecting one guesses

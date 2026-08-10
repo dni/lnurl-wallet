@@ -40,7 +40,7 @@ import RequireWallet from '../components/RequireWallet'
 
 // same cadence as Mint.tsx's LUD-21 verify poll - a melted note's fate
 // (settled vs failed) is discovered the same way here: try to rotate it
-const PENDING_POLL_SECONDS = 10
+const PENDING_POLL_SECONDS = 5
 
 const Melt: Component = () => {
   const {addBearer, updateBearer, removeBearer, bearers} = useWallet()

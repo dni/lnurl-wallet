@@ -35,7 +35,7 @@ export type TransferDialogProps = {
 
 // same cadence as Mint.tsx's LUD-21 verify poll and Melt.tsx's pending-melt
 // poll - this is really both of those chained together
-const TRANSFER_POLL_SECONDS = 10
+const TRANSFER_POLL_SECONDS = 5
 
 // moves a note's value to a different mint - there's no such primitive in
 // the protocol itself, only melt (burn + pay an invoice) and minting (pay a
