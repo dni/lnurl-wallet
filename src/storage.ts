@@ -35,6 +35,10 @@ export type Bearer = {
   // -createdAt instead (see compareBearerOrder), i.e. newest first, same as
   // the default order before this field existed
   sortIndex?: number
+  // a free-text note the holder can attach for their own reference (e.g.
+  // "rent", "gift for Alex") - purely local, never sent anywhere, no
+  // protocol meaning at all
+  label?: string
   createdAt: number
   updatedAt: number
 }

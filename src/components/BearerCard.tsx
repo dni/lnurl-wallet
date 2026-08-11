@@ -12,7 +12,8 @@ import {
   IoShieldCheckmarkSharp,
   IoBanSharp,
   IoArrowUndoSharp,
-  IoReorderThreeSharp
+  IoReorderThreeSharp,
+  IoPencilSharp
 } from 'solid-icons/io'
 
 import type {Bearer} from '../storage'
@@ -76,6 +77,8 @@ const BearerCard: Component<BearerCardProps> = props => {
   const [splitSats, setSplitSats] = createSignal('')
   const [confirmDelete, setConfirmDelete] = createSignal(false)
   const [confirmUnspend, setConfirmUnspend] = createSignal(false)
+  const [editingLabel, setEditingLabel] = createSignal(false)
+  const [labelInput, setLabelInput] = createSignal('')
 
   const token = () => toBech32Lnurl(props.bearer.url)
   const k1 = () => noteK1(props.bearer.url) || ''
@@ -231,6 +234,20 @@ const BearerCard: Component<BearerCardProps> = props => {
     notify('Unspent - actions are available again.', NotifyKind.SUCCESS)
   }
 
+  // purely local, for the holder's own reference - not part of the note
+  // itself, never sent anywhere. Available even on a spent note (unlike the
+  // protocol actions above), since it's just a memo, not a mutation of it
+  const startEditLabel = () => {
+    setLabelInput(props.bearer.label ?? '')
+    setEditingLabel(true)
+  }
+
+  const saveLabel = () => {
+    const trimmed = labelInput().trim()
+    updateBearer(props.bearer.id, {label: trimmed || undefined})
+    setEditingLabel(false)
+  }
+
   return (
     <figure
       class="bearer-card"
@@ -265,6 +282,9 @@ const BearerCard: Component<BearerCardProps> = props => {
           >
             {msatToSats(props.bearer.amount)} sats
           </span>
+          <Show when={props.bearer.label}>
+            <span class="bearer-label">{props.bearer.label}</span>
+          </Show>
           <Show when={!props.bearer.verified}>
             <span class="bearer-pending">unverified</span>
           </Show>
@@ -292,6 +312,13 @@ const BearerCard: Component<BearerCardProps> = props => {
           </span>
         </div>
         <button
+          class="icon-btn"
+          title={props.bearer.label ? 'Edit label' : 'Add a label'}
+          onClick={startEditLabel}
+        >
+          <IoPencilSharp />
+        </button>
+        <button
           class="icon-btn qr-toggle"
           title={showQr() ? 'Hide QR code' : 'Show QR code'}
           onClick={toggleShowQr}
@@ -301,6 +328,22 @@ const BearerCard: Component<BearerCardProps> = props => {
           </Show>
         </button>
       </div>
+      <Show when={editingLabel()}>
+        <div class="form-item">
+          <label>Label (private, for your own reference)</label>
+          <input
+            type="text"
+            placeholder="e.g. rent, gift for Alex"
+            value={labelInput()}
+            onInput={e => setLabelInput(e.currentTarget.value)}
+            onKeyDown={e => e.key === 'Enter' && saveLabel()}
+          />
+          <div class="btns">
+            <button onClick={saveLabel}>Save</button>
+            <button onClick={() => setEditingLabel(false)}>Cancel</button>
+          </div>
+        </div>
+      </Show>
       <Show when={showQr()}>
         <div class="qr-wrapper">
           <Qr value={token()} />

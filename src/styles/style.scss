@@ -993,6 +993,16 @@ body.dragging-note {
   overflow-wrap: anywhere;
 }
 
+// the holder's own free-text note (see BearerCard's editingLabel) - styled
+// as a caption under the amount, distinct from the protocol-derived badges
+// around it (unverified/signed/spent) so it reads as "yours", not status
+.bearer-label {
+  font-size: 0.85em;
+  font-style: italic;
+  opacity: 0.85;
+  overflow-wrap: anywhere;
+}
+
 .bearer-actions {
   display: flex;
   gap: 6px;
