@@ -366,6 +366,53 @@ input[type='checkbox'] {
   }
 }
 
+// even-split slider (BearerCard) - same track/thumb language as the
+// show-spent switch (a filled track behind a solid, slightly larger thumb)
+// rather than the browser's unstyled default
+input[type='range'] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  height: 20px;
+  margin-top: 6px;
+  background: transparent;
+  cursor: pointer;
+
+  &::-webkit-slider-runnable-track {
+    height: 4px;
+    border-radius: 999px;
+    background: rgba($font-color, 0.25);
+  }
+  &::-moz-range-track {
+    height: 4px;
+    border-radius: 999px;
+    background: rgba($font-color, 0.25);
+  }
+
+  &::-webkit-slider-thumb {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 18px;
+    height: 18px;
+    margin-top: -7px;
+    border-radius: 50%;
+    background: $font-color;
+    border: none;
+  }
+  &::-moz-range-thumb {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: $font-color;
+    border: none;
+  }
+
+  &:focus-visible {
+    outline: 2px solid $font-color;
+    outline-offset: 2px;
+  }
+}
+
 .icon-btn {
   padding: 6px;
   margin-right: 0;

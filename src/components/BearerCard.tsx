@@ -79,6 +79,8 @@ const BearerCard: Component<BearerCardProps> = props => {
   const [busy, setBusy] = createSignal(false)
   const [meltPr, setMeltPr] = createSignal('')
   const [splitSats, setSplitSats] = createSignal('')
+  const [splitMode, setSplitMode] = createSignal<'amount' | 'even'>('amount')
+  const [splitParts, setSplitParts] = createSignal(2)
   const [confirmDelete, setConfirmDelete] = createSignal(false)
   const [confirmUnspend, setConfirmUnspend] = createSignal(false)
   const [editingLabel, setEditingLabel] = createSignal(false)
@@ -88,6 +90,15 @@ const BearerCard: Component<BearerCardProps> = props => {
   const k1 = () => noteK1(props.bearer.url) || ''
   const hasCallback = () => props.bearer.callback !== ''
   const isSpent = () => !!props.bearer.spent
+
+  // even split: capped at 10 so the slider stays useful, and at the note's
+  // own sat value so a share can never round down to 0
+  const maxSplitParts = createMemo(() =>
+    Math.max(2, Math.min(10, Math.floor(props.bearer.amount / 1000)))
+  )
+  const evenShareMsat = createMemo(() =>
+    Math.floor(props.bearer.amount / splitParts())
+  )
   // the amount and server text are also click targets for select-to-combine
   // - a bigger, more obvious target than the small checkbox alone, which
   // stays as the visible indicator of the current state either way
@@ -214,6 +225,73 @@ const BearerCard: Component<BearerCardProps> = props => {
         mintPubkey: props.bearer.mintPubkey
       })
       notify('Split into two notes.', NotifyKind.SUCCESS)
+      setAction(null)
+    } catch (err) {
+      notify((err as Error).message, NotifyKind.ERROR)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  // splitNote is only ever a 2-way split (one piece + a change note) - N
+  // even pieces means chaining N-1 of them, each time peeling one share off
+  // the still-unspent "change" from the previous call and only persisting
+  // the last remainder once the loop is done. A failure partway through
+  // (network drop, etc.) is the same exposure the single split() above
+  // already accepts, just repeated: whichever calls already succeeded are
+  // safely recorded as bearers, but if the in-flight call's response never
+  // arrives, that one "change" secret it minted isn't recorded anywhere
+  const splitEvenly = async () => {
+    const n = splitParts()
+    const shareMsat = evenShareMsat()
+    if (n < 2 || shareMsat <= 0) {
+      notify(
+        'Not enough value to split into that many parts.',
+        NotifyKind.ERROR
+      )
+      return
+    }
+    setBusy(true)
+    try {
+      removeBearer(props.bearer.id)
+      let currentK1 = k1()
+      let currentAmount = props.bearer.amount
+      let currentSignature: string | undefined
+      for (let i = 0; i < n - 1; i++) {
+        const result = await splitNote(
+          props.bearer.callback,
+          currentK1,
+          shareMsat
+        )
+        await addBearer({
+          url: withNewK1(
+            props.bearer.url,
+            result.k1,
+            shareMsat,
+            result.signature
+          ),
+          callback: props.bearer.callback,
+          amount: shareMsat,
+          verified: true,
+          mintPubkey: props.bearer.mintPubkey
+        })
+        currentAmount -= shareMsat
+        currentK1 = result.change
+        currentSignature = result.changeSignature
+      }
+      await addBearer({
+        url: withNewK1(
+          props.bearer.url,
+          currentK1,
+          currentAmount,
+          currentSignature
+        ),
+        callback: props.bearer.callback,
+        amount: currentAmount,
+        verified: true,
+        mintPubkey: props.bearer.mintPubkey
+      })
+      notify(`Split into ${n} notes.`, NotifyKind.SUCCESS)
       setAction(null)
     } catch (err) {
       notify((err as Error).message, NotifyKind.ERROR)
@@ -505,23 +583,71 @@ const BearerCard: Component<BearerCardProps> = props => {
       </Show>
       <Show when={action() === 'split'}>
         <div class="form-item">
-          <label>Split off (sats, of {msatToSats(props.bearer.amount)})</label>
-          <input
-            type="number"
-            min="1"
-            placeholder="amount in sats"
-            value={splitSats()}
-            onInput={e => setSplitSats(e.currentTarget.value)}
-          />
-          <div class="btns">
-            <button disabled={busy() || offlineMode()} onClick={split}>
-              <Show when={busy()}>
-                <IoRefreshSharp class="spin" />
-                &nbsp;
-              </Show>
-              Split
+          <div class="tabs">
+            <button
+              classList={{active: splitMode() === 'amount'}}
+              onClick={() => setSplitMode('amount')}
+            >
+              By amount
+            </button>
+            <button
+              classList={{active: splitMode() === 'even'}}
+              onClick={() => setSplitMode('even')}
+            >
+              Into even parts
             </button>
           </div>
+          <Show when={splitMode() === 'amount'}>
+            <label>
+              Split off (sats, of {msatToSats(props.bearer.amount)})
+            </label>
+            <input
+              type="number"
+              min="1"
+              placeholder="amount in sats"
+              value={splitSats()}
+              onInput={e => setSplitSats(e.currentTarget.value)}
+            />
+            <div class="btns">
+              <button disabled={busy() || offlineMode()} onClick={split}>
+                <Show when={busy()}>
+                  <IoRefreshSharp class="spin" />
+                  &nbsp;
+                </Show>
+                Split
+              </button>
+            </div>
+          </Show>
+          <Show when={splitMode() === 'even'}>
+            <label>
+              Split into {splitParts()} notes of ~{msatToSats(evenShareMsat())}{' '}
+              sats each
+            </label>
+            <input
+              type="range"
+              min="2"
+              max={maxSplitParts()}
+              step="1"
+              value={splitParts()}
+              onInput={e => setSplitParts(Number(e.currentTarget.value))}
+            />
+            <Show when={splitParts() > 2}>
+              <p class="bearer-hint">
+                Chains {splitParts() - 1} split requests one after another - if
+                one fails partway through, whichever notes already came back are
+                kept, and you'd need to try again for the rest.
+              </p>
+            </Show>
+            <div class="btns">
+              <button disabled={busy() || offlineMode()} onClick={splitEvenly}>
+                <Show when={busy()}>
+                  <IoRefreshSharp class="spin" />
+                  &nbsp;
+                </Show>
+                Split
+              </button>
+            </div>
+          </Show>
         </div>
       </Show>
       <p class="bearer-dates" title={formatDate(props.bearer.updatedAt)}>
