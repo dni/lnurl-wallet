@@ -156,6 +156,12 @@ h4 {
   cursor: pointer;
   user-select: none;
   font-size: 0.9em;
+  // matches the vertical padding buttons get from the shared button rule,
+  // so it sits on the same baseline instead of looking vertically adrift
+  padding: 6px 0;
+  // pushes it to the far right of the (flex) .btns row it sits in, same
+  // trick as .bearer-actions
+  margin-left: auto;
 }
 
 .switch {

@@ -1,6 +1,15 @@
 import type {Accessor, JSX} from 'solid-js'
-import {createContext, createSignal, onMount, useContext} from 'solid-js'
+import {
+  createContext,
+  createEffect,
+  createSignal,
+  onCleanup,
+  onMount,
+  useContext
+} from 'solid-js'
+import toast from 'solid-toast'
 
+import {notify, NotifyKind} from './helpers'
 import {
   deriveWalletLinkingKey,
   deriveBearerAesKey,
@@ -59,6 +68,14 @@ export type WalletContextType = {
 
 const WalletContext = createContext<WalletContextType>()
 
+// idle-timeout auto-lock: only meaningful for a password-encrypted key (see
+// lock() below, which no-ops otherwise) - 5 minutes with no activity
+// anywhere in the tab locks the wallet, with a 30s warning toast first so a
+// holder who's just reading (not moving the mouse) can stay unlocked
+// instead of getting dropped back to the unlock screen mid-task
+const AUTO_LOCK_MS = 5 * 60 * 1000
+const LOCK_WARNING_MS = 30 * 1000
+
 // a plaintext-stored key also starts 'locked' - the provider's onMount
 // unlocks it immediately without a password, keeping a single code path
 // for deriving the AES key and loading bearers
@@ -69,6 +86,40 @@ export const WalletProvider = (props: {children: JSX.Element}) => {
   const [bearers, setBearers] = createSignal<Bearer[]>([])
   const [pubkey, setPubkey] = createSignal<string | null>(null)
   let aesKey: CryptoKey | null = null
+
+  // idle-timeout auto-lock bookkeeping - see AUTO_LOCK_MS/LOCK_WARNING_MS
+  let lastActivity = Date.now()
+  let warningToastId: string | null = null
+  const [warningSecondsLeft, setWarningSecondsLeft] = createSignal<
+    number | null
+  >(null)
+
+  const dismissWarning = () => {
+    if (warningToastId) {
+      toast.dismiss(warningToastId)
+      warningToastId = null
+    }
+    setWarningSecondsLeft(null)
+  }
+
+  // any real interaction - a passive activity event, or the warning toast's
+  // own button - restarts the 5-minute clock and clears the countdown,
+  // whichever the holder notices first
+  const postponeLock = () => {
+    lastActivity = Date.now()
+    dismissWarning()
+  }
+
+  const showLockWarning = () => {
+    if (warningToastId) return
+    warningToastId = toast.custom(
+      <span>
+        Locking due to inactivity in {warningSecondsLeft()}s.&nbsp;
+        <button onClick={postponeLock}>Stay unlocked</button>
+      </span>,
+      {duration: Infinity}
+    )
+  }
 
   const activate = async (linkingKey: Uint8Array) => {
     aesKey = await deriveBearerAesKey(linkingKey)
@@ -104,6 +155,7 @@ export const WalletProvider = (props: {children: JSX.Element}) => {
   // just auto-unlock again, so the UI only offers Lock when encrypted() is true
   const lock = () => {
     if (!savedKeyIsEncrypted()) return
+    dismissWarning()
     aesKey = null
     setPubkey(null)
     setBearers([])
@@ -179,6 +231,51 @@ export const WalletProvider = (props: {children: JSX.Element}) => {
     if (state() === 'locked' && !savedKeyIsEncrypted()) {
       unlock().catch(() => setState('none'))
     }
+  })
+
+  // ticks once a second while unlocked and encrypted (the only state auto-
+  // lock applies to - lock() itself is a no-op otherwise), comparing wall-
+  // clock time against lastActivity rather than relying on a single
+  // setTimeout, since a backgrounded tab throttles timers but Date.now()
+  // still reflects real elapsed time whenever this next gets to run
+  createEffect(() => {
+    if (state() !== 'unlocked' || !savedKeyIsEncrypted()) {
+      dismissWarning()
+      return
+    }
+    lastActivity = Date.now()
+    const interval = setInterval(() => {
+      const elapsed = Date.now() - lastActivity
+      if (elapsed >= AUTO_LOCK_MS) {
+        lock()
+        notify('Wallet locked due to inactivity.', NotifyKind.ERROR)
+      } else if (elapsed >= AUTO_LOCK_MS - LOCK_WARNING_MS) {
+        setWarningSecondsLeft(Math.ceil((AUTO_LOCK_MS - elapsed) / 1000))
+        showLockWarning()
+      } else if (warningToastId) {
+        dismissWarning()
+      }
+    }, 1000)
+    onCleanup(() => clearInterval(interval))
+  })
+
+  onMount(() => {
+    // once the warning is up, passive activity (just moving the mouse
+    // toward the toast) is deliberately ignored - only its own "Stay
+    // unlocked" button (postponeLock) dismisses it, so the button can't
+    // vanish out from under the pointer a moment before the click lands
+    const registerActivity = () => {
+      if (state() === 'unlocked' && !warningToastId) lastActivity = Date.now()
+    }
+    const events = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll']
+    for (const event of events) {
+      window.addEventListener(event, registerActivity, {passive: true})
+    }
+    onCleanup(() => {
+      for (const event of events) {
+        window.removeEventListener(event, registerActivity)
+      }
+    })
   })
 
   return (
