@@ -922,6 +922,31 @@ nav {
   }
 }
 
+// grabbable rank handle - touch-action:none stops touch dragging from also
+// scrolling the page, since pointer-based reorder (MintGroupCard) handles
+// the move itself instead of relying on native HTML5 drag-and-drop
+.drag-handle {
+  cursor: grab;
+  touch-action: none;
+  margin-right: 0;
+}
+
+// while a note is being dragged, its own card previews the move (via
+// dragPreview's live reflow) and is dimmed in place so the reordering list
+// underneath it stays readable
+.bearer-card.dragging {
+  opacity: 0.4;
+}
+
+// set on <body> for the duration of a drag (see MintGroupCard's startDrag/
+// endDrag) - stops the pointer's travel from selecting card text along the
+// way, and keeps the cursor showing a grab in progress even over children
+// that don't set their own cursor
+body.dragging-note {
+  cursor: grabbing;
+  user-select: none;
+}
+
 .bearer-title {
   display: flex;
   flex-direction: column;

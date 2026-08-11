@@ -11,7 +11,8 @@ import {
   IoTrashSharp,
   IoShieldCheckmarkSharp,
   IoBanSharp,
-  IoArrowUndoSharp
+  IoArrowUndoSharp,
+  IoReorderThreeSharp
 } from 'solid-icons/io'
 
 import type {Bearer} from '../storage'
@@ -47,6 +48,11 @@ export type BearerCardProps = {
   bearer: Bearer
   selected: boolean
   onSelect: (selected: boolean) => void
+  // drag-to-reorder (see MintGroupCard) - the handle only renders when a
+  // handler is given, which MintGroupCard withholds for a spent note
+  dragging?: boolean
+  onDragHandleDown?: (e: PointerEvent) => void
+  setRef?: (el: HTMLElement) => void
 }
 
 const BearerCard: Component<BearerCardProps> = props => {
@@ -226,8 +232,23 @@ const BearerCard: Component<BearerCardProps> = props => {
   }
 
   return (
-    <figure class="bearer-card">
+    <figure
+      class="bearer-card"
+      classList={{dragging: props.dragging}}
+      ref={props.setRef}
+    >
       <div class="bearer-head">
+        <Show when={props.onDragHandleDown}>
+          {onDragHandleDown => (
+            <button
+              class="icon-btn drag-handle"
+              title="Drag to reorder"
+              onPointerDown={onDragHandleDown()}
+            >
+              <IoReorderThreeSharp />
+            </button>
+          )}
+        </Show>
         <label class="bearer-select" title="Select for combine">
           <input
             type="checkbox"

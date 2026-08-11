@@ -11,10 +11,12 @@ import {
   IoOpenSharp,
   IoGlobeSharp,
   IoBanSharp,
-  IoTrashSharp
+  IoTrashSharp,
+  IoReorderThreeSharp
 } from 'solid-icons/io'
 
 import type {Bearer} from '../storage'
+import {compareBearerOrder} from '../storage'
 import {useWallet} from '../WalletContext'
 import {noteK1, withNewK1, mergeNotes} from '../lnurlcash'
 import {getTrustedMintPubkey} from '../trustedMints'
@@ -38,7 +40,7 @@ export type MintGroupCardProps = {
 }
 
 const MintGroupCard: Component<MintGroupCardProps> = props => {
-  const {addBearer, removeBearer} = useWallet()
+  const {addBearer, updateBearer, removeBearer} = useWallet()
   const [combining, setCombining] = createSignal(false)
   // collapsed by default - a long wallet would otherwise render every
   // note's full card (QR toggle, actions, ...) up front for nothing
@@ -53,18 +55,104 @@ const MintGroupCard: Component<MintGroupCardProps> = props => {
   // from under itself mid-flight
   const [transferSource, setTransferSource] = createSignal<Bearer | null>(null)
 
-  // props.group holds every note for this mint, spent or not - "Total"
-  // stays spendable-only regardless of the showSpent toggle, same as the
-  // wallet-wide hero total
-  const spendableGroup = createMemo(() => props.group.filter(b => !b.spent))
-  const spentGroup = createMemo(() => props.group.filter(b => b.spent))
+  // props.group holds every note for this mint, spent or not, in whatever
+  // order the wallet's bearers() happens to be in - orderedGroup is the one
+  // that actually reflects display order (manual drag rank, falling back to
+  // newest-first - see compareBearerOrder)
+  const orderedGroup = createMemo(() =>
+    [...props.group].sort(compareBearerOrder)
+  )
+  // "Total" stays spendable-only regardless of the showSpent toggle, same
+  // as the wallet-wide hero total
+  const spendableGroup = createMemo(() => orderedGroup().filter(b => !b.spent))
+  const spentGroup = createMemo(() => orderedGroup().filter(b => b.spent))
   const spentCount = createMemo(() => spentGroup().length)
   const visibleGroup = createMemo(() =>
-    showSpent() ? props.group : spendableGroup()
+    showSpent() ? orderedGroup() : spendableGroup()
   )
   const total = createMemo(() =>
     spendableGroup().reduce((sum, b) => sum + b.amount, 0)
   )
+
+  // drag-to-reorder: dragPreview mirrors visibleGroup but is live-spliced
+  // on every pointermove for instant feedback, and only ever committed
+  // (persisted as sortIndex) on drop - see startDrag below. Refs are
+  // grabbed per-card so pointermove can measure who the pointer is
+  // currently closest to, regardless of the list's flex-wrap layout
+  const itemRefs = new Map<string, HTMLElement>()
+  const [dragPreview, setDragPreview] = createSignal<Bearer[] | null>(null)
+  const [draggingId, setDraggingId] = createSignal<string | null>(null)
+  let dragPointerId: number | null = null
+  const displayedGroup = createMemo(() => dragPreview() ?? visibleGroup())
+
+  const onDragMove = (e: PointerEvent) => {
+    if (e.pointerId !== dragPointerId) return
+    const id = draggingId()
+    const current = dragPreview()
+    if (!id || !current) return
+    const fromIndex = current.findIndex(b => b.id === id)
+    if (fromIndex === -1) return
+    // nearest other card by center distance - works the same whether the
+    // list is currently one column or wrapped into a grid
+    let nearestIndex = fromIndex
+    let nearestDist = Infinity
+    current.forEach((b, i) => {
+      if (b.id === id) return
+      const el = itemRefs.get(b.id)
+      if (!el) return
+      const rect = el.getBoundingClientRect()
+      const dx = rect.left + rect.width / 2 - e.clientX
+      const dy = rect.top + rect.height / 2 - e.clientY
+      const dist = dx * dx + dy * dy
+      if (dist < nearestDist) {
+        nearestDist = dist
+        nearestIndex = i
+      }
+    })
+    if (nearestIndex !== fromIndex) {
+      const next = current.slice()
+      const [moved] = next.splice(fromIndex, 1)
+      next.splice(nearestIndex, 0, moved)
+      setDragPreview(next)
+    }
+  }
+
+  const endDrag = (e: PointerEvent) => {
+    if (e.pointerId !== dragPointerId) return
+    window.removeEventListener('pointermove', onDragMove)
+    window.removeEventListener('pointerup', endDrag)
+    window.removeEventListener('pointercancel', endDrag)
+    document.body.classList.remove('dragging-note')
+    dragPointerId = null
+    setDraggingId(null)
+    const finalOrder = dragPreview()
+    setDragPreview(null)
+    if (!finalOrder) return
+    // only the ranks that actually moved get written - a drag that lands
+    // back where it started, or a card past the shifted range, costs
+    // nothing. Sequential, not Promise.all: persistBearer reads localStorage
+    // fresh after its own encrypt step, so concurrent writes here could
+    // race and clobber each other's records
+    ;(async () => {
+      for (const [index, bearer] of finalOrder.entries()) {
+        if (bearer.sortIndex !== index) {
+          await updateBearer(bearer.id, {sortIndex: index})
+        }
+      }
+    })()
+  }
+
+  const startDrag = (bearer: Bearer, e: PointerEvent) => {
+    if (bearer.spent) return
+    e.preventDefault()
+    dragPointerId = e.pointerId
+    setDraggingId(bearer.id)
+    setDragPreview(visibleGroup().slice())
+    document.body.classList.add('dragging-note')
+    window.addEventListener('pointermove', onDragMove)
+    window.addEventListener('pointerup', endDrag)
+    window.addEventListener('pointercancel', endDrag)
+  }
 
   // a per-mint version of Wallet.tsx's own bulk Clear - each spent note is
   // just a local record at this point (see storage.ts's Bearer.spent), so
@@ -285,12 +373,17 @@ const MintGroupCard: Component<MintGroupCardProps> = props => {
         </div>
         <Show when={showNotes()}>
           <div class="bearer-list">
-            <For each={visibleGroup()}>
+            <For each={displayedGroup()}>
               {bearer => (
                 <BearerCard
                   bearer={bearer}
                   selected={props.selected.has(bearer.id)}
                   onSelect={isSelected => props.onSelect(bearer.id, isSelected)}
+                  dragging={draggingId() === bearer.id}
+                  onDragHandleDown={
+                    bearer.spent ? undefined : e => startDrag(bearer, e)
+                  }
+                  setRef={el => itemRefs.set(bearer.id, el)}
                 />
               )}
             </For>
