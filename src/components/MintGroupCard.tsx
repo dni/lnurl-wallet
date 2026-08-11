@@ -78,43 +78,95 @@ const MintGroupCard: Component<MintGroupCardProps> = props => {
   // on every pointermove for instant feedback, and only ever committed
   // (persisted as sortIndex) on drop - see startDrag below. Refs are
   // grabbed per-card so pointermove can measure who the pointer is
-  // currently closest to, regardless of the list's flex-wrap layout
+  // currently over, regardless of the list's flex-wrap layout
   const itemRefs = new Map<string, HTMLElement>()
   const [dragPreview, setDragPreview] = createSignal<Bearer[] | null>(null)
   const [draggingId, setDraggingId] = createSignal<string | null>(null)
+  // the dragged card's own position while held - it's pulled out of the
+  // list's normal flex flow (position: fixed, see dragStyle below) and
+  // instead floats to follow the pointer directly, rather than being one
+  // of the tiles that reflow in place. Without this the dragged card was
+  // just another grid tile jumping between slots on every reorder, which
+  // read as flicker since nothing visually tracked the pointer
+  const [dragPointerPos, setDragPointerPos] = createSignal<{
+    x: number
+    y: number
+  } | null>(null)
   let dragPointerId: number | null = null
+  let dragGrabDx = 0
+  let dragGrabDy = 0
+  let dragWidth = 0
+  // coalesces pointermove into at most one measure+splice per frame -
+  // interleaving getBoundingClientRect reads with the style writes those
+  // splices cause forces a synchronous layout on every single pointermove
+  // otherwise, which is its own source of visible jank on top of the
+  // reorder logic itself
+  let pendingMoveEvent: PointerEvent | null = null
+  let rafScheduled = false
+
   const displayedGroup = createMemo(() => dragPreview() ?? visibleGroup())
 
-  const onDragMove = (e: PointerEvent) => {
-    if (e.pointerId !== dragPointerId) return
+  const dragStyle = (bearerId: string) => {
+    if (draggingId() !== bearerId) return undefined
+    const pos = dragPointerPos()
+    if (!pos) return undefined
+    return {
+      position: 'fixed' as const,
+      left: `${pos.x - dragGrabDx}px`,
+      top: `${pos.y - dragGrabDy}px`,
+      width: `${dragWidth}px`,
+      'z-index': 1000,
+      'pointer-events': 'none' as const
+    }
+  }
+
+  const processDragMove = (e: PointerEvent) => {
+    setDragPointerPos({x: e.clientX, y: e.clientY})
     const id = draggingId()
     const current = dragPreview()
     if (!id || !current) return
     const fromIndex = current.findIndex(b => b.id === id)
     if (fromIndex === -1) return
-    // nearest other card by center distance - works the same whether the
-    // list is currently one column or wrapped into a grid
-    let nearestIndex = fromIndex
-    let nearestDist = Infinity
-    current.forEach((b, i) => {
-      if (b.id === id) return
-      const el = itemRefs.get(b.id)
-      if (!el) return
+    // hit-test (pointer literally over a card), not nearest-by-distance -
+    // distance-to-center flips between two equally-close neighbors on the
+    // tiniest jitter, which was the other half of the flicker
+    let targetIndex = -1
+    for (let i = 0; i < current.length; i++) {
+      if (current[i].id === id) continue
+      const el = itemRefs.get(current[i].id)
+      if (!el) continue
       const rect = el.getBoundingClientRect()
-      const dx = rect.left + rect.width / 2 - e.clientX
-      const dy = rect.top + rect.height / 2 - e.clientY
-      const dist = dx * dx + dy * dy
-      if (dist < nearestDist) {
-        nearestDist = dist
-        nearestIndex = i
+      if (
+        e.clientX >= rect.left &&
+        e.clientX <= rect.right &&
+        e.clientY >= rect.top &&
+        e.clientY <= rect.bottom
+      ) {
+        targetIndex = i
+        break
       }
-    })
-    if (nearestIndex !== fromIndex) {
-      const next = current.slice()
-      const [moved] = next.splice(fromIndex, 1)
-      next.splice(nearestIndex, 0, moved)
-      setDragPreview(next)
     }
+    if (targetIndex === -1 || targetIndex === fromIndex) return
+    // land ON the target's current slot (pushing it, and everything after,
+    // one further) rather than after it - removing fromIndex first shifts
+    // every later index down by one, so a forward move's target needs the
+    // same correction
+    const insertAt = fromIndex < targetIndex ? targetIndex - 1 : targetIndex
+    const next = current.slice()
+    const [moved] = next.splice(fromIndex, 1)
+    next.splice(insertAt, 0, moved)
+    setDragPreview(next)
+  }
+
+  const onDragMove = (e: PointerEvent) => {
+    if (e.pointerId !== dragPointerId) return
+    pendingMoveEvent = e
+    if (rafScheduled) return
+    rafScheduled = true
+    requestAnimationFrame(() => {
+      rafScheduled = false
+      if (pendingMoveEvent) processDragMove(pendingMoveEvent)
+    })
   }
 
   const endDrag = (e: PointerEvent) => {
@@ -124,7 +176,9 @@ const MintGroupCard: Component<MintGroupCardProps> = props => {
     window.removeEventListener('pointercancel', endDrag)
     document.body.classList.remove('dragging-note')
     dragPointerId = null
+    pendingMoveEvent = null
     setDraggingId(null)
+    setDragPointerPos(null)
     const finalOrder = dragPreview()
     setDragPreview(null)
     if (!finalOrder) return
@@ -145,8 +199,14 @@ const MintGroupCard: Component<MintGroupCardProps> = props => {
   const startDrag = (bearer: Bearer, e: PointerEvent) => {
     if (bearer.spent) return
     e.preventDefault()
+    const el = itemRefs.get(bearer.id)
+    const rect = el?.getBoundingClientRect()
+    dragGrabDx = rect ? e.clientX - rect.left : 0
+    dragGrabDy = rect ? e.clientY - rect.top : 0
+    dragWidth = rect?.width ?? 0
     dragPointerId = e.pointerId
     setDraggingId(bearer.id)
+    setDragPointerPos({x: e.clientX, y: e.clientY})
     setDragPreview(visibleGroup().slice())
     document.body.classList.add('dragging-note')
     window.addEventListener('pointermove', onDragMove)
@@ -380,6 +440,7 @@ const MintGroupCard: Component<MintGroupCardProps> = props => {
                   selected={props.selected.has(bearer.id)}
                   onSelect={isSelected => props.onSelect(bearer.id, isSelected)}
                   dragging={draggingId() === bearer.id}
+                  dragStyle={dragStyle(bearer.id)}
                   onDragHandleDown={
                     bearer.spent ? undefined : e => startDrag(bearer, e)
                   }

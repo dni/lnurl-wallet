@@ -1,4 +1,4 @@
-import type {Component} from 'solid-js'
+import type {Component, JSX} from 'solid-js'
 import {Show, createMemo, createSignal} from 'solid-js'
 import {
   IoCopySharp,
@@ -50,8 +50,12 @@ export type BearerCardProps = {
   selected: boolean
   onSelect: (selected: boolean) => void
   // drag-to-reorder (see MintGroupCard) - the handle only renders when a
-  // handler is given, which MintGroupCard withholds for a spent note
+  // handler is given, which MintGroupCard withholds for a spent note.
+  // dragStyle is only ever set while dragging is true - it floats this
+  // card to follow the pointer (position: fixed) instead of it being just
+  // another grid tile reflowing under a static cursor
   dragging?: boolean
+  dragStyle?: JSX.CSSProperties
   onDragHandleDown?: (e: PointerEvent) => void
   setRef?: (el: HTMLElement) => void
 }
@@ -252,6 +256,7 @@ const BearerCard: Component<BearerCardProps> = props => {
     <figure
       class="bearer-card"
       classList={{dragging: props.dragging}}
+      style={props.dragStyle}
       ref={props.setRef}
     >
       <div class="bearer-head">

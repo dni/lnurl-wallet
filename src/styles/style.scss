@@ -931,11 +931,14 @@ nav {
   margin-right: 0;
 }
 
-// while a note is being dragged, its own card previews the move (via
-// dragPreview's live reflow) and is dimmed in place so the reordering list
-// underneath it stays readable
+// the card being dragged floats with the pointer (position: fixed, see
+// BearerCard's dragStyle prop) rather than reflowing in place like the
+// rest of the grid - a slight lift (shadow + a hair of transparency) reads
+// as "picked up" instead of just a card that stopped responding to layout
 .bearer-card.dragging {
-  opacity: 0.4;
+  opacity: 0.9;
+  box-shadow: 0 8px 24px rgba(black, 0.4);
+  transform: rotate(-1deg);
 }
 
 // set on <body> for the duration of a drag (see MintGroupCard's startDrag/
