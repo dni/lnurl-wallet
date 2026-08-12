@@ -544,6 +544,11 @@ const BearerCard: Component<BearerCardProps> = props => {
             value={splitTimes()}
             onInput={e => setSplitTimes(e.currentTarget.value)}
           />
+          <p class="bearer-hint">
+            If this mint charges a fee, it's deducted from the remainder, not
+            the amount split off - splitting fails if too little would be left
+            over to cover it.
+          </p>
           <Show when={Number(splitTimes()) > 1}>
             <p class="bearer-hint">
               Chains {Number(splitTimes())} split requests one after another -
