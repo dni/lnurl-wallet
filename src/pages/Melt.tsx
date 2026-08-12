@@ -480,6 +480,13 @@ const Melt: Component = () => {
                   placeholder="amount in sats"
                   value={lnAddressAmountSats()}
                   onInput={e => setLnAddressAmountSats(e.currentTarget.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      if (!fetchingInvoice() && !offlineMode())
+                        getInvoiceFromAddress()
+                    }
+                  }}
                 />
                 <div class="btns">
                   <button
