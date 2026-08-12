@@ -184,7 +184,14 @@ const BearerCard: Component<BearerCardProps> = props => {
       let currentK1 = k1()
       let currentAmount = props.bearer.amount
       let currentSignature: string | undefined
+      // a mint MAY charge a flat fee per split (LUD-25), deducted from the
+      // change rather than the split-off amount - so the remainder is read
+      // back authoritatively (informational GET) after each split instead
+      // of just subtracting msat, and the gap accumulated into a total to
+      // report once at the end
+      let totalFeeMsat = 0
       for (let i = 0; i < times; i++) {
+        const expectedChange = currentAmount - msat
         const result = await splitNote(props.bearer.callback, currentK1, msat)
         await addBearer({
           url: withNewK1(props.bearer.url, result.k1, msat, result.signature),
@@ -193,9 +200,30 @@ const BearerCard: Component<BearerCardProps> = props => {
           verified: true,
           mintPubkey: props.bearer.mintPubkey
         })
-        currentAmount -= msat
+        const changeInfo = await fetchNoteInfo(
+          withNewK1(
+            props.bearer.url,
+            result.change,
+            expectedChange,
+            result.changeSignature
+          )
+        )
+        totalFeeMsat += expectedChange - changeInfo.maxWithdrawable
+        currentAmount = changeInfo.maxWithdrawable
         currentK1 = result.change
         currentSignature = result.changeSignature
+        // that informational GET just put this change secret on the wire -
+        // same as refresh(), rotate it before it's used again (as the next
+        // iteration's input, or the final stored note) rather than keep
+        // circulating an exposed copy
+        try {
+          const rotated = await rotateNote(changeInfo.callback, currentK1)
+          currentK1 = rotated.k1
+          currentSignature = rotated.signature
+        } catch {
+          // service doesn't support rotation - keep the GET-exposed secret,
+          // same tolerance refresh() shows
+        }
       }
       await addBearer({
         url: withNewK1(
@@ -210,7 +238,10 @@ const BearerCard: Component<BearerCardProps> = props => {
         mintPubkey: props.bearer.mintPubkey
       })
       notify(
-        `Split off ${times} note${times === 1 ? '' : 's'} of ${msatToSats(msat)} sats each.`,
+        `Split off ${times} note${times === 1 ? '' : 's'} of ${msatToSats(msat)} sats each.` +
+          (totalFeeMsat > 0
+            ? ` ${msatToSats(totalFeeMsat)} sats fee deducted from the remainder.`
+            : ''),
         NotifyKind.SUCCESS
       )
       setAction(null)

@@ -18,7 +18,13 @@ import {
 import type {Bearer} from '../storage'
 import {compareBearerOrder} from '../storage'
 import {useWallet} from '../WalletContext'
-import {noteK1, withNewK1, mergeNotes} from '../lnurlcash'
+import {
+  noteK1,
+  withNewK1,
+  mergeNotes,
+  fetchNoteInfo,
+  rotateNote
+} from '../lnurlcash'
 import {getTrustedMintPubkey} from '../trustedMints'
 import {offlineMode} from '../offlineMode'
 import {
@@ -270,11 +276,33 @@ const MintGroupCard: Component<MintGroupCardProps> = props => {
         base.callback,
         picked.map(b => noteK1(b.url)!)
       )
+      // a mint MAY refund part of its earlier per-note mint fees on merge
+      // (LUD-25: (n - 1) * base_fee_msat back into the result) - read the
+      // actual value back authoritatively (informational GET) rather than
+      // assume the naive sum, so both the stored amount and the notice
+      // below reflect what the mint actually credited
+      const mergedInfo = await fetchNoteInfo(
+        withNewK1(base.url, merged.k1, sum, merged.signature)
+      )
+      const actualAmount = mergedInfo.maxWithdrawable
+      // that informational GET just put the merged secret on the wire -
+      // same as BearerCard's refresh()/split(), rotate it before it's
+      // stored rather than keep circulating an exposed copy
+      let finalK1 = merged.k1
+      let finalSignature = merged.signature
+      try {
+        const rotated = await rotateNote(mergedInfo.callback, finalK1)
+        finalK1 = rotated.k1
+        finalSignature = rotated.signature
+      } catch {
+        // service doesn't support rotation - keep the GET-exposed secret,
+        // same tolerance refresh() shows
+      }
       for (const bearer of picked) removeBearer(bearer.id)
       await addBearer({
-        url: withNewK1(base.url, merged.k1, sum, merged.signature),
+        url: withNewK1(base.url, finalK1, actualAmount, finalSignature),
         callback: base.callback,
-        amount: sum,
+        amount: actualAmount,
         verified: true,
         mintPubkey: base.mintPubkey
       })
@@ -282,7 +310,14 @@ const MintGroupCard: Component<MintGroupCardProps> = props => {
         picked.map(b => b.id),
         false
       )
-      notify(`Combined ${picked.length} notes into one.`, NotifyKind.SUCCESS)
+      const creditMsat = actualAmount - sum
+      notify(
+        `Combined ${picked.length} notes into one.` +
+          (creditMsat > 0
+            ? ` ${msatToSats(creditMsat)} sats fee credited back.`
+            : ''),
+        NotifyKind.SUCCESS
+      )
     } catch (err) {
       notify((err as Error).message, NotifyKind.ERROR)
     } finally {
