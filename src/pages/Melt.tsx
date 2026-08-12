@@ -246,6 +246,7 @@ const Melt: Component = () => {
     return invoice ? decodeBolt11AmountMsat(invoice) : null
   })
 
+  const unspentBearers = createMemo(() => bearers().filter(b => !b.spent))
   const selectedBearers = createMemo(() =>
     bearers().filter(b => selectedIds().has(b.id))
   )
@@ -547,10 +548,10 @@ const Melt: Component = () => {
                 </p>
               </Show>
               <Show
-                when={bearers().length > 0}
+                when={unspentBearers().length > 0}
                 fallback={<p>No bearer notes to pay with yet.</p>}
               >
-                <For each={groupByServer(bearers())}>
+                <For each={groupByServer(unspentBearers())}>
                   {([server, group]) => (
                     <div class="form-item">
                       <label>{server}</label>
@@ -560,14 +561,13 @@ const Melt: Component = () => {
                             <input
                               type="checkbox"
                               checked={selectedIds().has(bearer.id)}
-                              disabled={!bearer.callback || bearer.spent}
+                              disabled={!bearer.callback}
                               onChange={e =>
                                 toggleSelect(bearer.id, e.currentTarget.checked)
                               }
                             />
                             &nbsp;{msatToSats(bearer.amount)} sats
-                            <Show when={bearer.spent}>&nbsp;(spent)</Show>
-                            <Show when={!bearer.callback && !bearer.spent}>
+                            <Show when={!bearer.callback}>
                               &nbsp;(not verified yet)
                             </Show>
                           </label>
