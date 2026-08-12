@@ -1,6 +1,6 @@
 # LNURLwallet
 
-A **serverless** wallet for **LNURLcash** bearer notes
+A wallet for **LNURLcash** bearer notes
 ([LUD-XX draft](https://github.com/lnurl/luds/blob/663264923edf3e8e8fc22835a68ef98238b8d692/XX.md)). It is a
 single static page - no backend, no database, no accounts - deployed
 straight to GitHub Pages. Everything it holds lives **encrypted** in your

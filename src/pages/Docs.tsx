@@ -9,7 +9,7 @@ const Docs: Component = () => {
       <figure class="docs-card">
         <h3>What LNURLwallet is</h3>
         <p>
-          LNURLwallet is <strong>serverless</strong>: a static page with no
+          LNURLwallet is a static page with no
           backend, database or account system of its own. Everything it holds
           lives in your browser's local storage, and every network request it
           makes goes directly from your browser to the LNURLcash service that

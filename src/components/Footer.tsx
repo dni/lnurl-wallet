@@ -41,7 +41,7 @@ const Footer = () => {
       </a>
       <A class="footer-item" href="/docs">
         <IoLockClosedSharp />
-        &nbsp;serverless&nbsp;·&nbsp;keys never leave your browser
+        &nbsp;keys never leave your browser
       </A>
       <span class="footer-item">
         <span>LUDs:&nbsp;</span>

@@ -20,7 +20,7 @@ const Hero: Component = () => {
   return (
     <div id="hero" class="page">
       <section class="hero-intro">
-        <h1>Your serverless LNURLcash wallet</h1>
+        <h1>Your LNURLcash wallet</h1>
         <p class="hero-subtitle">
           LNURLwallet is a static page with no backend of its own. It holds
           LNURLcash bearer notes - LNURL-withdraw links whose k1 is the asset -
