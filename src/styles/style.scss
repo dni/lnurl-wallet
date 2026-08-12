@@ -948,11 +948,17 @@ nav {
 // the card being dragged floats with the pointer (position: fixed, see
 // BearerCard's dragStyle prop) rather than reflowing in place like the
 // rest of the grid - a slight lift (shadow + a hair of transparency) reads
-// as "picked up" instead of just a card that stopped responding to layout
+// as "picked up" instead of just a card that stopped responding to layout.
+// transition: none overrides the generic `figure` rule's transition: all
+// 0.5s - left/top get rewritten every animation frame while dragging (see
+// MintGroupCard's dragStyle), and easing each of those over half a second
+// is what made the card visibly lag behind the pointer instead of
+// tracking it directly
 .bearer-card.dragging {
   opacity: 0.9;
   box-shadow: 0 8px 24px rgba(black, 0.4);
   transform: rotate(-1deg);
+  transition: none;
 }
 
 // set on <body> for the duration of a drag (see MintGroupCard's startDrag/
