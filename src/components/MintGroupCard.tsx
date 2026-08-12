@@ -466,6 +466,13 @@ const MintGroupCard: Component<MintGroupCardProps> = props => {
             </Show>
           </Show>
         </div>
+        <Show when={showNotes() && canCombine()}>
+          <p class="bearer-hint">
+            If this mint charges a fee, combining refunds part of what was
+            already withheld when these notes were minted - you get back all but
+            one base fee.
+          </p>
+        </Show>
         <Show when={showNotes()}>
           <div class="bearer-list">
             <For each={displayedGroup()}>
