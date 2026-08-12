@@ -6,7 +6,6 @@ import {
   IoEyeOffSharp,
   IoQrCodeSharp,
   IoRefreshSharp,
-  IoFlameSharp,
   IoGitBranchSharp,
   IoTrashSharp,
   IoShieldCheckmarkSharp,
@@ -26,7 +25,6 @@ import {
   withNewK1,
   fetchNoteInfo,
   verifyNoteSignature,
-  meltNote,
   splitNote,
   rotateNote
 } from '../lnurlcash'
@@ -42,7 +40,7 @@ import {getTrustedMintPubkey} from '../trustedMints'
 import {offlineMode} from '../offlineMode'
 import Qr from './Qr'
 
-type Action = 'melt' | 'split' | null
+type Action = 'split' | null
 
 export type BearerCardProps = {
   bearer: Bearer
@@ -76,7 +74,6 @@ const BearerCard: Component<BearerCardProps> = props => {
   }
   const [action, setAction] = createSignal<Action>(null)
   const [busy, setBusy] = createSignal(false)
-  const [meltPr, setMeltPr] = createSignal('')
   const [splitSats, setSplitSats] = createSignal('')
   const [splitTimes, setSplitTimes] = createSignal('1')
   const [confirmDelete, setConfirmDelete] = createSignal(false)
@@ -142,35 +139,6 @@ const BearerCard: Component<BearerCardProps> = props => {
         mintPubkey: info.mintPubkey ?? props.bearer.mintPubkey
       })
       notify('Note refreshed.', NotifyKind.SUCCESS)
-    } catch (err) {
-      notify((err as Error).message, NotifyKind.ERROR)
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  const melt = async () => {
-    if (!meltPr().trim()) {
-      notify('Paste a bolt11 invoice to melt into.', NotifyKind.ERROR)
-      return
-    }
-    setBusy(true)
-    try {
-      await meltNote(props.bearer.callback, k1(), meltPr())
-      // {"status":"OK"} only means the payment is now in flight - SERVICE
-      // finalizes the burn once it settles, or restores the note if it
-      // fails, so this isn't confirmation the note is actually spent yet.
-      // Leave it in the wallet rather than remove it outright, but lock it
-      // so it can't be acted on again out from under the in-flight payment;
-      // unspend it (see the warning there) if the payment turns out to
-      // have failed and the note is still good
-      await updateBearer(props.bearer.id, {spent: true})
-      setAction(null)
-      setMeltPr('')
-      notify(
-        'Melt requested and the note is now locked as spent - the payment is on its way.',
-        NotifyKind.SUCCESS
-      )
     } catch (err) {
       notify((err as Error).message, NotifyKind.ERROR)
     } finally {
@@ -258,7 +226,7 @@ const BearerCard: Component<BearerCardProps> = props => {
   const markSpent = () => {
     updateBearer(props.bearer.id, {spent: true})
     notify(
-      'Marked as spent - melt, split and refresh are locked until unspent.',
+      'Marked as spent - split and refresh are locked until unspent.',
       NotifyKind.SUCCESS
     )
   }
@@ -418,18 +386,6 @@ const BearerCard: Component<BearerCardProps> = props => {
           <button
             class="icon-btn"
             title={
-              offlineMode()
-                ? 'Offline mode is on'
-                : "Melt - have the service pay a bolt11 invoice of exactly this note's value"
-            }
-            disabled={!hasCallback() || isSpent() || offlineMode()}
-            onClick={() => setAction(action() === 'melt' ? null : 'melt')}
-          >
-            <IoFlameSharp />
-          </button>
-          <button
-            class="icon-btn"
-            title={
               offlineMode() ? 'Offline mode is on' : 'Split into two notes'
             }
             disabled={!hasCallback() || isSpent() || offlineMode()}
@@ -470,13 +426,13 @@ const BearerCard: Component<BearerCardProps> = props => {
       </div>
       <Show when={!hasCallback() && !isSpent()}>
         <p class="bearer-hint">
-          Not verified with its service yet - refresh to enable melt and split.
+          Not verified with its service yet - refresh to enable split.
         </p>
       </Show>
       <Show when={isSpent() && !confirmUnspend()}>
         <p class="bearer-hint">
-          Locked as spent - refresh, melt and split are disabled so this copy
-          can't be reused by accident.
+          Locked as spent - refresh and split are disabled so this copy can't
+          be reused by accident.
         </p>
       </Show>
       <Show when={confirmUnspend()}>
@@ -508,30 +464,6 @@ const BearerCard: Component<BearerCardProps> = props => {
             Clear
           </button>
           <button onClick={() => setConfirmDelete(false)}>Cancel</button>
-        </div>
-      </Show>
-      <Show when={action() === 'melt'}>
-        <div class="form-item">
-          <label>
-            Melt into a bolt11 invoice of exactly{' '}
-            {msatToSats(props.bearer.amount)} sats (merge first to melt several
-            notes)
-          </label>
-          <input
-            type="text"
-            placeholder="lnbc..."
-            value={meltPr()}
-            onInput={e => setMeltPr(e.currentTarget.value)}
-          />
-          <div class="btns">
-            <button disabled={busy() || offlineMode()} onClick={melt}>
-              <Show when={busy()}>
-                <IoRefreshSharp class="spin" />
-                &nbsp;
-              </Show>
-              Melt
-            </button>
-          </div>
         </div>
       </Show>
       <Show when={action() === 'split'}>
