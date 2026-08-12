@@ -21,13 +21,17 @@ import {
   clearSavedLinkingKey,
   linkingPubKeyHex
 } from './keys'
-import type {Bearer} from './storage'
+import type {Bearer, ActivityEvent, ActivityKind} from './storage'
 import {
   loadBearers,
   persistBearer,
   deleteBearerRecord,
   clearAllBearers,
-  newBearerId
+  newBearerId,
+  loadActivity,
+  persistActivityEvent,
+  clearAllActivity,
+  newActivityId
 } from './storage'
 import {serverOf} from './lnurlcash'
 import {lockTrustedMint} from './trustedMints'
@@ -64,6 +68,12 @@ export type WalletContextType = {
   // re-reads localStorage after something outside this context changed it
   // (e.g. a backup restore installing a linking key on a fresh device)
   refreshState: () => void
+  activity: Accessor<ActivityEvent[]>
+  // fire-and-forget from a caller's point of view - failures are swallowed
+  // (see logActivity) so a full log can never block or fail the action it's
+  // recording
+  logActivity: (kind: ActivityKind, message: string) => void
+  clearActivity: () => void
 }
 
 const WalletContext = createContext<WalletContextType>()
@@ -84,6 +94,7 @@ const initialState = (): WalletState => (savedKeyExists() ? 'locked' : 'none')
 export const WalletProvider = (props: {children: JSX.Element}) => {
   const [state, setState] = createSignal<WalletState>(initialState())
   const [bearers, setBearers] = createSignal<Bearer[]>([])
+  const [activity, setActivity] = createSignal<ActivityEvent[]>([])
   const [pubkey, setPubkey] = createSignal<string | null>(null)
   let aesKey: CryptoKey | null = null
 
@@ -126,6 +137,7 @@ export const WalletProvider = (props: {children: JSX.Element}) => {
     setPubkey(linkingPubKeyHex(linkingKey))
     const loaded = await loadBearers(aesKey)
     setBearers(loaded)
+    setActivity(await loadActivity(aesKey))
     // grandfather in every mint already backing a held bearer as trusted -
     // holding funds there already implied trusting it, long before this
     // list existed to ask about it
@@ -159,19 +171,23 @@ export const WalletProvider = (props: {children: JSX.Element}) => {
     aesKey = null
     setPubkey(null)
     setBearers([])
+    setActivity([])
     setState('locked')
   }
 
-  // wipes this wallet from the device entirely - the linking key AND every
-  // bearer record. Not recoverable by restoring the same seed afterward
-  // (the ciphertexts themselves are gone); only a backup downloaded before
-  // this runs can bring the notes back - the UI should prompt for one
+  // wipes this wallet from the device entirely - the linking key, every
+  // bearer record, and the activity log. Not recoverable by restoring the
+  // same seed afterward (the ciphertexts themselves are gone); only a
+  // backup downloaded before this runs can bring the notes back - the UI
+  // should prompt for one
   const forgetWallet = () => {
     clearSavedLinkingKey()
     clearAllBearers()
+    clearAllActivity()
     aesKey = null
     setPubkey(null)
     setBearers([])
+    setActivity([])
     setState('none')
   }
 
@@ -220,6 +236,27 @@ export const WalletProvider = (props: {children: JSX.Element}) => {
 
   const reloadBearers = async () => {
     setBearers(await loadBearers(requireKey()))
+  }
+
+  // best-effort and silent on failure - a wallet action that already
+  // succeeded (the note was split/melted/whatever) must never surface an
+  // error, or leave itself un-undoable, just because the log entry for it
+  // couldn't be written
+  const logActivity = (kind: ActivityKind, message: string) => {
+    if (!aesKey) return
+    const event: ActivityEvent = {
+      id: newActivityId(),
+      kind,
+      message,
+      createdAt: Date.now()
+    }
+    setActivity(prev => [event, ...prev])
+    persistActivityEvent(aesKey, event).catch(() => {})
+  }
+
+  const clearActivity = () => {
+    clearAllActivity()
+    setActivity([])
   }
 
   const refreshState = () => {
@@ -283,6 +320,9 @@ export const WalletProvider = (props: {children: JSX.Element}) => {
       value={{
         state,
         bearers,
+        activity,
+        logActivity,
+        clearActivity,
         pubkey,
         encrypted: savedKeyIsEncrypted,
         setup,

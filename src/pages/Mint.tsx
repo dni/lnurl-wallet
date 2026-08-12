@@ -77,7 +77,7 @@ const guessMintAddress = (server: string): string => `mint@${server}`
 // either freshly requested from this page, or already in hand from a
 // payment made some other way (the mint's own site, a different wallet).
 const Mint: Component = () => {
-  const {addBearer} = useWallet()
+  const {addBearer, logActivity} = useWallet()
   const navigate = useNavigate()
 
   // minting is nothing but service calls end to end (look up, get invoice,
@@ -391,6 +391,7 @@ const Mint: Component = () => {
       // not burned. This also opportunistically obtains the note's first
       // offline-verifiable signature, same as the minting diagram's "obtain
       // signed note" step.
+      let rotationError: string | null = null
       try {
         const rotated = await rotateNote(noteInfo.callback, noteInfo.k1)
         url = withNewK1(
@@ -399,11 +400,8 @@ const Mint: Component = () => {
           noteInfo.maxWithdrawable,
           rotated.signature
         )
-      } catch {
-        notify(
-          'Service does not support rotation - the preimage was just transmitted, treat this note as exposed.',
-          NotifyKind.ERROR
-        )
+      } catch (err) {
+        rotationError = (err as Error).message
       }
       await addBearer({
         url,
@@ -412,10 +410,24 @@ const Mint: Component = () => {
         verified: true,
         mintPubkey
       })
-      notify(
-        `Minted a bearer note of ${msatToSats(noteInfo.maxWithdrawable)} sats.`,
-        NotifyKind.SUCCESS
+      logActivity(
+        'mint',
+        `Minted ${msatToSats(noteInfo.maxWithdrawable)} sats from ${serverOf(url)}.`
       )
+      // one toast, not two - the note was minted either way (it's in the
+      // wallet now), so a failed rotate is folded into the same message
+      // rather than shown as a separate, easy-to-miss-the-relation error
+      if (rotationError) {
+        notify(
+          `Minted ${msatToSats(noteInfo.maxWithdrawable)} sats, but could not rotate (${rotationError}) - the preimage was just transmitted, treat this note as exposed.`,
+          NotifyKind.ERROR
+        )
+      } else {
+        notify(
+          `Minted a bearer note of ${msatToSats(noteInfo.maxWithdrawable)} sats.`,
+          NotifyKind.SUCCESS
+        )
+      }
       navigate('/wallet')
     } catch (err) {
       notify((err as Error).message, NotifyKind.ERROR)

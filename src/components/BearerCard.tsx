@@ -59,7 +59,7 @@ export type BearerCardProps = {
 }
 
 const BearerCard: Component<BearerCardProps> = props => {
-  const {updateBearer, removeBearer, addBearer} = useWallet()
+  const {updateBearer, removeBearer, addBearer, logActivity} = useWallet()
   // the QR is the bearer note itself, so revealing it is two deliberate
   // steps: the corner toggle brings back the space for it at all (mostly to
   // avoid every card in a long list reserving a square of space it won't
@@ -118,6 +118,7 @@ const BearerCard: Component<BearerCardProps> = props => {
     try {
       const info = await fetchNoteInfo(props.bearer.url)
       let url = props.bearer.url
+      let rotationError: string | null = null
       try {
         const rotated = await rotateNote(info.callback, k1())
         url = withNewK1(
@@ -126,11 +127,8 @@ const BearerCard: Component<BearerCardProps> = props => {
           info.maxWithdrawable,
           rotated.signature
         )
-      } catch {
-        notify(
-          'Service does not support rotation - your secret was just transmitted, treat old copies of this note as exposed.',
-          NotifyKind.ERROR
-        )
+      } catch (err) {
+        rotationError = (err as Error).message
       }
       await updateBearer(props.bearer.id, {
         url,
@@ -139,7 +137,19 @@ const BearerCard: Component<BearerCardProps> = props => {
         verified: true,
         mintPubkey: info.mintPubkey ?? props.bearer.mintPubkey
       })
-      notify('Note refreshed.', NotifyKind.SUCCESS)
+      // the GET this refresh is nominally "about" is only ever a means to
+      // the rotate - it succeeding on its own isn't worth telling the
+      // holder about, so a failed rotate reports just the one thing that
+      // actually matters (and is now exposed), not that plus an unrelated
+      // "refreshed" success alongside it
+      if (rotationError) {
+        notify(
+          `Could not rotate after refresh (${rotationError}) - your secret was just transmitted, treat old copies of this note as exposed.`,
+          NotifyKind.ERROR
+        )
+      } else {
+        notify('Note refreshed.', NotifyKind.SUCCESS)
+      }
     } catch (err) {
       notify((err as Error).message, NotifyKind.ERROR)
     } finally {
@@ -266,11 +276,16 @@ const BearerCard: Component<BearerCardProps> = props => {
         })
         remainderId = remainder.id
       }
+      const feeNote =
+        totalFeeMsat > 0
+          ? ` ${msatToSats(totalFeeMsat)} sats fee deducted from the remainder.`
+          : ''
+      logActivity(
+        'split',
+        `Split off ${times} note${times === 1 ? '' : 's'} of ${msatToSats(msat)} sats each from ${serverOf(props.bearer.url)}.${feeNote}`
+      )
       notify(
-        `Split off ${times} note${times === 1 ? '' : 's'} of ${msatToSats(msat)} sats each.` +
-          (totalFeeMsat > 0
-            ? ` ${msatToSats(totalFeeMsat)} sats fee deducted from the remainder.`
-            : ''),
+        `Split off ${times} note${times === 1 ? '' : 's'} of ${msatToSats(msat)} sats each.${feeNote}`,
         NotifyKind.SUCCESS
       )
       setAction(null)
@@ -285,6 +300,10 @@ const BearerCard: Component<BearerCardProps> = props => {
   // just stops this wallet from acting on a note it considers given away
   const markSpent = () => {
     updateBearer(props.bearer.id, {spent: true})
+    logActivity(
+      'spent',
+      `Marked ${msatToSats(props.bearer.amount)} sats from ${serverOf(props.bearer.url)} as spent.`
+    )
     notify(
       'Marked as spent - split and refresh are locked until unspent.',
       NotifyKind.SUCCESS
@@ -294,6 +313,10 @@ const BearerCard: Component<BearerCardProps> = props => {
   const unspend = () => {
     updateBearer(props.bearer.id, {spent: false})
     setConfirmUnspend(false)
+    logActivity(
+      'unspent',
+      `Unspent ${msatToSats(props.bearer.amount)} sats from ${serverOf(props.bearer.url)}.`
+    )
     notify('Unspent - actions are available again.', NotifyKind.SUCCESS)
   }
 
@@ -516,6 +539,10 @@ const BearerCard: Component<BearerCardProps> = props => {
           <button
             onClick={() => {
               removeBearer(props.bearer.id)
+              logActivity(
+                'deleted',
+                `Cleared a spent ${msatToSats(props.bearer.amount)} sat note from ${serverOf(props.bearer.url)}.`
+              )
               notify('Spent note cleared.', NotifyKind.SUCCESS)
             }}
           >

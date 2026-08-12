@@ -20,6 +20,7 @@ import Mint from './pages/Mint'
 import Mints from './pages/Mints'
 import Transfer from './pages/Transfer'
 import Melt from './pages/Melt'
+import Activity from './pages/Activity'
 import Backup from './pages/Backup'
 import Docs from './pages/Docs'
 
@@ -59,6 +60,7 @@ const cleanup = render(
       <Route path="/mints" component={Mints} />
       <Route path="/transfer" component={Transfer} />
       <Route path="/melt" component={Melt} />
+      <Route path="/activity" component={Activity} />
       <Route path="/backup" component={Backup} />
       <Route path="/docs" component={Docs} />
       <Route path="*" component={() => <h1>Page not found</h1>} />

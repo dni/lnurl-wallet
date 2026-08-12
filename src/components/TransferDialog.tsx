@@ -48,7 +48,7 @@ const TRANSFER_POLL_SECONDS = 5
 // position that convenience is meant for (the legitimate payer checking on
 // its own payment, not a third party snooping the verify endpoint)
 const TransferDialog: Component<TransferDialogProps> = props => {
-  const {addBearer, updateBearer} = useWallet()
+  const {addBearer, updateBearer, logActivity} = useWallet()
   const navigate = useNavigate()
 
   const [mintInput, setMintInput] = createSignal('')
@@ -202,6 +202,7 @@ const TransferDialog: Component<TransferDialogProps> = props => {
       const noteInfo = await fetchNoteInfo(declaredUrl)
       const mintPubkey = noteInfo.mintPubkey
       let url = withNewK1(declaredUrl, noteInfo.k1, noteInfo.maxWithdrawable)
+      let rotationError: string | null = null
       try {
         const rotated = await rotateNote(noteInfo.callback, noteInfo.k1)
         url = withNewK1(
@@ -210,11 +211,8 @@ const TransferDialog: Component<TransferDialogProps> = props => {
           noteInfo.maxWithdrawable,
           rotated.signature
         )
-      } catch {
-        notify(
-          'Destination does not support rotation - the preimage was just transmitted, treat this note as exposed.',
-          NotifyKind.ERROR
-        )
+      } catch (err) {
+        rotationError = (err as Error).message
       }
       await addBearer({
         url,
@@ -225,10 +223,24 @@ const TransferDialog: Component<TransferDialogProps> = props => {
       })
       setClaimed(true)
       stopPolling()
-      notify(
-        `Transferred ${msatToSats(noteInfo.maxWithdrawable)} sats to ${serverOf(url)}.`,
-        NotifyKind.SUCCESS
+      logActivity(
+        'transfer',
+        `Transferred ${msatToSats(noteInfo.maxWithdrawable)} sats from ${serverOf(props.sourceBearer.url)} to ${serverOf(url)}.`
       )
+      // one toast, not two - the note landed either way, so a failed
+      // rotate is folded into the same message rather than shown
+      // separately from the transfer it's actually part of
+      if (rotationError) {
+        notify(
+          `Transferred ${msatToSats(noteInfo.maxWithdrawable)} sats to ${serverOf(url)}, but could not rotate (${rotationError}) - the preimage was just transmitted, treat this note as exposed.`,
+          NotifyKind.ERROR
+        )
+      } else {
+        notify(
+          `Transferred ${msatToSats(noteInfo.maxWithdrawable)} sats to ${serverOf(url)}.`,
+          NotifyKind.SUCCESS
+        )
+      }
       navigate('/wallet')
       props.onClose()
     } catch (err) {

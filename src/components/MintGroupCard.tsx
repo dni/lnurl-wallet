@@ -46,7 +46,7 @@ export type MintGroupCardProps = {
 }
 
 const MintGroupCard: Component<MintGroupCardProps> = props => {
-  const {addBearer, updateBearer, removeBearer} = useWallet()
+  const {addBearer, updateBearer, removeBearer, logActivity} = useWallet()
   const [combining, setCombining] = createSignal(false)
   // collapsed by default - a long wallet would otherwise render every
   // note's full card (QR toggle, actions, ...) up front for nothing
@@ -311,11 +311,16 @@ const MintGroupCard: Component<MintGroupCardProps> = props => {
         false
       )
       const creditMsat = actualAmount - sum
+      const creditNote =
+        creditMsat > 0
+          ? ` ${msatToSats(creditMsat)} sats fee credited back.`
+          : ''
+      logActivity(
+        'combine',
+        `Combined ${picked.length} notes from ${props.server} into ${msatToSats(actualAmount)} sats.${creditNote}`
+      )
       notify(
-        `Combined ${picked.length} notes into one.` +
-          (creditMsat > 0
-            ? ` ${msatToSats(creditMsat)} sats fee credited back.`
-            : ''),
+        `Combined ${picked.length} notes into one.${creditNote}`,
         NotifyKind.SUCCESS
       )
     } catch (err) {

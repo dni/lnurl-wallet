@@ -112,6 +112,96 @@ export const clearAllBearers = (): void => {
   localStorage.removeItem(BEARERS_STORAGE_KEY)
 }
 
+// A single line of the wallet's activity log - one per important action
+// (mint, split, combine, melt, transfer, receive, marking spent/unspent,
+// clearing a spent note). `message` is already the full human-readable
+// sentence (same convention as the toast notify() calls these are logged
+// alongside) rather than structured fields the UI reassembles, so the log
+// stays simple to read and to extend with new kinds later.
+export type ActivityKind =
+  | 'mint'
+  | 'split'
+  | 'combine'
+  | 'melt'
+  | 'transfer'
+  | 'receive'
+  | 'spent'
+  | 'unspent'
+  | 'deleted'
+
+export type ActivityEvent = {
+  id: string
+  kind: ActivityKind
+  message: string
+  createdAt: number
+}
+
+export type EncryptedActivityRecord = {id: string} & EncryptedRecordParts
+
+const ACTIVITY_STORAGE_KEY = 'lnurlcash_activity'
+// bounds how far back the log ever reaches - a wallet used for years
+// shouldn't grow localStorage without limit over entries nobody's read
+// that far back; the oldest simply roll off once this many are kept
+const MAX_ACTIVITY_ENTRIES = 500
+
+export const newActivityId = (): string =>
+  Array.from(crypto.getRandomValues(new Uint8Array(8)))
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('')
+
+export const readEncryptedActivity = (): EncryptedActivityRecord[] => {
+  const raw = localStorage.getItem(ACTIVITY_STORAGE_KEY)
+  if (!raw) return []
+  try {
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+
+const writeEncryptedActivity = (records: EncryptedActivityRecord[]): void => {
+  localStorage.setItem(ACTIVITY_STORAGE_KEY, JSON.stringify(records))
+}
+
+// same tolerance as loadBearers - an entry that fails to decrypt with this
+// key (written by a different seed) is skipped, not destroyed
+export const loadActivity = async (
+  aesKey: CryptoKey
+): Promise<ActivityEvent[]> => {
+  const events: ActivityEvent[] = []
+  for (const record of readEncryptedActivity()) {
+    try {
+      const event = await decryptRecord<Omit<ActivityEvent, 'id'>>(
+        aesKey,
+        record
+      )
+      events.push({...event, id: record.id})
+    } catch {
+      // undecryptable with this key - leave it in place
+    }
+  }
+  return events.sort((a, b) => b.createdAt - a.createdAt)
+}
+
+// append-only (the log never edits or removes a single entry, only clears
+// outright - see clearAllActivity) - records are stored oldest-first so
+// trimming to the cap is just dropping off the front
+export const persistActivityEvent = async (
+  aesKey: CryptoKey,
+  event: ActivityEvent
+): Promise<void> => {
+  const {id, ...plain} = event
+  const parts = await encryptRecord(aesKey, plain)
+  const records = readEncryptedActivity()
+  records.push({id, ...parts})
+  writeEncryptedActivity(records.slice(-MAX_ACTIVITY_ENTRIES))
+}
+
+export const clearAllActivity = (): void => {
+  localStorage.removeItem(ACTIVITY_STORAGE_KEY)
+}
+
 // Backup file: everything exactly as it sits in localStorage - bearer
 // ciphertexts always, the linking-key record only when it is itself
 // password-encrypted. A plaintext linking key never leaves the device in a

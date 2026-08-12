@@ -6,7 +6,8 @@ import {
   IoSwapHorizontalSharp,
   IoLockOpenSharp,
   IoRefreshSharp,
-  IoTrashSharp
+  IoTrashSharp,
+  IoReceiptSharp
 } from 'solid-icons/io'
 
 import {useWallet, groupByServer} from '../WalletContext'
@@ -175,15 +176,24 @@ const Wallet: Component = () => {
             <section class="wallet-hero">
               <div class="wallet-hero-header">
                 <h2>Your LNURLcash</h2>
-                <Show when={spentCount() > 0}>
-                  <button
+                <div class="wallet-hero-actions">
+                  <A
+                    href="/activity"
                     class="icon-btn"
-                    title={`Clear all ${spentCount()} spent note${spentCount() === 1 ? '' : 's'} from the wallet`}
-                    onClick={() => setConfirmClearSpent(true)}
+                    title="Activity log - a history of every mint, split, combine, melt and transfer"
                   >
-                    <IoTrashSharp />
-                  </button>
-                </Show>
+                    <IoReceiptSharp />
+                  </A>
+                  <Show when={spentCount() > 0}>
+                    <button
+                      class="icon-btn"
+                      title={`Clear all ${spentCount()} spent note${spentCount() === 1 ? '' : 's'} from the wallet`}
+                      onClick={() => setConfirmClearSpent(true)}
+                    >
+                      <IoTrashSharp />
+                    </button>
+                  </Show>
+                </div>
               </div>
               <Show when={confirmClearSpent()}>
                 <p class="warning">

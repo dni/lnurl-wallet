@@ -43,7 +43,8 @@ import RequireWallet from '../components/RequireWallet'
 const PENDING_POLL_SECONDS = 5
 
 const Melt: Component = () => {
-  const {addBearer, updateBearer, removeBearer, bearers} = useWallet()
+  const {addBearer, updateBearer, removeBearer, bearers, logActivity} =
+    useWallet()
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   let pasteRef: HTMLInputElement | null = null
@@ -104,6 +105,10 @@ const Melt: Component = () => {
       if (err instanceof PendingNoteError) return // still in flight - next tick
       stopPolling()
       setPendingNote(null)
+      logActivity(
+        'melt',
+        `Melted ${msatToSats(note.amount)} sats from ${serverOf(note.url)} to pay an invoice.`
+      )
       notify('Payment confirmed - the note is gone.', NotifyKind.SUCCESS)
       navigate('/wallet')
     } finally {

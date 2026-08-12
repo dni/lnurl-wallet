@@ -40,7 +40,8 @@ import RequireWallet from '../components/RequireWallet'
 // either way, so one page covers both instead of sending the holder to
 // pick an input method up front
 const Transfer: Component = () => {
-  const {addBearer, updateBearer, removeBearer, bearers} = useWallet()
+  const {addBearer, updateBearer, removeBearer, bearers, logActivity} =
+    useWallet()
   const navigate = useNavigate()
   let pasteRef: HTMLInputElement | null = null
   const [value, setValue] = createSignal('')
@@ -202,11 +203,19 @@ const Transfer: Component = () => {
       try {
         const url = await secureReceivedNote(received)
         await updateBearer(bearer.id, {url})
+        logActivity(
+          'receive',
+          `Received ${msatToSats(received.amount)} sats from ${serverOf(received.url)}.`
+        )
         notify(
           `Received ${msatToSats(received.amount)} sats - secret rotated, previous copies are burned.`,
           NotifyKind.SUCCESS
         )
       } catch {
+        logActivity(
+          'receive',
+          `Received ${msatToSats(received.amount)} sats from ${serverOf(received.url)} (not rotated - sender may still hold a copy).`
+        )
         notify(
           `Received ${msatToSats(received.amount)} sats, but the service refused to rotate - the sender may still hold a spendable copy.`,
           NotifyKind.ERROR
@@ -415,8 +424,13 @@ const Transfer: Component = () => {
               </button>
               <button
                 onClick={() => {
-                  updateBearer(preparedBearer()!.id, {spent: true})
+                  const handedOver = preparedBearer()!
+                  updateBearer(handedOver.id, {spent: true})
                   setPreparedBearer(null)
+                  logActivity(
+                    'transfer',
+                    `Handed over ${msatToSats(handedOver.amount)} sats from ${serverOf(handedOver.url)}.`
+                  )
                   notify('Marked as handed over and spent.', NotifyKind.SUCCESS)
                 }}
               >

@@ -120,6 +120,52 @@ h2 {
   }
 }
 
+// groups the header's own icon buttons (activity log, clear spent) so they
+// stay clustered at the row's end regardless of how many are shown -
+// .wallet-hero-header's own space-between is only ever between this and h2
+.wallet-hero-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.activity-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 16px 0 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.activity-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: 6px;
+  background: rgba($bg, $transparency);
+}
+
+.activity-icon {
+  display: flex;
+  flex-shrink: 0;
+  opacity: 0.8;
+}
+
+.activity-message {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.activity-time {
+  flex-shrink: 0;
+  font-size: 0.85em;
+  opacity: 0.7;
+  white-space: nowrap;
+}
+
 .wallet-stats {
   display: flex;
   flex-wrap: wrap;
