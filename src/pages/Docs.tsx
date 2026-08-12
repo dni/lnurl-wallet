@@ -9,12 +9,11 @@ const Docs: Component = () => {
       <figure class="docs-card">
         <h3>What LNURLwallet is</h3>
         <p>
-          LNURLwallet is a static page with no
-          backend, database or account system of its own. Everything it holds
-          lives in your browser's local storage, and every network request it
-          makes goes directly from your browser to the LNURLcash service that
-          issued a note. One wallet holds notes from any number of independent
-          services side by side.
+          LNURLwallet is a static page with no backend, database or account
+          system of its own. Everything it holds lives in your browser's local
+          storage, and every network request it makes goes directly from your
+          browser to the LNURLcash service that issued a note. One wallet holds
+          notes from any number of independent services side by side.
         </p>
       </figure>
 

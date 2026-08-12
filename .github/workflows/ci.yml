@@ -14,6 +14,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          # full history + tags, so `git describe` (scripts/git-version.mjs)
+          # can find the nearest release tag - default checkout is shallow
+          # and tag-less
+          fetch-depth: 0
       - uses: actions/setup-node@v7
         with:
           node-version: 22

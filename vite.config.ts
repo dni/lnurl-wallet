@@ -3,6 +3,7 @@ import {fileURLToPath} from 'node:url'
 import {defineConfig} from 'vite'
 import solidPlugin from 'vite-plugin-solid'
 import {VitePWA} from 'vite-plugin-pwa'
+import {gitVersion} from './scripts/git-version.mjs'
 
 const pkg = JSON.parse(
   readFileSync(
@@ -69,9 +70,11 @@ export default defineConfig({
   build: {
     target: 'esnext'
   },
-  // Footer shows this - a compile-time constant instead of a hand-kept-
-  // in-sync copy of package.json's own version
+  // Footer shows this - a compile-time constant sourced from the nearest
+  // git tag (see scripts/git-version.mjs), so cutting a release is just
+  // pushing a tag. 'dev' only surfaces outside a git checkout entirely
+  // (e.g. a downloaded source archive with no .git directory)
   define: {
-    __APP_VERSION__: JSON.stringify(pkg.version)
+    __APP_VERSION__: JSON.stringify(gitVersion('dev'))
   }
 })

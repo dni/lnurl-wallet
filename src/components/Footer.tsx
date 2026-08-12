@@ -30,7 +30,7 @@ const luds = Object.keys(LUD_TITLES).sort((a, b) => {
 const Footer = () => {
   return (
     <footer class="footer">
-      <span class="footer-item">LNURLwallet v{__APP_VERSION__}</span>
+      <span class="footer-item">LNURLwallet {__APP_VERSION__}</span>
       <a
         class="footer-item"
         href="https://github.com/dni/lnurl-wallet"

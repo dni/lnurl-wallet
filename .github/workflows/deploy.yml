@@ -2,7 +2,11 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: [main]
+    # only a version tag (e.g. `v0.1.0`, pushed via `git tag vX.Y.Z && git
+    # push origin vX.Y.Z`) publishes to Pages - a plain push to main no
+    # longer does, so the live site's version (scripts/git-version.mjs)
+    # always reads as a clean release tag, never a "N commits past" one
+    tags: ['v*.*.*']
   workflow_dispatch:
 
 permissions:
@@ -36,6 +40,11 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          # full history + tags, so `git describe` (scripts/git-version.mjs)
+          # can find the nearest release tag - default checkout is shallow
+          # and tag-less
+          fetch-depth: 0
       - uses: actions/setup-node@v7
         with:
           node-version: 22

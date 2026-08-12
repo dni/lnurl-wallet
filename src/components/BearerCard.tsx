@@ -429,8 +429,8 @@ const BearerCard: Component<BearerCardProps> = props => {
       </Show>
       <Show when={isSpent() && !confirmUnspend()}>
         <p class="bearer-hint">
-          Locked as spent - refresh and split are disabled so this copy can't
-          be reused by accident.
+          Locked as spent - refresh and split are disabled so this copy can't be
+          reused by accident.
         </p>
       </Show>
       <Show when={confirmUnspend()}>
