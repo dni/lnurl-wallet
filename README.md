@@ -74,9 +74,9 @@ and travels as one more query param, `&sig=<hex>`, ignored by wallets that
 don't check it. This wallet verifies it whenever it already knows a note's
 service pubkey and shows a "signed" badge on a match - tolerating both the
 spec text's `r ‖ s ‖ recovery-id` (trailing) wire layout and the
-recovery-id-leading layout at least one real implementation
-(`lnurl-mint`, as of this writing) sends instead, trying both rather than
-hard-failing real notes over a byte-order mismatch.
+recovery-id-leading layout at least one real implementation has sent in the
+past, trying both rather than hard-failing real notes over a byte-order
+mismatch.
 
 The wallet follows the spec's security guidance:
 
@@ -130,13 +130,16 @@ what you hold.
 
 [lnurl-mint](https://github.com/dni/lnurl-mint) tracks this spec closely and
 implements offline verification when a funding source is configured
-(`mintPubkey` + signing via the node's own `signmessage`), but its
-`sign_note` currently sends the recovery-id-leading byte layout rather than
-the spec text's trailing one - see Offline verification above for how this
-wallet tolerates both. Its melt is also synchronous (the HTTP response
-doesn't return until the outgoing payment has already settled or
-confirmably failed) rather than exposing the spec's async pending window,
-which is a stricter special case of it, not a violation.
+(`mintPubkey` + signing via the node's own `signmessage`). Its `sign_note`
+used to send the recovery-id-leading byte layout rather than the spec
+text's trailing one; that's since been fixed to send the spec's `r ‖ s ‖
+recovery-id` layout directly (this wallet's dual-order tolerance - see
+Offline verification above - is kept anyway, as a hedge for other
+implementations). Its melt used to be synchronous (the HTTP response
+didn't return until the outgoing payment had already settled or
+confirmably failed); as of `fix: immediatly return on melt` it now responds
+immediately and pays out asynchronously in the background instead, matching
+the spec's async pending window rather than a stricter special case of it.
 
 ## Development
 
@@ -155,10 +158,15 @@ resolved as http automatically.
 
 ## Deployment
 
-Pushing to `main` runs tests and deploys `dist/` to **GitHub Pages** via
+Pushing a version tag (e.g. `git tag v0.1.0 && git push origin v0.1.0`) runs
+tests and deploys `dist/` to **GitHub Pages** via
 `.github/workflows/deploy.yml` (enable Pages -> "GitHub Actions" as the
-source in the repo settings). The build uses relative asset paths and a hash
-router, so it works from any subpath - no server configuration needed.
+source in the repo settings). A plain push to `main` no longer deploys -
+`ci.yml` still runs tests/build on every push and PR, it just doesn't
+publish. The build uses relative asset paths and a hash router, so it works
+from any subpath - no server configuration needed. The displayed version
+(footer) is read straight from the nearest git tag at build time (see
+`scripts/git-version.mjs`), not a hand-bumped `package.json` field.
 
 ## License
 

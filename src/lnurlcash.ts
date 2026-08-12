@@ -227,13 +227,13 @@ const noteSignatureDigest = (k1: string, amountMsat: number): Uint8Array => {
 // it against `mintPubkey` - true only if both match. `signature` is 65
 // bytes, but which end carries the recovery id varies by mint in practice:
 // the spec text calls for r || s || recovery-id (trailing - the same
-// layout raw BOLT-11 signatures use), but at least one real implementation
-// (lnurl-mint, as of this writing) instead sends its underlying Lightning
-// node's signmessage RPC output unreordered - recovery-id || r || s
-// (leading). Trying both candidate orderings costs nothing security-wise
-// (recovering against the wrong one just yields an unrelated pubkey that
-// won't match mintPubkey) and means a note verifies correctly regardless
-// of which convention its issuer actually followed.
+// layout raw BOLT-11 signatures use); lnurl-mint used to instead send its
+// underlying Lightning node's signmessage RPC output unreordered -
+// recovery-id || r || s (leading) - and has since fixed that, but other
+// implementations may still get it wrong. Trying both candidate orderings
+// costs nothing security-wise (recovering against the wrong one just
+// yields an unrelated pubkey that won't match mintPubkey) and means a note
+// verifies correctly regardless of which convention its issuer followed.
 export const verifyNoteSignature = (
   k1: string,
   amountMsat: number,
@@ -253,7 +253,16 @@ export const verifyNoteSignature = (
   const leading = wireSig
   for (const candidate of [trailing, leading]) {
     try {
-      const recovered = secp256k1.recoverPublicKey(candidate, digest)
+      // `digest` is already the final double-sha256 per the spec/LUD-13 -
+      // @noble/curves' recoverPublicKey otherwise defaults to `prehash:
+      // true` and hashes it again internally, which would make this
+      // recover against a value nothing ever actually signed and never
+      // match a real signer's key (masked in this repo's own tests before
+      // this fix, since the mock signer there had the same bug the other
+      // way - see lnurlcash.test.ts)
+      const recovered = secp256k1.recoverPublicKey(candidate, digest, {
+        prehash: false
+      })
       if (bytesToHex(recovered) === target) return true
     } catch {
       // not a valid recovery under this ordering - try the other one

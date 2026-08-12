@@ -253,8 +253,16 @@ describe('offline signature verification', () => {
       )
     )
     // library's 'recovered' format is empirically recovery-id-first (rec ||
-    // r || s) - the spec's wire format is r || s || recovery-id, so reorder
-    const libSig = secp256k1.sign(digest, priv, {format: 'recovered'})
+    // r || s) - the spec's wire format is r || s || recovery-id, so reorder.
+    // prehash:false: `digest` is already the final hash a real signer
+    // (lnd/cln's signmessage) signs directly - the default prehash:true
+    // would hash it again, producing a signature nothing downstream (this
+    // wallet's own verifyNoteSignature, or a real mint) could ever recover
+    // against a real signer's key
+    const libSig = secp256k1.sign(digest, priv, {
+      format: 'recovered',
+      prehash: false
+    })
     return bytesToHex(new Uint8Array([...libSig.subarray(1), libSig[0]]))
   }
 
@@ -275,10 +283,12 @@ describe('offline signature verification', () => {
     expect(verifyNoteSignature(K1, amountMsat, sigHex, otherPub)).toBe(false)
   })
 
-  it('also verifies the recovery-id-leading layout lnurl-mint actually sends', () => {
-    // lnurl-mint's sign_note forwards its Lightning node's signmessage RPC
-    // output unreordered (recovery-id || r || s), rather than the spec
-    // text's r || s || recovery-id - real-world interop needs both
+  it('also verifies the recovery-id-leading layout some mints still send', () => {
+    // lnurl-mint used to forward its Lightning node's signmessage RPC
+    // output unreordered (recovery-id || r || s) rather than the spec
+    // text's r || s || recovery-id, and has since fixed that - kept here
+    // as a real-world-interop regression guard in case another
+    // implementation (or a not-yet-updated lnurl-mint) gets it wrong
     const priv = secp256k1.utils.randomSecretKey()
     const pubHex = bytesToHex(secp256k1.getPublicKey(priv, true))
     const amountMsat = 6000
@@ -293,7 +303,7 @@ describe('offline signature verification', () => {
       )
     )
     const leadingSigHex = bytesToHex(
-      secp256k1.sign(digest, priv, {format: 'recovered'})
+      secp256k1.sign(digest, priv, {format: 'recovered', prehash: false})
     )
     expect(verifyNoteSignature(K1, amountMsat, leadingSigHex, pubHex)).toBe(
       true
