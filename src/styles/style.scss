@@ -408,6 +408,9 @@ pre {
   overflow-wrap: break-word;
 }
 
+// sizes and positions the qrcode box itself - .qr-frame (below) matches
+// this same width/max-width so the download button anchors to its corner
+// instead of some wider ancestor's
 .qrcode {
   border: 6px solid white;
   display: flex;
@@ -419,7 +422,6 @@ pre {
   // of relying on the library's own fixed width/height keeps it sharp at
   // any size, capped so it doesn't balloon on a wide desktop card.
   width: 100%;
-  max-width: 266px;
   aspect-ratio: 1 / 1;
   svg {
     width: 100%;
@@ -431,6 +433,18 @@ pre {
 // wrapper weren't there, it only adds the tap-to-open-wallet behavior
 .qrcode-link {
   display: contents;
+}
+.qr-frame {
+  position: relative;
+  width: 100%;
+  max-width: 266px;
+}
+.qr-download-btn {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  background: rgba($bg, 0.85);
+  border-radius: 5px;
 }
 .qr-wrapper {
   position: relative;
