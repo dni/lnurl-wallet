@@ -315,22 +315,6 @@ const BearerCard: Component<BearerCardProps> = props => {
             {serverOf(props.bearer.url)}
           </span>
         </div>
-        <button
-          class="icon-btn"
-          title={props.bearer.label ? 'Edit label' : 'Add a label'}
-          onClick={startEditLabel}
-        >
-          <IoPencilSharp />
-        </button>
-        <button
-          class="icon-btn qr-toggle"
-          title={showQr() ? 'Hide QR code' : 'Show QR code'}
-          onClick={toggleShowQr}
-        >
-          <Show when={showQr()} fallback={<IoQrCodeSharp />}>
-            <IoEyeOffSharp />
-          </Show>
-        </button>
       </div>
       <Show when={editingLabel()}>
         <div class="form-item">
@@ -365,13 +349,6 @@ const BearerCard: Component<BearerCardProps> = props => {
       <div class="btns">
         <button
           class="icon-btn"
-          title="Copy note (bech32 LNURL)"
-          onClick={() => copyToClipboard(token())}
-        >
-          <IoCopySharp />
-        </button>
-        <button
-          class="icon-btn"
           title={
             offlineMode()
               ? 'Offline mode is on'
@@ -382,17 +359,38 @@ const BearerCard: Component<BearerCardProps> = props => {
         >
           <IoRefreshSharp classList={{spin: busy()}} />
         </button>
+        <button
+          class="icon-btn"
+          title={offlineMode() ? 'Offline mode is on' : 'Split into two notes'}
+          disabled={!hasCallback() || isSpent() || offlineMode()}
+          onClick={() => setAction(action() === 'split' ? null : 'split')}
+        >
+          <IoGitBranchSharp />
+        </button>
+        <button
+          class="icon-btn"
+          title={props.bearer.label ? 'Edit label' : 'Add a label'}
+          onClick={startEditLabel}
+        >
+          <IoPencilSharp />
+        </button>
+        <button
+          class="icon-btn"
+          title={showQr() ? 'Hide QR code' : 'Show QR code'}
+          onClick={toggleShowQr}
+        >
+          <Show when={showQr()} fallback={<IoQrCodeSharp />}>
+            <IoEyeOffSharp />
+          </Show>
+        </button>
+        <button
+          class="icon-btn"
+          title="Copy note (bech32 LNURL)"
+          onClick={() => copyToClipboard(token())}
+        >
+          <IoCopySharp />
+        </button>
         <div class="bearer-actions">
-          <button
-            class="icon-btn"
-            title={
-              offlineMode() ? 'Offline mode is on' : 'Split into two notes'
-            }
-            disabled={!hasCallback() || isSpent() || offlineMode()}
-            onClick={() => setAction(action() === 'split' ? null : 'split')}
-          >
-            <IoGitBranchSharp />
-          </button>
           <Show
             when={isSpent()}
             fallback={
