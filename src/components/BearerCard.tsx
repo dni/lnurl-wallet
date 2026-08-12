@@ -17,6 +17,7 @@ import {
 
 import type {Bearer} from '../storage'
 import {useWallet} from '../WalletContext'
+import type {SplitResult} from '../lnurlcash'
 import {
   toBech32Lnurl,
   noteK1,
@@ -180,10 +181,17 @@ const BearerCard: Component<BearerCardProps> = props => {
     }
     setBusy(true)
     try {
-      removeBearer(props.bearer.id)
+      // the still-unspent remainder is tracked as an actual stored bearer
+      // throughout, starting as this card's own note - never removed until
+      // a split for it has actually succeeded. A rejected split (e.g.
+      // "insufficient value" once its own base_fee_msat wouldn't leave
+      // enough change - see LUD-25) still puts that remainder's k1 on the
+      // wire via the failed callback request, so on failure it's rotated
+      // in place (best-effort) rather than left exposed - but always kept,
+      // never dropped, so a failed split costs nothing
+      let remainderId = props.bearer.id
       let currentK1 = k1()
       let currentAmount = props.bearer.amount
-      let currentSignature: string | undefined
       // a mint MAY charge a flat fee per split (LUD-25), deducted from the
       // change rather than the split-off amount - so the remainder is read
       // back authoritatively (informational GET) after each split instead
@@ -192,7 +200,27 @@ const BearerCard: Component<BearerCardProps> = props => {
       let totalFeeMsat = 0
       for (let i = 0; i < times; i++) {
         const expectedChange = currentAmount - msat
-        const result = await splitNote(props.bearer.callback, currentK1, msat)
+        let result: SplitResult
+        try {
+          result = await splitNote(props.bearer.callback, currentK1, msat)
+        } catch (err) {
+          try {
+            const rotated = await rotateNote(props.bearer.callback, currentK1)
+            await updateBearer(remainderId, {
+              url: withNewK1(
+                props.bearer.url,
+                rotated.k1,
+                currentAmount,
+                rotated.signature
+              )
+            })
+          } catch {
+            // rotation unsupported/unreachable too - the remainder stays
+            // recorded under its pre-attempt secret rather than vanish
+          }
+          throw err
+        }
+        removeBearer(remainderId)
         await addBearer({
           url: withNewK1(props.bearer.url, result.k1, msat, result.signature),
           callback: props.bearer.callback,
@@ -211,7 +239,7 @@ const BearerCard: Component<BearerCardProps> = props => {
         totalFeeMsat += expectedChange - changeInfo.maxWithdrawable
         currentAmount = changeInfo.maxWithdrawable
         currentK1 = result.change
-        currentSignature = result.changeSignature
+        let currentSignature = result.changeSignature
         // that informational GET just put this change secret on the wire -
         // same as refresh(), rotate it before it's used again (as the next
         // iteration's input, or the final stored note) rather than keep
@@ -224,19 +252,20 @@ const BearerCard: Component<BearerCardProps> = props => {
           // service doesn't support rotation - keep the GET-exposed secret,
           // same tolerance refresh() shows
         }
+        const remainder = await addBearer({
+          url: withNewK1(
+            props.bearer.url,
+            currentK1,
+            currentAmount,
+            currentSignature
+          ),
+          callback: props.bearer.callback,
+          amount: currentAmount,
+          verified: true,
+          mintPubkey: props.bearer.mintPubkey
+        })
+        remainderId = remainder.id
       }
-      await addBearer({
-        url: withNewK1(
-          props.bearer.url,
-          currentK1,
-          currentAmount,
-          currentSignature
-        ),
-        callback: props.bearer.callback,
-        amount: currentAmount,
-        verified: true,
-        mintPubkey: props.bearer.mintPubkey
-      })
       notify(
         `Split off ${times} note${times === 1 ? '' : 's'} of ${msatToSats(msat)} sats each.` +
           (totalFeeMsat > 0
