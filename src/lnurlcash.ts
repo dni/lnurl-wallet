@@ -623,6 +623,11 @@ export type InvoiceResult = {
   pr: string
   // LUD-21 (optional): a URL to poll for this invoice's settlement status
   verify?: string
+  // LUD-11: false means SERVICE wants the payRequest LNURL/Lightning
+  // Address itself (not this one invoice, which is always spent once
+  // paid regardless) kept around and reused - per spec, disposable being
+  // null/absent MUST be read as true, so only an explicit `false` counts
+  disposable: boolean
 }
 
 export const requestInvoice = async (
@@ -637,7 +642,8 @@ export const requestInvoice = async (
   }
   return {
     pr: body.pr,
-    verify: typeof body.verify === 'string' ? body.verify : undefined
+    verify: typeof body.verify === 'string' ? body.verify : undefined,
+    disposable: body.disposable !== false
   }
 }
 

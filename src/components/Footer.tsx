@@ -4,12 +4,14 @@ import {IoLockClosedSharp} from 'solid-icons/io'
 import {A} from '@solidjs/router'
 
 // the LUDs this wallet actually speaks: bech32 encoding, withdrawRequest,
-// seed derivation, payRequest, Lightning Address, raw schemes, LNURLcash
+// seed derivation, payRequest, disposable/storeable links, Lightning
+// Address, raw schemes, LNURLcash
 const LUD_TITLES: Record<string, string> = {
   '01': 'Base LNURL encoding and informational payloads',
   '03': 'withdrawRequest base spec',
   '05': 'BIP32-based seed generation for auth protocol',
   '06': 'payRequest base spec',
+  '11': 'Disposable and storeable payRequests',
   '16': 'Paying to static internet identifiers (Lightning Address)',
   '17': 'Protocol schemes and raw (non bech32-encoded) URLs',
   '25': 'LNURLcash - bearer assets (draft)'

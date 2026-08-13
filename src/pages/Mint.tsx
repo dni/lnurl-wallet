@@ -14,7 +14,8 @@ import {
   IoCloseSharp,
   IoReturnDownForwardSharp,
   IoOpenSharp,
-  IoGlobeSharp
+  IoGlobeSharp,
+  IoTrashSharp
 } from 'solid-icons/io'
 
 import {useWallet} from '../WalletContext'
@@ -51,6 +52,11 @@ import {
   trustedMints,
   PUBLIC_MINTS
 } from '../trustedMints'
+import {
+  storeableMints,
+  addStoreableMint,
+  removeStoreableMint
+} from '../storeableLinks'
 import {offlineMode} from '../offlineMode'
 import Qr from '../components/Qr'
 import ScanToggle from '../components/ScanToggle'
@@ -322,6 +328,10 @@ const Mint: Component = () => {
       setInvoice(result.pr)
       setInvoicedMsat(amount.netMsat)
       setInvoicedGrossMsat(amount.grossMsat)
+      // LUD-11: this mint says its own payRequest link (what's typed into
+      // mintInput, not this one-shot invoice) is meant to be reused -
+      // save it for a one-click return trip next time
+      if (!result.disposable) addStoreableMint(mintInput())
       if (result.verify) startPolling(result.verify)
     } catch (err) {
       notify((err as Error).message, NotifyKind.ERROR)
@@ -493,6 +503,36 @@ const Mint: Component = () => {
             </button>
           </div>
         </figure>
+        <Show when={storeableMints().length > 0}>
+          <figure class="setup-card">
+            <h4>Your storeable mints</h4>
+            <p>
+              These mints said their own address is meant to be reused, not a
+              one-time link (LUD-11) - saved here for a one-click return trip.
+            </p>
+            <div class="mint-picker">
+              <For each={storeableMints()}>
+                {link => (
+                  <span class="mint-picker-entry">
+                    <button
+                      disabled={busy() || offlineMode()}
+                      onClick={() => selectMint(link.address)}
+                    >
+                      {link.address}
+                    </button>
+                    <button
+                      class="icon-btn"
+                      title="Forget this mint"
+                      onClick={() => removeStoreableMint(link.address)}
+                    >
+                      <IoTrashSharp />
+                    </button>
+                  </span>
+                )}
+              </For>
+            </div>
+          </figure>
+        </Show>
         <Show when={trustedMints().length > 0}>
           <figure class="setup-card">
             <h4>Your trusted mints</h4>

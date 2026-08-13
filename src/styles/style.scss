@@ -1138,6 +1138,15 @@ body.dragging-note {
   }
 }
 
+// pairs a storeable-mint/address button with its own remove icon so the
+// two stay glued together when .mint-picker wraps, instead of the icon
+// landing on its own at the start of the next line
+.mint-picker-entry {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
 // TransferDialog puts a .mint-picker directly under a .btns row (Mint.tsx's
 // copies sit under their own h4 instead, which already has spacing below it)
 .btns + .mint-picker {

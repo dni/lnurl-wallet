@@ -5,7 +5,8 @@ import {
   IoClipboardSharp,
   IoCloseSharp,
   IoReturnDownForwardSharp,
-  IoRefreshSharp
+  IoRefreshSharp,
+  IoTrashSharp
 } from 'solid-icons/io'
 
 import type {Bearer} from '../storage'
@@ -36,6 +37,11 @@ import {
   pasteFromClipboard
 } from '../helpers'
 import {offlineMode} from '../offlineMode'
+import {
+  storeableMeltAddresses,
+  addStoreableMeltAddress,
+  removeStoreableMeltAddress
+} from '../storeableLinks'
 import ScanToggle from '../components/ScanToggle'
 import RequireWallet from '../components/RequireWallet'
 
@@ -63,6 +69,10 @@ const Melt: Component = () => {
   // (and thus a pastedInvoice) exists
   const [lnAddressPayRequest, setLnAddressPayRequest] =
     createSignal<PayRequestInfo | null>(null)
+  // the raw address itself, kept alongside its resolved payRequest above -
+  // needed at invoice-request time to save it as storeable (LUD-11), and
+  // otherwise not derivable back from lnAddressPayRequest alone
+  const [lnAddressText, setLnAddressText] = createSignal('')
   const [lnAddressAmountSats, setLnAddressAmountSats] = createSignal('')
   const [fetchingInvoice, setFetchingInvoice] = createSignal(false)
 
@@ -172,6 +182,7 @@ const Melt: Component = () => {
     setFetchingInvoice(true)
     try {
       setLnAddressPayRequest(await fetchPayRequest(url))
+      setLnAddressText(address)
     } catch (err) {
       notify((err as Error).message, NotifyKind.ERROR)
     } finally {
@@ -210,6 +221,9 @@ const Melt: Component = () => {
 
   const onScan = (scanned: string) => handleValue(scanned)
 
+  // click-to-select from the saved-addresses picker below
+  const selectSavedAddress = (address: string) => handleValue(address)
+
   // validates lnAddressAmountSats() against the payRequest's bounds, then
   // turns it into an actual bolt11 - same shape as a directly pasted one
   const getInvoiceFromAddress = async () => {
@@ -231,6 +245,11 @@ const Melt: Component = () => {
     try {
       const result = await requestInvoice(info.callback, msat)
       setPastedInvoice(result.pr)
+      // LUD-11: this address says it's meant to be reused for future
+      // melts (not this one invoice, which is spent once paid regardless)
+      // - save it, kept apart from Mint.tsx's own storeable mints (see
+      // storeableLinks.ts - a melt destination isn't necessarily a mint)
+      if (!result.disposable) addStoreableMeltAddress(lnAddressText())
       setLnAddressPayRequest(null)
       setLnAddressAmountSats('')
     } catch (err) {
@@ -538,6 +557,37 @@ const Melt: Component = () => {
             )}
           </Show>
         </figure>
+        <Show when={storeableMeltAddresses().length > 0}>
+          <figure class="setup-card">
+            <h4>Your saved addresses</h4>
+            <p>
+              These said their own address is meant to be reused, not a one-time
+              link (LUD-11) - saved here for a one-click return trip. Melt
+              destinations only, kept separate from the mints on the Mint page.
+            </p>
+            <div class="mint-picker">
+              <For each={storeableMeltAddresses()}>
+                {link => (
+                  <span class="mint-picker-entry">
+                    <button
+                      disabled={offlineMode()}
+                      onClick={() => selectSavedAddress(link.address)}
+                    >
+                      {link.address}
+                    </button>
+                    <button
+                      class="icon-btn"
+                      title="Forget this address"
+                      onClick={() => removeStoreableMeltAddress(link.address)}
+                    >
+                      <IoTrashSharp />
+                    </button>
+                  </span>
+                )}
+              </For>
+            </div>
+          </figure>
+        </Show>
         <Show when={pastedInvoice()}>
           <Show
             when={!pendingNote()}
