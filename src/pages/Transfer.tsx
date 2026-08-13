@@ -19,6 +19,7 @@ import {
   withNewK1,
   mergeNotes,
   splitNote,
+  settleNote,
   toBech32Lnurl,
   serverOf
 } from '../lnurlcash'
@@ -108,7 +109,10 @@ const Transfer: Component = () => {
   }
 
   // a no-op returning the note itself when only one is selected, since
-  // merge only makes sense for 2+
+  // merge only makes sense for 2+. settleNote reads the actual value back
+  // (a mint MAY refund part of its fees on merge - LUD-25) and rotates the
+  // merged secret, since learning that value necessarily puts it on the
+  // wire
   const mergePrepareSelectionIfNeeded = async (
     picked: ReturnType<typeof prepareSelectedBearers>
   ) => {
@@ -119,11 +123,22 @@ const Transfer: Component = () => {
       base.callback,
       picked.map(b => noteK1(b.url)!)
     )
+    const settled = await settleNote(
+      base.url,
+      merged.k1,
+      total,
+      merged.signature
+    )
     for (const bearer of picked) removeBearer(bearer.id)
     return addBearer({
-      url: withNewK1(base.url, merged.k1, total, merged.signature),
-      callback: base.callback,
-      amount: total,
+      url: withNewK1(
+        base.url,
+        settled.k1,
+        settled.amountMsat,
+        settled.signature
+      ),
+      callback: settled.callback,
+      amount: settled.amountMsat,
       verified: true,
       mintPubkey: base.mintPubkey
     })
@@ -143,15 +158,25 @@ const Transfer: Component = () => {
           target
         )
         removeBearer(current.id)
+        // settleNote: the change may be worth less than current.amount -
+        // target if this mint charges fees (LUD-25 deducts them from
+        // change, never the prepared amount) - stored at its true value,
+        // not the naive pre-fee one, or its signature won't verify
+        const settledChange = await settleNote(
+          current.url,
+          parts.change,
+          current.amount - target,
+          parts.changeSignature
+        )
         await addBearer({
           url: withNewK1(
             current.url,
-            parts.change,
-            current.amount - target,
-            parts.changeSignature
+            settledChange.k1,
+            settledChange.amountMsat,
+            settledChange.signature
           ),
-          callback: current.callback,
-          amount: current.amount - target,
+          callback: settledChange.callback,
+          amount: settledChange.amountMsat,
           verified: true,
           mintPubkey: current.mintPubkey
         })

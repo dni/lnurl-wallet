@@ -25,6 +25,7 @@ import {
   mergeNotes,
   splitNote,
   rotateNote,
+  settleNote,
   PendingNoteError
 } from '../lnurlcash'
 import {
@@ -305,7 +306,11 @@ const Melt: Component = () => {
 
   // merges the selection into one note worth their sum - a no-op returning
   // the note itself when only one is selected, since merge only makes
-  // sense for 2+
+  // sense for 2+. settleNote reads the actual value back (a mint MAY
+  // refund part of its fees on merge - LUD-25) and rotates the merged
+  // secret, since learning that value necessarily puts it on the wire -
+  // melt below demands an exact amount match, so the stored note must be
+  // trustworthy, not the naive pre-fee sum
   const mergeSelectionIfNeeded = async (
     picked: ReturnType<typeof selectedBearers>
   ) => {
@@ -316,11 +321,22 @@ const Melt: Component = () => {
       base.callback,
       picked.map(b => noteK1(b.url)!)
     )
+    const settled = await settleNote(
+      base.url,
+      merged.k1,
+      total,
+      merged.signature
+    )
     for (const bearer of picked) removeBearer(bearer.id)
     return addBearer({
-      url: withNewK1(base.url, merged.k1, total, merged.signature),
-      callback: base.callback,
-      amount: total,
+      url: withNewK1(
+        base.url,
+        settled.k1,
+        settled.amountMsat,
+        settled.signature
+      ),
+      callback: settled.callback,
+      amount: settled.amountMsat,
       verified: true,
       mintPubkey: base.mintPubkey
     })
@@ -373,15 +389,25 @@ const Melt: Component = () => {
         target
       )
       removeBearer(merged.id)
+      // settleNote: the change may be worth less than merged.amount -
+      // target if this mint charges fees (LUD-25 deducts them from
+      // change, never the melted amount) - stored at its true value, not
+      // the naive pre-fee one, or its signature won't verify against it
+      const settledChange = await settleNote(
+        merged.url,
+        parts.change,
+        merged.amount - target,
+        parts.changeSignature
+      )
       await addBearer({
         url: withNewK1(
           merged.url,
-          parts.change,
-          merged.amount - target,
-          parts.changeSignature
+          settledChange.k1,
+          settledChange.amountMsat,
+          settledChange.signature
         ),
-        callback: merged.callback,
-        amount: merged.amount - target,
+        callback: settledChange.callback,
+        amount: settledChange.amountMsat,
         verified: true,
         mintPubkey: merged.mintPubkey
       })

@@ -459,6 +459,52 @@ export const mergeNotes = async (
   return {k1: body.k1, signature: body.signature}
 }
 
+export type SettledNote = {
+  k1: string
+  amountMsat: number
+  signature?: string
+  callback: string
+}
+
+// resolves what a split's change note or a merge's result note is
+// ACTUALLY worth, and rotates it before further use. Neither response
+// carries its own amount (WithdrawSuccessResponse has none - the spec's
+// only source of truth for a note's value is an informational GET), and a
+// mint that charges fees (LUD-25) may have deducted some from a split's
+// change, or refunded some into a merge's result - using the naively
+// computed pre-fee amount instead pairs a wrong `amount` with a signature
+// the mint actually issued for the true one, so the note looks unsigned
+// even though it isn't. That GET necessarily puts k1 on the wire in turn,
+// so - same as BearerCard's refresh() - a rotate immediately follows,
+// best-effort: a mint that doesn't support it keeps the GET-exposed k1
+// and its original signature rather than fail the whole operation over it.
+export const settleNote = async (
+  baseUrl: string,
+  k1: string,
+  expectedAmountMsat: number,
+  signature: string | undefined
+): Promise<SettledNote> => {
+  const info = await fetchNoteInfo(
+    withNewK1(baseUrl, k1, expectedAmountMsat, signature)
+  )
+  try {
+    const rotated = await rotateNote(info.callback, k1)
+    return {
+      k1: rotated.k1,
+      amountMsat: info.maxWithdrawable,
+      signature: rotated.signature,
+      callback: info.callback
+    }
+  } catch {
+    return {
+      k1,
+      amountMsat: info.maxWithdrawable,
+      signature,
+      callback: info.callback
+    }
+  }
+}
+
 // ---- minting via LUD-06 payRequest ----
 
 export type MintFee = {

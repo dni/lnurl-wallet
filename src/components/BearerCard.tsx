@@ -27,7 +27,8 @@ import {
   fetchNoteInfo,
   verifyNoteSignature,
   splitNote,
-  rotateNote
+  rotateNote,
+  settleNote
 } from '../lnurlcash'
 import {
   copyToClipboard,
@@ -238,39 +239,27 @@ const BearerCard: Component<BearerCardProps> = props => {
           verified: true,
           mintPubkey: props.bearer.mintPubkey
         })
-        const changeInfo = await fetchNoteInfo(
-          withNewK1(
-            props.bearer.url,
-            result.change,
-            expectedChange,
-            result.changeSignature
-          )
+        // settleNote learns the change's true value (a mint MAY have
+        // deducted a fee - LUD-25) and rotates it, since the GET that
+        // learns it necessarily puts k1 on the wire
+        const settled = await settleNote(
+          props.bearer.url,
+          result.change,
+          expectedChange,
+          result.changeSignature
         )
-        totalFeeMsat += expectedChange - changeInfo.maxWithdrawable
-        currentAmount = changeInfo.maxWithdrawable
-        currentK1 = result.change
-        let currentSignature = result.changeSignature
-        // that informational GET just put this change secret on the wire -
-        // same as refresh(), rotate it before it's used again (as the next
-        // iteration's input, or the final stored note) rather than keep
-        // circulating an exposed copy
-        try {
-          const rotated = await rotateNote(changeInfo.callback, currentK1)
-          currentK1 = rotated.k1
-          currentSignature = rotated.signature
-        } catch {
-          // service doesn't support rotation - keep the GET-exposed secret,
-          // same tolerance refresh() shows
-        }
+        totalFeeMsat += expectedChange - settled.amountMsat
+        currentAmount = settled.amountMsat
+        currentK1 = settled.k1
         const remainder = await addBearer({
           url: withNewK1(
             props.bearer.url,
-            currentK1,
-            currentAmount,
-            currentSignature
+            settled.k1,
+            settled.amountMsat,
+            settled.signature
           ),
-          callback: props.bearer.callback,
-          amount: currentAmount,
+          callback: settled.callback,
+          amount: settled.amountMsat,
           verified: true,
           mintPubkey: props.bearer.mintPubkey
         })
