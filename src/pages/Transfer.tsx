@@ -21,7 +21,8 @@ import {
   splitNote,
   settleNote,
   toBech32Lnurl,
-  serverOf
+  serverOf,
+  PendingNoteError
 } from '../lnurlcash'
 import {receiveNote, secureReceivedNote} from '../receive'
 import {
@@ -236,13 +237,23 @@ const Transfer: Component = () => {
           `Received ${msatToSats(received.amount)} sats - secret rotated, previous copies are burned.`,
           NotifyKind.SUCCESS
         )
-      } catch {
+      } catch (err) {
+        // a PendingNoteError here means this exact k1 has some other
+        // operation in flight on the service right now (e.g. the sender's
+        // own melt/rotate hasn't settled yet) - temporary, and the note
+        // is already stored (addBearer above), so it'll simply rotate on
+        // the next refresh. Reporting it the same as every other failure
+        // ("the service refused to rotate") reads as a permanent
+        // limitation instead of "try again shortly" (see issue #3).
+        const pending = err instanceof PendingNoteError
         logActivity(
           'receive',
-          `Received ${msatToSats(received.amount)} sats from ${serverOf(received.url)} (not rotated - sender may still hold a copy).`
+          `Received ${msatToSats(received.amount)} sats from ${serverOf(received.url)} (${pending ? 'rotate pending - will retry on next refresh' : 'not rotated - sender may still hold a copy'}).`
         )
         notify(
-          `Received ${msatToSats(received.amount)} sats, but the service refused to rotate - the sender may still hold a spendable copy.`,
+          pending
+            ? `Received ${msatToSats(received.amount)} sats, but couldn't rotate yet - this note has another operation in progress on the service. It'll rotate automatically next time you refresh it.`
+            : `Received ${msatToSats(received.amount)} sats, but the service refused to rotate - the sender may still hold a spendable copy.`,
           NotifyKind.ERROR
         )
       }
