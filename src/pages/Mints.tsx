@@ -71,33 +71,8 @@ const Mints: Component = () => {
         a bearer note from is trusted automatically and can't be removed;
         anything else here you added yourself, and can remove again.
       </p>
-      <div class="mints-columns">
-        <div class="mints-col">
-          <figure class="setup-card">
-            <h4>Add a mint manually</h4>
-            <label>Server</label>
-            <input
-              type="text"
-              placeholder="mint.example.com"
-              value={server()}
-              onInput={e => setServer(e.currentTarget.value)}
-            />
-            <label>Signing key (33-byte compressed pubkey, hex)</label>
-            <input
-              type="text"
-              placeholder="02..."
-              value={pubkey()}
-              onInput={e => setPubkey(e.currentTarget.value)}
-            />
-            <div class="btns">
-              <button onClick={add}>
-                <IoAddCircleSharp />
-                &nbsp;Add mint
-              </button>
-            </div>
-          </figure>
-        </div>
-        <div class="mints-col">
+      <div class="two-columns">
+        <div class="two-col">
           <figure class="setup-card">
             <h4>Public mints</h4>
             <p>
@@ -195,6 +170,31 @@ const Mints: Component = () => {
               </For>
             </div>
           </Show>
+        </div>
+        <div class="two-col">
+          <figure class="setup-card">
+            <h4>Add a mint manually</h4>
+            <label>Server</label>
+            <input
+              type="text"
+              placeholder="mint.example.com"
+              value={server()}
+              onInput={e => setServer(e.currentTarget.value)}
+            />
+            <label>Signing key (33-byte compressed pubkey, hex)</label>
+            <input
+              type="text"
+              placeholder="02..."
+              value={pubkey()}
+              onInput={e => setPubkey(e.currentTarget.value)}
+            />
+            <div class="btns">
+              <button onClick={add}>
+                <IoAddCircleSharp />
+                &nbsp;Add mint
+              </button>
+            </div>
+          </figure>
         </div>
       </div>
     </div>

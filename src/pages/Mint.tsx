@@ -456,115 +456,124 @@ const Mint: Component = () => {
     <RequireWallet>
       <div id="mint" class="page">
         <h2>Mint a bearer note</h2>
-        <figure class="paste-widget">
-          <div class="paste-input-row">
-            <ScanToggle
-              onScan={selectMint}
-              accept={v => resolveMintInput(v) !== null}
-            />
-            <button
-              type="button"
-              class="icon-btn paste-icon-btn"
-              title="Paste from clipboard"
-              onClick={pasteMint}
-            >
-              <IoClipboardSharp />
-            </button>
-            <div class="paste-input-wrapper">
-              <input
-                type="text"
-                class="paste-input"
-                placeholder="lnurl1... or mint@example.com"
-                value={mintInput()}
-                onInput={e => setMintInput(e.currentTarget.value)}
-                onKeyDown={e => e.key === 'Enter' && lookup()}
-              />
-              <Show when={mintInput() !== ''}>
+        <div class="two-columns">
+          <div class="two-col">
+            <figure class="paste-widget">
+              <div class="paste-input-row">
+                <ScanToggle
+                  onScan={selectMint}
+                  accept={v => resolveMintInput(v) !== null}
+                />
                 <button
                   type="button"
-                  class="icon-btn paste-clear-btn"
-                  title="Clear"
-                  onClick={() => setMintInput('')}
+                  class="icon-btn paste-icon-btn"
+                  title="Paste from clipboard"
+                  onClick={pasteMint}
                 >
-                  <IoCloseSharp />
+                  <IoClipboardSharp />
                 </button>
-              </Show>
-            </div>
-            <button
-              type="button"
-              class="icon-btn paste-confirm-btn"
-              title={offlineMode() ? 'Offline mode is on' : 'Look up mint'}
-              disabled={busy() || mintInput() === '' || offlineMode()}
-              onClick={lookup}
-            >
-              <Show when={busy()} fallback={<IoReturnDownForwardSharp />}>
-                <IoRefreshSharp class="spin" />
-              </Show>
-            </button>
+                <div class="paste-input-wrapper">
+                  <input
+                    type="text"
+                    class="paste-input"
+                    placeholder="lnurl1... or mint@example.com"
+                    value={mintInput()}
+                    onInput={e => setMintInput(e.currentTarget.value)}
+                    onKeyDown={e => e.key === 'Enter' && lookup()}
+                  />
+                  <Show when={mintInput() !== ''}>
+                    <button
+                      type="button"
+                      class="icon-btn paste-clear-btn"
+                      title="Clear"
+                      onClick={() => setMintInput('')}
+                    >
+                      <IoCloseSharp />
+                    </button>
+                  </Show>
+                </div>
+                <button
+                  type="button"
+                  class="icon-btn paste-confirm-btn"
+                  title={offlineMode() ? 'Offline mode is on' : 'Look up mint'}
+                  disabled={busy() || mintInput() === '' || offlineMode()}
+                  onClick={lookup}
+                >
+                  <Show when={busy()} fallback={<IoReturnDownForwardSharp />}>
+                    <IoRefreshSharp class="spin" />
+                  </Show>
+                </button>
+              </div>
+            </figure>
           </div>
-        </figure>
-        <Show when={storeableMints().length > 0}>
-          <figure class="setup-card">
-            <h4>Your storeable mints</h4>
-            <p>
-              These mints said their own address is meant to be reused, not a
-              one-time link (LUD-11) - saved here for a one-click return trip.
-            </p>
-            <div class="mint-picker">
-              <For each={storeableMints()}>
-                {link => (
-                  <span class="mint-picker-entry">
+          <div class="two-col">
+            <Show when={storeableMints().length > 0}>
+              <figure class="setup-card">
+                <h4>Your storeable mints</h4>
+                <p>
+                  These mints said their own address is meant to be reused, not
+                  a one-time link (LUD-11) - saved here for a one-click return
+                  trip.
+                </p>
+                <div class="mint-picker">
+                  <For each={storeableMints()}>
+                    {link => (
+                      <span class="mint-picker-entry">
+                        <button
+                          disabled={busy() || offlineMode()}
+                          onClick={() => selectMint(link.address)}
+                        >
+                          {link.address}
+                        </button>
+                        <button
+                          class="icon-btn"
+                          title="Forget this mint"
+                          onClick={() => removeStoreableMint(link.address)}
+                        >
+                          <IoTrashSharp />
+                        </button>
+                      </span>
+                    )}
+                  </For>
+                </div>
+              </figure>
+            </Show>
+            <Show when={trustedMints().length > 0}>
+              <figure class="setup-card">
+                <h4>Your trusted mints</h4>
+                <div class="mint-picker">
+                  <For each={trustedMints()}>
+                    {mint => (
+                      <button
+                        disabled={busy() || offlineMode()}
+                        onClick={() =>
+                          selectMint(guessMintAddress(mint.server))
+                        }
+                      >
+                        {mint.server}
+                      </button>
+                    )}
+                  </For>
+                </div>
+              </figure>
+            </Show>
+            <figure class="setup-card">
+              <h4>Public mints</h4>
+              <div class="mint-picker">
+                <For each={PUBLIC_MINTS}>
+                  {address => (
                     <button
                       disabled={busy() || offlineMode()}
-                      onClick={() => selectMint(link.address)}
+                      onClick={() => selectMint(address)}
                     >
-                      {link.address}
+                      {address}
                     </button>
-                    <button
-                      class="icon-btn"
-                      title="Forget this mint"
-                      onClick={() => removeStoreableMint(link.address)}
-                    >
-                      <IoTrashSharp />
-                    </button>
-                  </span>
-                )}
-              </For>
-            </div>
-          </figure>
-        </Show>
-        <Show when={trustedMints().length > 0}>
-          <figure class="setup-card">
-            <h4>Your trusted mints</h4>
-            <div class="mint-picker">
-              <For each={trustedMints()}>
-                {mint => (
-                  <button
-                    disabled={busy() || offlineMode()}
-                    onClick={() => selectMint(guessMintAddress(mint.server))}
-                  >
-                    {mint.server}
-                  </button>
-                )}
-              </For>
-            </div>
-          </figure>
-        </Show>
-        <figure class="setup-card">
-          <h4>Public mints</h4>
-          <div class="mint-picker">
-            <For each={PUBLIC_MINTS}>
-              {address => (
-                <button
-                  disabled={busy() || offlineMode()}
-                  onClick={() => selectMint(address)}
-                >
-                  {address}
-                </button>
-              )}
-            </For>
+                  )}
+                </For>
+              </div>
+            </figure>
           </div>
-        </figure>
+        </div>
         <Show when={pendingTrust()}>
           {pending => (
             <figure class="setup-card">

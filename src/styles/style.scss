@@ -1074,10 +1074,12 @@ body.dragging-note {
 
 // ---- trusted mints page ----
 
-// manual add (left) vs. public-mint picker + the trusted list itself
-// (right) - collapses to a single column on narrow screens, same
-// breakpoint the nav's own mobile layout switches at
-.mints-columns {
+// generic 2-column page layout - used by the Mints page (manual add vs.
+// public-mint picker + the trusted list) and the Mint page (paste/lookup
+// + active flow vs. the storeable/trusted/public quick-pick lists).
+// Collapses to a single column on narrow screens, same breakpoint the
+// nav's own mobile layout switches at
+.two-columns {
   display: grid;
   grid-template-columns: 1fr 1fr;
   align-items: start;
@@ -1085,7 +1087,7 @@ body.dragging-note {
 }
 
 @media (max-width: 700px) {
-  .mints-columns {
+  .two-columns {
     grid-template-columns: 1fr;
   }
 }
