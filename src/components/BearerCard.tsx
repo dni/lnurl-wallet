@@ -206,9 +206,13 @@ const BearerCard: Component<BearerCardProps> = props => {
       // a mint MAY charge a flat fee per split (LUD-25), deducted from the
       // change rather than the split-off amount - so the remainder is read
       // back authoritatively (informational GET) after each split instead
-      // of just subtracting msat, and the gap accumulated into a total to
-      // report once at the end
+      // of just subtracting msat. Tracked per-iteration (perSplitFeeMsat,
+      // the same on every iteration since it's a flat fee) as well as
+      // summed (totalFeeMsat), so a multi-split report can say both "X per
+      // split" and "Y total" instead of one ambiguous number that reads
+      // like a single one-time deduction
       let totalFeeMsat = 0
+      let perSplitFeeMsat = 0
       for (let i = 0; i < times; i++) {
         const expectedChange = currentAmount - msat
         let result: SplitResult
@@ -248,7 +252,8 @@ const BearerCard: Component<BearerCardProps> = props => {
           expectedChange,
           result.changeSignature
         )
-        totalFeeMsat += expectedChange - settled.amountMsat
+        perSplitFeeMsat = expectedChange - settled.amountMsat
+        totalFeeMsat += perSplitFeeMsat
         currentAmount = settled.amountMsat
         currentK1 = settled.k1
         const remainder = await addBearer({
@@ -267,7 +272,9 @@ const BearerCard: Component<BearerCardProps> = props => {
       }
       const feeNote =
         totalFeeMsat > 0
-          ? ` ${msatToSats(totalFeeMsat)} sats fee deducted from the remainder.`
+          ? times > 1
+            ? ` ${msatToSats(perSplitFeeMsat)} sats fee deducted per split (${msatToSats(totalFeeMsat)} sats total).`
+            : ` ${msatToSats(totalFeeMsat)} sats fee deducted from the remainder.`
           : ''
       logActivity(
         'split',

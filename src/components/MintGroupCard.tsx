@@ -295,10 +295,17 @@ const MintGroupCard: Component<MintGroupCardProps> = props => {
         picked.map(b => b.id),
         false
       )
+      // LUD-25 refunds (n - 1) * base_fee_msat on an n-note merge - the per-
+      // note figure is exactly that division, same "X per unit (Y total)"
+      // framing as BearerCard's split, so a combine of several notes
+      // doesn't read as a single flat, ambiguous number either
       const creditMsat = actualAmount - sum
+      const perNoteCreditMsat = creditMsat / (picked.length - 1)
       const creditNote =
         creditMsat > 0
-          ? ` ${msatToSats(creditMsat)} sats fee credited back.`
+          ? picked.length > 2
+            ? ` ${msatToSats(perNoteCreditMsat)} sats fee credited per extra note (${msatToSats(creditMsat)} sats total).`
+            : ` ${msatToSats(creditMsat)} sats fee credited back.`
           : ''
       logActivity(
         'combine',
