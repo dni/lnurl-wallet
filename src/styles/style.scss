@@ -492,6 +492,29 @@ pre {
   background: rgba($bg, 0.85);
   border-radius: 5px;
 }
+// SendNoteCard's tap-to-reveal gate around an embedded Qr - kept separate
+// from .qr-frame (Qr's own internal sizing) so the overlay covers the
+// whole revealed area, download button included
+.qr-wrapper {
+  position: relative;
+  display: inline-block;
+}
+.qr-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  border-radius: 0;
+  background: rgba($bg, 0.9);
+  backdrop-filter: blur(6px);
+  font-size: 1.8em;
+  color: $font-color;
+  &:hover {
+    background: rgba($bg, 0.95);
+  }
+}
 // ---- paste widget (same structure as lnurl_server's Paste) ----
 
 .paste-widget {

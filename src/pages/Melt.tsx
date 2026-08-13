@@ -44,6 +44,7 @@ import {
 } from '../storeableLinks'
 import ScanToggle from '../components/ScanToggle'
 import RequireWallet from '../components/RequireWallet'
+import SendNoteCard from '../components/SendNoteCard'
 
 // same cadence as Mint.tsx's LUD-21 verify poll - a melted note's fate
 // (settled vs failed) is discovered the same way here: try to rotate it
@@ -731,6 +732,24 @@ const Melt: Component = () => {
               </div>
             </figure>
           </Show>
+        </Show>
+        <h2>Manually send out bearers</h2>
+        <Show
+          when={unspentBearers().length > 0}
+          fallback={<p>No bearer notes to send yet.</p>}
+        >
+          <For each={groupByServer(unspentBearers())}>
+            {([server, group]) => (
+              <div class="form-item">
+                <label>{server}</label>
+                <div class="bearer-list">
+                  <For each={group}>
+                    {bearer => <SendNoteCard bearer={bearer} />}
+                  </For>
+                </div>
+              </div>
+            )}
+          </For>
         </Show>
       </div>
     </RequireWallet>
