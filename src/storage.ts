@@ -125,6 +125,7 @@ export type ActivityKind =
   | 'melt'
   | 'transfer'
   | 'receive'
+  | 'refresh'
   | 'spent'
   | 'unspent'
   | 'deleted'

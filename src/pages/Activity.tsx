@@ -8,6 +8,7 @@ import {
   IoFlameSharp,
   IoSwapHorizontalSharp,
   IoArrowDownCircleSharp,
+  IoRefreshSharp,
   IoBanSharp,
   IoArrowUndoSharp,
   IoTrashSharp,
@@ -20,9 +21,9 @@ import {formatDate, formatRelativeTime} from '../helpers'
 import RequireWallet from '../components/RequireWallet'
 
 // one icon per ActivityKind, reusing the same icon each action already
-// shows elsewhere in the app (Mint's cash, BearerCard's split/spent/
-// unspent, MintGroupCard's combine, Melt's flame, Transfer's swap/receive)
-// so a log entry reads as the same action, not a new vocabulary
+// shows elsewhere in the app (Mint's cash, BearerCard's split/refresh/
+// spent/unspent, MintGroupCard's combine, Melt's flame, Transfer's swap/
+// receive) so a log entry reads as the same action, not a new vocabulary
 const KIND_ICON: Record<ActivityKind, Component> = {
   mint: IoCashSharp,
   split: IoGitBranchSharp,
@@ -30,6 +31,7 @@ const KIND_ICON: Record<ActivityKind, Component> = {
   melt: IoFlameSharp,
   transfer: IoSwapHorizontalSharp,
   receive: IoArrowDownCircleSharp,
+  refresh: IoRefreshSharp,
   spent: IoBanSharp,
   unspent: IoArrowUndoSharp,
   deleted: IoTrashSharp

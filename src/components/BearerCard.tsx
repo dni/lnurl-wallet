@@ -138,6 +138,11 @@ const BearerCard: Component<BearerCardProps> = props => {
         verified: true,
         mintPubkey: info.mintPubkey ?? props.bearer.mintPubkey
       })
+      logActivity(
+        'refresh',
+        `Refreshed ${msatToSats(info.maxWithdrawable)} sats from ${serverOf(url)}.` +
+          (rotationError ? ` Could not rotate (${rotationError}).` : '')
+      )
       // the GET this refresh is nominally "about" is only ever a means to
       // the rotate - it succeeding on its own isn't worth telling the
       // holder about, so a failed rotate reports just the one thing that
