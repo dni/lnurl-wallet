@@ -12,13 +12,14 @@ const LUD_TITLES: Record<string, string> = {
   '06': 'payRequest base spec',
   '16': 'Paying to static internet identifiers (Lightning Address)',
   '17': 'Protocol schemes and raw (non bech32-encoded) URLs',
-  XX: 'LNURLcash - bearer assets (draft)'
+  '25': 'LNURLcash - bearer assets (draft)'
 }
 
 // plain Object.keys order is wrong here: JS enumerates canonical-integer
 // string keys ('16', '17') ascending before any other string keys, so
 // leading-zero ones ('01', '03'...) would trail behind them instead of
-// sorting in - explicit numeric sort, with the non-numeric 'XX' draft last
+// sorting in - explicit numeric sort (every key here is numeric, but kept
+// generic rather than assuming that stays true forever)
 const luds = Object.keys(LUD_TITLES).sort((a, b) => {
   const na = Number(a)
   const nb = Number(b)
