@@ -1074,6 +1074,22 @@ body.dragging-note {
 
 // ---- trusted mints page ----
 
+// manual add (left) vs. public-mint picker + the trusted list itself
+// (right) - collapses to a single column on narrow screens, same
+// breakpoint the nav's own mobile layout switches at
+.mints-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  align-items: start;
+  gap: 21px;
+}
+
+@media (max-width: 700px) {
+  .mints-columns {
+    grid-template-columns: 1fr;
+  }
+}
+
 .mint-list {
   display: flex;
   flex-wrap: wrap;

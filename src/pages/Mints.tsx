@@ -71,115 +71,132 @@ const Mints: Component = () => {
         a bearer note from is trusted automatically and can't be removed;
         anything else here you added yourself, and can remove again.
       </p>
-      <figure class="setup-card">
-        <h4>Add a mint manually</h4>
-        <label>Server</label>
-        <input
-          type="text"
-          placeholder="mint.example.com"
-          value={server()}
-          onInput={e => setServer(e.currentTarget.value)}
-        />
-        <label>Signing key (33-byte compressed pubkey, hex)</label>
-        <input
-          type="text"
-          placeholder="02..."
-          value={pubkey()}
-          onInput={e => setPubkey(e.currentTarget.value)}
-        />
-        <div class="btns">
-          <button onClick={add}>
-            <IoAddCircleSharp />
-            &nbsp;Add mint
-          </button>
+      <div class="mints-columns">
+        <div class="mints-col">
+          <figure class="setup-card">
+            <h4>Add a mint manually</h4>
+            <label>Server</label>
+            <input
+              type="text"
+              placeholder="mint.example.com"
+              value={server()}
+              onInput={e => setServer(e.currentTarget.value)}
+            />
+            <label>Signing key (33-byte compressed pubkey, hex)</label>
+            <input
+              type="text"
+              placeholder="02..."
+              value={pubkey()}
+              onInput={e => setPubkey(e.currentTarget.value)}
+            />
+            <div class="btns">
+              <button onClick={add}>
+                <IoAddCircleSharp />
+                &nbsp;Add mint
+              </button>
+            </div>
+          </figure>
         </div>
-      </figure>
-      <figure class="setup-card">
-        <h4>Public mints</h4>
-        <p>
-          A small curated list, for a quick start - looks up and trusts the
-          mint's published signing key in one step.
-        </p>
-        <div class="mint-picker">
-          <For each={PUBLIC_MINTS}>
-            {address => {
-              const url = resolveMintInput(address)
-              const alreadyTrusted = () => !!url && isMintTrusted(serverOf(url))
-              return (
-                <button
-                  disabled={
-                    trusting() === address || alreadyTrusted() || offlineMode()
-                  }
-                  title={
-                    offlineMode()
-                      ? 'Offline mode is on'
-                      : alreadyTrusted()
-                        ? 'Already in your trusted list'
-                        : ''
-                  }
-                  onClick={() => trustPublicMint(address)}
-                >
-                  <Show when={alreadyTrusted()}>
-                    <IoLockClosedSharp />
-                    &nbsp;
-                  </Show>
-                  {address}
-                </button>
-              )
-            }}
-          </For>
+        <div class="mints-col">
+          <figure class="setup-card">
+            <h4>Public mints</h4>
+            <p>
+              A small curated list, for a quick start - looks up and trusts the
+              mint's published signing key in one step.
+            </p>
+            <div class="mint-picker">
+              <For each={PUBLIC_MINTS}>
+                {address => {
+                  const url = resolveMintInput(address)
+                  const alreadyTrusted = () =>
+                    !!url && isMintTrusted(serverOf(url))
+                  return (
+                    <button
+                      disabled={
+                        trusting() === address ||
+                        alreadyTrusted() ||
+                        offlineMode()
+                      }
+                      title={
+                        offlineMode()
+                          ? 'Offline mode is on'
+                          : alreadyTrusted()
+                            ? 'Already in your trusted list'
+                            : ''
+                      }
+                      onClick={() => trustPublicMint(address)}
+                    >
+                      <Show when={alreadyTrusted()}>
+                        <IoLockClosedSharp />
+                        &nbsp;
+                      </Show>
+                      {address}
+                    </button>
+                  )
+                }}
+              </For>
+            </div>
+          </figure>
+          <h4>Trusted mints</h4>
+          <p>
+            Every signing key this wallet actually checks notes against - added
+            above, looked up manually, or picked up automatically the moment you
+            hold a note from that mint.
+          </p>
+          <Show
+            when={trustedMints().length > 0}
+            fallback={<p>No trusted mints yet.</p>}
+          >
+            <div class="mint-list">
+              <For each={trustedMints()}>
+                {mint => (
+                  <figure class="mint-card">
+                    <h4>{mint.server}</h4>
+                    <p class="mint-pubkey">{mint.mintPubkey}</p>
+                    <p class="mint-date">added {formatDate(mint.addedAt)}</p>
+                    <Show
+                      when={!mint.locked}
+                      fallback={
+                        <p class="mint-locked">
+                          <IoLockClosedSharp />
+                          &nbsp;trusted - you hold a bearer note from here
+                        </p>
+                      }
+                    >
+                      <Show
+                        when={confirmDelete() === mint.server}
+                        fallback={
+                          <div class="btns">
+                            <button
+                              onClick={() => setConfirmDelete(mint.server)}
+                            >
+                              <IoTrashSharp />
+                              &nbsp;Remove
+                            </button>
+                          </div>
+                        }
+                      >
+                        <p class="warning">
+                          Remove this mint? Its notes will no longer show as
+                          offline-verified.
+                        </p>
+                        <div class="btns">
+                          <button onClick={() => remove(mint.server)}>
+                            Yes, remove
+                          </button>
+                          <button onClick={() => setConfirmDelete(null)}>
+                            Cancel
+                          </button>
+                        </div>
+                      </Show>
+                    </Show>
+                  </figure>
+                )}
+              </For>
+            </div>
+          </Show>
         </div>
-      </figure>
-      <Show
-        when={trustedMints().length > 0}
-        fallback={<p>No trusted mints yet.</p>}
-      >
-        <div class="mint-list">
-          <For each={trustedMints()}>
-            {mint => (
-              <figure class="mint-card">
-                <h4>{mint.server}</h4>
-                <p class="mint-pubkey">{mint.mintPubkey}</p>
-                <p class="mint-date">added {formatDate(mint.addedAt)}</p>
-                <Show
-                  when={!mint.locked}
-                  fallback={
-                    <p class="mint-locked">
-                      <IoLockClosedSharp />
-                      &nbsp;trusted - you hold a bearer note from here
-                    </p>
-                  }
-                >
-                  <Show
-                    when={confirmDelete() === mint.server}
-                    fallback={
-                      <div class="btns">
-                        <button onClick={() => setConfirmDelete(mint.server)}>
-                          <IoTrashSharp />
-                          &nbsp;Remove
-                        </button>
-                      </div>
-                    }
-                  >
-                    <p class="warning">
-                      Remove this mint? Its notes will no longer show as
-                      offline-verified.
-                    </p>
-                    <div class="btns">
-                      <button onClick={() => remove(mint.server)}>
-                        Yes, remove
-                      </button>
-                      <button onClick={() => setConfirmDelete(null)}>
-                        Cancel
-                      </button>
-                    </div>
-                  </Show>
-                </Show>
-              </figure>
-            )}
-          </For>
-        </div>
-      </Show>
+      </div>
     </div>
   )
 }
