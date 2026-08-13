@@ -1,10 +1,6 @@
 import type {Component, JSX} from 'solid-js'
 import {Show, createMemo, createSignal} from 'solid-js'
 import {
-  IoCopySharp,
-  IoEyeSharp,
-  IoEyeOffSharp,
-  IoQrCodeSharp,
   IoRefreshSharp,
   IoGitBranchSharp,
   IoTrashSharp,
@@ -19,7 +15,6 @@ import type {Bearer} from '../storage'
 import {useWallet} from '../WalletContext'
 import type {SplitResult} from '../lnurlcash'
 import {
-  toBech32Lnurl,
   noteK1,
   noteSignature,
   serverOf,
@@ -31,7 +26,6 @@ import {
   settleNote
 } from '../lnurlcash'
 import {
-  copyToClipboard,
   msatToSats,
   formatDate,
   formatRelativeTime,
@@ -40,7 +34,6 @@ import {
 } from '../helpers'
 import {getTrustedMintPubkey} from '../trustedMints'
 import {offlineMode} from '../offlineMode'
-import Qr from './Qr'
 
 type Action = 'split' | null
 
@@ -61,19 +54,6 @@ export type BearerCardProps = {
 
 const BearerCard: Component<BearerCardProps> = props => {
   const {updateBearer, removeBearer, addBearer, logActivity} = useWallet()
-  // the QR is the bearer note itself, so revealing it is two deliberate
-  // steps: the corner toggle brings back the space for it at all (mostly to
-  // avoid every card in a long list reserving a square of space it won't
-  // need, especially on mobile), then it still sits behind its own overlay
-  // until tapped, so it can't be flashed on screen by one careless tap.
-  // revealed always resets on the way back out, so showing it again later
-  // starts covered too, not wherever it was left off
-  const [showQr, setShowQr] = createSignal(false)
-  const [revealed, setRevealed] = createSignal(false)
-  const toggleShowQr = () => {
-    setShowQr(v => !v)
-    setRevealed(false)
-  }
   const [action, setAction] = createSignal<Action>(null)
   const [busy, setBusy] = createSignal(false)
   const [splitSats, setSplitSats] = createSignal('')
@@ -83,7 +63,6 @@ const BearerCard: Component<BearerCardProps> = props => {
   const [editingLabel, setEditingLabel] = createSignal(false)
   const [labelInput, setLabelInput] = createSignal('')
 
-  const token = () => toBech32Lnurl(props.bearer.url)
   const k1 = () => noteK1(props.bearer.url) || ''
   const hasCallback = () => props.bearer.callback !== ''
   const isSpent = () => !!props.bearer.spent
@@ -416,20 +395,6 @@ const BearerCard: Component<BearerCardProps> = props => {
           </div>
         </div>
       </Show>
-      <Show when={showQr()}>
-        <div class="qr-wrapper">
-          <Qr value={token()} />
-          <Show when={!revealed()}>
-            <button
-              class="qr-overlay"
-              title="Show QR code - it IS the bearer note, anyone who scans it can spend it"
-              onClick={() => setRevealed(true)}
-            >
-              <IoEyeSharp />
-            </button>
-          </Show>
-        </div>
-      </Show>
       <div class="btns">
         <button
           class="icon-btn"
@@ -457,22 +422,6 @@ const BearerCard: Component<BearerCardProps> = props => {
           onClick={startEditLabel}
         >
           <IoPencilSharp />
-        </button>
-        <button
-          class="icon-btn"
-          title={showQr() ? 'Hide QR code' : 'Show QR code'}
-          onClick={toggleShowQr}
-        >
-          <Show when={showQr()} fallback={<IoQrCodeSharp />}>
-            <IoEyeOffSharp />
-          </Show>
-        </button>
-        <button
-          class="icon-btn"
-          title="Copy note (bech32 LNURL)"
-          onClick={() => copyToClipboard(token())}
-        >
-          <IoCopySharp />
         </button>
         <div class="bearer-actions">
           <Show

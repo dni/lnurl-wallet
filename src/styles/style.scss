@@ -492,27 +492,6 @@ pre {
   background: rgba($bg, 0.85);
   border-radius: 5px;
 }
-.qr-wrapper {
-  position: relative;
-  display: inline-block;
-}
-.qr-overlay {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin: 0;
-  border-radius: 0;
-  background: rgba($bg, 0.9);
-  backdrop-filter: blur(6px);
-  font-size: 1.8em;
-  color: $font-color;
-  &:hover {
-    background: rgba($bg, 0.95);
-  }
-}
-
 // ---- paste widget (same structure as lnurl_server's Paste) ----
 
 .paste-widget {
@@ -1030,7 +1009,8 @@ body.dragging-note {
 // bigger select-to-combine hit targets than the checkbox alone (see
 // BearerCard's toggleSelect) - not a global utility class, scoped here
 .bearer-amount.clickable,
-.bearer-server.clickable {
+.bearer-server.clickable,
+.bearer-title.clickable {
   cursor: pointer;
 }
 

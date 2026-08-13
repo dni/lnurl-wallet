@@ -593,24 +593,48 @@ const Melt: Component = () => {
                   {([server, group]) => (
                     <div class="form-item">
                       <label>{server}</label>
-                      <For each={group}>
-                        {bearer => (
-                          <label>
-                            <input
-                              type="checkbox"
-                              checked={selectedIds().has(bearer.id)}
-                              disabled={!bearer.callback}
-                              onChange={e =>
-                                toggleSelect(bearer.id, e.currentTarget.checked)
-                              }
-                            />
-                            &nbsp;{msatToSats(bearer.amount)} sats
-                            <Show when={!bearer.callback}>
-                              &nbsp;(not verified yet)
-                            </Show>
-                          </label>
-                        )}
-                      </For>
+                      <div class="bearer-list">
+                        <For each={group}>
+                          {bearer => (
+                            <figure class="bearer-card">
+                              <div class="bearer-head">
+                                <label class="bearer-select">
+                                  <input
+                                    type="checkbox"
+                                    checked={selectedIds().has(bearer.id)}
+                                    disabled={!bearer.callback}
+                                    onChange={e =>
+                                      toggleSelect(
+                                        bearer.id,
+                                        e.currentTarget.checked
+                                      )
+                                    }
+                                  />
+                                </label>
+                                <div
+                                  class="bearer-title clickable"
+                                  onClick={() =>
+                                    bearer.callback &&
+                                    toggleSelect(
+                                      bearer.id,
+                                      !selectedIds().has(bearer.id)
+                                    )
+                                  }
+                                >
+                                  <span class="bearer-amount">
+                                    {msatToSats(bearer.amount)} sats
+                                  </span>
+                                  <Show when={!bearer.callback}>
+                                    <span class="bearer-pending">
+                                      unverified
+                                    </span>
+                                  </Show>
+                                </div>
+                              </div>
+                            </figure>
+                          )}
+                        </For>
+                      </div>
                     </div>
                   )}
                 </For>
