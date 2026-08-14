@@ -215,9 +215,18 @@ export const serverOf = (url: string): string => {
 //   digest  = sha256(sha256("Lightning Signed Message:" || message))
 const LIGHTNING_SIGNED_MESSAGE_PREFIX = utf8ToBytes('Lightning Signed Message:')
 
+const hashK1 = (k1: string): string => bytesToHex(sha256(hexToBytes(k1)))
+
+// LUD-25: for a rotate/split/merge, WALLET - not SERVICE - generates the
+// replacement note's secret and discloses only its hash (h/h2 on the
+// callback) - a fresh 32-byte value, the same size an actual Lightning
+// payment preimage already is, though nothing is ever paid for it, it's
+// just drawn at random. SERVICE never sees, generates, or persists it.
+const generateNoteSecret = (): string =>
+  bytesToHex(crypto.getRandomValues(new Uint8Array(32)))
+
 const noteSignatureDigest = (k1: string, amountMsat: number): Uint8Array => {
-  const k1Hash = bytesToHex(sha256(hexToBytes(k1)))
-  const message = utf8ToBytes(`LNURLcash:${amountMsat}:${k1Hash}`)
+  const message = utf8ToBytes(`LNURLcash:${amountMsat}:${hashK1(k1)}`)
   return sha256(
     sha256(new Uint8Array([...LIGHTNING_SIGNED_MESSAGE_PREFIX, ...message]))
   )
@@ -336,10 +345,8 @@ export const fetchNoteInfo = async (
 
 export type WithdrawSuccessResponse = {
   status: 'OK'
-  k1?: string
-  change?: string
-  signature?: string
-  changeSignature?: string
+  sig?: string
+  sig2?: string
 }
 
 // thrown for the exact {"status":"ERROR","reason":"pending"} case (see
@@ -403,16 +410,21 @@ export type RotateResult = {k1: string; signature?: string}
 // rotate: burn k1, get a fresh secret of the same value - closes the window
 // in which any previous holder (or logged URL) could redeem the note. Also
 // how a wallet obtains a compact, offline-verifiable copy of a note that
-// doesn't have one yet (e.g. straight after minting).
+// doesn't have one yet (e.g. straight after minting). Per LUD-25, this
+// wallet - not the service - generates that fresh secret and discloses
+// only its hash (h): the service never sees, generates, or persists the
+// replacement note's raw secret, closing the prior-holder exposure a
+// server-generated one would otherwise reopen every time.
 export const rotateNote = async (
   callback: string,
   k1: string
 ): Promise<RotateResult> => {
-  const body = await callbackRequest(callback, [['k1', k1]])
-  if (typeof body.k1 !== 'string') {
-    throw new Error('Service did not return a replacement secret.')
-  }
-  return {k1: body.k1, signature: body.signature}
+  const newK1 = generateNoteSecret()
+  const body = await callbackRequest(callback, [
+    ['k1', k1],
+    ['h', hashK1(newK1)]
+  ])
+  return {k1: newK1, signature: body.sig}
 }
 
 export type SplitResult = {
@@ -422,41 +434,42 @@ export type SplitResult = {
   changeSignature?: string
 }
 
-// split: burn k1, mint one note worth `amountMsat` (response k1) and one
-// carrying the remainder (response change)
+// split: burn k1, mint one note worth `amountMsat` and one carrying the
+// remainder - both secrets wallet-generated per LUD-25 (see rotateNote),
+// disclosed as h/h2
 export const splitNote = async (
   callback: string,
   k1: string,
   amountMsat: number
 ): Promise<SplitResult> => {
+  const newK1 = generateNoteSecret()
+  const changeK1 = generateNoteSecret()
   const body = await callbackRequest(callback, [
     ['k1', k1],
-    ['amount', String(amountMsat)]
+    ['amount', String(amountMsat)],
+    ['h', hashK1(newK1)],
+    ['h2', hashK1(changeK1)]
   ])
-  if (typeof body.k1 !== 'string' || typeof body.change !== 'string') {
-    throw new Error('Service did not return the split notes.')
-  }
   return {
-    k1: body.k1,
-    signature: body.signature,
-    change: body.change,
-    changeSignature: body.changeSignature
+    k1: newK1,
+    signature: body.sig,
+    change: changeK1,
+    changeSignature: body.sig2
   }
 }
 
-// merge: burn all given notes, mint one worth their sum
+// merge: burn all given notes, mint one worth their sum - wallet-generated
+// secret per LUD-25 (see rotateNote), disclosed as h
 export const mergeNotes = async (
   callback: string,
   k1s: string[]
 ): Promise<RotateResult> => {
-  const body = await callbackRequest(
-    callback,
-    k1s.map((k1): [string, string] => ['k1', k1])
-  )
-  if (typeof body.k1 !== 'string') {
-    throw new Error('Service did not return a merged secret.')
-  }
-  return {k1: body.k1, signature: body.signature}
+  const newK1 = generateNoteSecret()
+  const body = await callbackRequest(callback, [
+    ...k1s.map((k1): [string, string] => ['k1', k1]),
+    ['h', hashK1(newK1)]
+  ])
+  return {k1: newK1, signature: body.sig}
 }
 
 export type SettledNote = {

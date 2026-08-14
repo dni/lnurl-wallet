@@ -53,10 +53,23 @@ const Docs: Component = () => {
           mutating operations go to the <code>callback</code> from that
           response:
         </p>
-        <pre>{`callback?k1=X&pr=<bolt11>    melt: X burned, pr (of exactly its value) paid
-callback?k1=X                rotate: X burned, fresh k1' of same value returned
-callback?k1=X&amount=<msat>  split: X burned, response carries k1 + change
-callback?k1=X&k1=Y           merge: all burned, one note worth the sum returned`}</pre>
+        <pre>{`callback?k1=X&pr=<bolt11>                melt: X burned, pr (of exactly its value) paid
+callback?k1=X&h=<sha256(X')>             rotate: X burned, a note keyed by h (same value) minted
+callback?k1=X&amount=<msat>&h=..&h2=..   split: X burned, notes keyed by h (amount) + h2 (change) minted
+callback?k1=X&k1=Y&h=<sha256(Z)>         merge: all burned, one note keyed by h (the sum) minted`}</pre>
+        <p>
+          For rotate/split/merge,{' '}
+          <strong>this wallet generates the new note's secret itself</strong>,
+          never the service - a fresh random 32-byte value, disclosed only as
+          its hash (<code>h</code>, and <code>h2</code> for a split's change
+          note). The service registers the note under that hash directly, so the
+          response carries no <code>k1</code>/<code>change</code> at all, just{' '}
+          <code>{`{"status":"OK"}`}</code> (plus <code>sig</code>/
+          <code>sig2</code> if it signs - see Offline verification below). The
+          service therefore never sees, generates, or persists the raw secret
+          for these - closing the "prior holder" exposure a server-generated
+          replacement would otherwise reopen on every single rotate.
+        </p>
         <p>
           Melt only ever takes a single <code>k1</code> - to melt several notes
           in one payment, merge them first. Its <code>{`{"status":"OK"}`}</code>{' '}
@@ -134,8 +147,9 @@ callback?k1=X&k1=Y           merge: all burned, one note worth the sum returned`
           online and can ask the service directly. A service{' '}
           <strong>MAY</strong> close that gap by publishing a{' '}
           <code>mintPubkey</code> on its withdrawRequest response and signing
-          each fresh secret it hands out (in the response to rotate, split or
-          merge - a freshly minted note has none until rotated once).
+          each fresh secret's hash on rotate, split or merge (the{' '}
+          <code>sig</code>/<code>sig2</code> in that callback's response - a
+          freshly minted note has none until rotated once).
         </p>
         <p>
           The signature is made the same way{' '}
@@ -148,10 +162,14 @@ callback?k1=X&k1=Y           merge: all burned, one note worth the sum returned`
           signs its auth seed phrase - a Lightning node's own{' '}
           <code>signmessage</code>:
         </p>
-        <pre>{`message = "LNURLcash:" || amount_msat (decimal) || ":" || hex(sha256(k1))
+        <pre>{`message = "LNURLcash:" || amount_msat (decimal) || ":" || h
 digest  = sha256(sha256("Lightning Signed Message:" || message))`}</pre>
         <p>
-          and travels as one extra query parameter on the note URL, ignored by
+          <code>h</code> here is exactly <code>hex(sha256(k1))</code> - the same
+          hash this wallet already handed the service on the callback request
+          for a new note, so the service signs precisely what it was given,
+          never a secret it had to derive itself. The signature then travels
+          alongside the note's own URL as one extra query parameter, ignored by
           wallets that don't check it:
         </p>
         <pre>{`lnurlw://mint.example/withdraw?k1=<secret>&amount=<msat>&sig=<hex>`}</pre>
