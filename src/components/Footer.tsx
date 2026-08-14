@@ -5,7 +5,7 @@ import {A} from '@solidjs/router'
 
 // the LUDs this wallet actually speaks: bech32 encoding, withdrawRequest,
 // seed derivation, payRequest, disposable/storeable links, Lightning
-// Address, raw schemes, LNURLcash
+// Address, raw schemes, verify, LNURLcash
 const LUD_TITLES: Record<string, string> = {
   '01': 'Base LNURL encoding and informational payloads',
   '03': 'withdrawRequest base spec',
@@ -14,6 +14,7 @@ const LUD_TITLES: Record<string, string> = {
   '11': 'Disposable and storeable payRequests',
   '16': 'Paying to static internet identifiers (Lightning Address)',
   '17': 'Protocol schemes and raw (non bech32-encoded) URLs',
+  '21': 'verify base spec - also LUD-25 melt proof',
   '25': 'LNURLcash - bearer assets (draft)'
 }
 
