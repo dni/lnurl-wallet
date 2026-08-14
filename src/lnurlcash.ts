@@ -326,7 +326,14 @@ export type WithdrawRequestInfo = {
 export const fetchNoteInfo = async (
   url: string
 ): Promise<WithdrawRequestInfo> => {
-  const body = await lnurlFetch(url)
+  // `sig` (offline verification) is only meaningful to a holder inspecting
+  // the note locally - the service already knows what it signed, so this
+  // GET has no use for it and it's dropped before the request goes out
+  // rather than sent along for nothing. `k1` (and `amount`, which the spec
+  // has the service ignore here anyway) are left as-is.
+  const reqUrl = new URL(url)
+  reqUrl.searchParams.delete('sig')
+  const body = await lnurlFetch(reqUrl)
   if (
     body?.tag !== 'withdrawRequest' ||
     typeof body.callback !== 'string' ||
