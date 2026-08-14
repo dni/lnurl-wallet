@@ -61,6 +61,19 @@ rather than assume success - refresh and further actions on it stay
 disabled until you unspend it again, e.g. if the payment turns out to have
 failed.
 
+A service MAY additionally attach a **melt proof** to that response -
+`pr` (the invoice this melt is paying, echoed back) and `verify`, a
+[LUD-21](https://github.com/lnurl/luds/blob/luds/21.md)-style URL that
+reports that outgoing payment's own settlement. Because a BOLT-11 `pr`
+commits to `payment_hash = sha256(preimage)`, anyone holding both `pr` and
+the `preimage` `verify` eventually returns - not just the service - can
+independently confirm the melt actually happened, the same kind of proof
+Offline verification gives a mint, but for the melt side. This wallet polls
+`verify` (same 5s cadence as its minting check) whenever a melt returns
+one, and treats a settled result as final confirmation the note is gone -
+services that don't offer it leave the note simply locked as spent, with
+no automatic way to learn its outcome beyond checking back later.
+
 **Minting**: a [LUD-06](https://github.com/lnurl/luds/blob/luds/06.md)
 payRequest advertising `withdrawLink` mints notes - the **payment
 preimage** of its paid invoice becomes a valid `k1` at that endpoint. This
@@ -150,7 +163,10 @@ what you hold.
 
 [lnurl-mint](https://github.com/dni/lnurl-mint) tracks this spec closely and
 implements offline verification when a funding source is configured
-(`mintPubkey` + signing via the node's own `signmessage`). Its `sign_note`
+(`mintPubkey` + signing via the node's own `signmessage`), and melt proof
+(`pr`/`verify` on a melt's response) when its `VERIFY_ENABLED` setting is
+on - the same toggle that gates advertising a mint invoice's own `verify`
+URL. Its `sign_note`
 used to send the recovery-id-leading byte layout rather than the spec
 text's trailing one; that's since been fixed to send the spec's `r ‖ s ‖
 recovery-id` layout directly (this wallet's dual-order tolerance - see

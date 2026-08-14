@@ -77,8 +77,22 @@ callback?k1=X&k1=Y&h=<sha256(Z)>         merge: all burned, one note keyed by h 
           confirmed spent yet: the service pays it out asynchronously and only
           finalizes the burn once that settles, restoring the note if it fails
           instead. The wallet locks a just-melted note as spent right away
-          rather than assume success - refresh and further actions on it stay
-          disabled until you unspend it again, e.g. if the payment turns out to
+          rather than assume success.
+        </p>
+        <p>
+          A service <strong>MAY</strong> attach a <strong>melt proof</strong> to
+          that response: <code>pr</code> (the invoice this melt is paying,
+          echoed back) and <code>verify</code>, a LUD-21-style URL reporting
+          that outgoing payment's own settlement. Because a BOLT-11{' '}
+          <code>pr</code> commits to{' '}
+          <code>payment_hash = sha256(preimage)</code>, anyone holding both{' '}
+          <code>pr</code> and the <code>preimage</code> <code>verify</code>{' '}
+          eventually returns - not just the service - can independently confirm
+          the melt happened. When a melt returns one, the wallet polls it (same
+          cadence as its minting check) and treats a settled result as final:
+          the note, already locked as spent, is confirmed gone. Without one, the
+          note stays locked with no automatic way to learn its outcome - use
+          "Unspend anyway" on the note's card if a payment ever turns out to
           have failed.
         </p>
         <ul>

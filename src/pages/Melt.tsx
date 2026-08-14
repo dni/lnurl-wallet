@@ -18,6 +18,7 @@ import {
   resolveMintInput,
   fetchPayRequest,
   requestInvoice,
+  fetchInvoiceVerification,
   decodeBolt11AmountMsat,
   serverOf,
   noteK1,
@@ -25,9 +26,7 @@ import {
   meltNote,
   mergeNotes,
   splitNote,
-  rotateNote,
-  settleNote,
-  PendingNoteError
+  settleNote
 } from '../lnurlcash'
 import {
   notify,
@@ -46,8 +45,9 @@ import ScanToggle from '../components/ScanToggle'
 import RequireWallet from '../components/RequireWallet'
 import SendNoteCard from '../components/SendNoteCard'
 
-// same cadence as Mint.tsx's LUD-21 verify poll - a melted note's fate
-// (settled vs failed) is discovered the same way here: try to rotate it
+// same cadence as Mint.tsx's LUD-21 verify poll - a melt's own LUD-25 melt
+// proof (see meltNote) is checked the same way that poll checks an
+// incoming payment
 const PENDING_POLL_SECONDS = 5
 
 const Melt: Component = () => {
@@ -77,9 +77,10 @@ const Melt: Component = () => {
   const [lnAddressAmountSats, setLnAddressAmountSats] = createSignal('')
   const [fetchingInvoice, setFetchingInvoice] = createSignal(false)
 
-  // set right after a melt is requested - polled by trying to rotate the
-  // (locally already spent-locked) note until we learn which way it went
+  // set right after a melt is requested, alongside the LUD-25 melt proof
+  // URL it returned - polled until that proof reports the payment settled
   const [pendingNote, setPendingNote] = createSignal<Bearer | null>(null)
+  const [meltVerifyUrl, setMeltVerifyUrl] = createSignal<string | null>(null)
   const [secondsLeft, setSecondsLeft] = createSignal(PENDING_POLL_SECONDS)
   const [checkingPending, setCheckingPending] = createSignal(false)
   let pollTimer: ReturnType<typeof setInterval> | null = null
@@ -90,47 +91,43 @@ const Melt: Component = () => {
   }
 
   // a melt's {"status":"OK"} only means the payment is in flight (see
-  // meltNote) - rotating the note is how its actual fate gets discovered:
-  // if the rotate itself SUCCEEDS, the note was still there to burn, so the
-  // melt must have failed - unspend it and swap in the fresh secret the
-  // rotate just minted. If the rotate FAILS with anything other than
-  // "pending" (unknown k1, already spent, ...), the note is genuinely gone,
-  // which is exactly what a settled melt looks like from the outside
+  // meltNote) - its melt proof (LUD-25's `verify`, only present when the
+  // service advertises one) is how its actual fate gets confirmed: once it
+  // reports `settled`, the outgoing payment went through for good, so the
+  // note (already locked as spent locally) really is gone. Unlike the old
+  // rotate-and-see probe, a not-yet-settled result never distinguishes
+  // "still in flight" from "failed" - a genuinely failed melt only shows up
+  // here as a check that keeps not reporting settled, same as one that's
+  // merely slow; the note can still be freed by hand (BearerCard's "Unspend
+  // anyway") if it's ever confirmed to have actually failed some other way
   const checkPending = async () => {
     const note = pendingNote()
-    if (!note || checkingPending()) return
+    const url = meltVerifyUrl()
+    if (!note || !url || checkingPending()) return
     setCheckingPending(true)
     try {
-      const rotated = await rotateNote(note.callback, noteK1(note.url)!)
+      const result = await fetchInvoiceVerification(url)
+      if (!result.settled) return // still in flight - next tick
       stopPolling()
       setPendingNote(null)
-      await updateBearer(note.id, {
-        url: withNewK1(note.url, rotated.k1, note.amount, rotated.signature),
-        spent: false
-      })
-      setSelectedIds(new Set([note.id]))
-      notify(
-        'Payment failed - the note is still yours (freshly rotated). Select it again to retry.',
-        NotifyKind.ERROR
-      )
-    } catch (err) {
-      if (err instanceof PendingNoteError) return // still in flight - next tick
-      stopPolling()
-      setPendingNote(null)
+      setMeltVerifyUrl(null)
       logActivity(
         'melt',
         `Melted ${msatToSats(note.amount)} sats from ${serverOf(note.url)} to pay an invoice.`
       )
       notify('Payment confirmed - the note is gone.', NotifyKind.SUCCESS)
       navigate('/wallet')
+    } catch {
+      // a single failed check isn't fatal - the next tick tries again
     } finally {
       setCheckingPending(false)
     }
   }
 
-  const startPolling = (note: Bearer) => {
+  const startPolling = (note: Bearer, verifyUrl: string) => {
     stopPolling()
     setPendingNote(note)
+    setMeltVerifyUrl(verifyUrl)
     setSecondsLeft(PENDING_POLL_SECONDS)
     pollTimer = setInterval(() => {
       setSecondsLeft(s => {
@@ -145,15 +142,16 @@ const Melt: Component = () => {
 
   // manual click: check right away, then restart the countdown so the next
   // automatic tick isn't immediately on its heels. checkPending's own guard
-  // stops a second concurrent rotate, but on its own that still lets a
-  // rapid double-click (or a click landing right as the automatic tick was
-  // about to fire) restart the interval twice in a row - guard here too so
-  // the whole "check + restart" action only happens once per click
+  // stops a second concurrent check, but on its own that still lets a rapid
+  // double-click (or a click landing right as the automatic tick was about
+  // to fire) restart the interval twice in a row - guard here too so the
+  // whole "check + restart" action only happens once per click
   const manualCheckPending = () => {
     if (checkingPending()) return
     checkPending()
     const note = pendingNote()
-    if (note) startPolling(note)
+    const url = meltVerifyUrl()
+    if (note && url) startPolling(note, url)
   }
 
   onCleanup(stopPolling)
@@ -320,6 +318,7 @@ const Melt: Component = () => {
   const clearInvoice = () => {
     stopPolling()
     setPendingNote(null)
+    setMeltVerifyUrl(null)
     setPastedInvoice(null)
     setSelectedIds(new Set<string>())
   }
@@ -362,13 +361,39 @@ const Melt: Component = () => {
     })
   }
 
+  // called right after meltNote locks a note as spent. If the service
+  // returned a LUD-25 melt proof, checkPending polls it to confirm
+  // settlement and redirects once it does - same as BearerCard's melt, the
+  // note stays in the wallet (locked) rather than being removed outright,
+  // in case that confirmation never arrives. Without one there's nothing
+  // to poll, so this treats the request as done right away: the note was
+  // already locked as spent, and BearerCard's "Unspend anyway" remains the
+  // way back if it later turns out the payment actually failed
+  const finishMelt = (note: Bearer, result: {verify?: string}) => {
+    if (result.verify) {
+      notify(
+        'Payment requested and the note is locked as spent - confirming...',
+        NotifyKind.LOADING
+      )
+      startPolling(note, result.verify)
+      return
+    }
+    logActivity(
+      'melt',
+      `Melted ${msatToSats(note.amount)} sats from ${serverOf(note.url)} to pay an invoice.`
+    )
+    notify(
+      "Payment requested and the note is locked as spent - this mint doesn't support checking automatically.",
+      NotifyKind.SUCCESS
+    )
+    navigate('/wallet')
+  }
+
   // melts the selected note(s) as-is - only valid once they're already
   // worth exactly the invoice (merged into one first if there's more than
   // one). Per meltNote's own semantics a resolved call only means the
-  // payment is in flight, not confirmed spent, so - same as BearerCard's
-  // melt - the note is left in the wallet rather than removed, but locked
-  // as spent so it can't be acted on again out from under it. checkPending
-  // then polls to find out how it actually went and redirects once it does
+  // payment is in flight, not confirmed spent - see finishMelt for what
+  // happens next
   const payInvoice = async () => {
     const invoice = pastedInvoice()
     const picked = selectedBearers()
@@ -376,14 +401,14 @@ const Melt: Component = () => {
     setPaying(true)
     try {
       const current = await mergeSelectionIfNeeded(picked)
-      await meltNote(current.callback, noteK1(current.url)!, invoice)
+      const result = await meltNote(
+        current.callback,
+        noteK1(current.url)!,
+        invoice
+      )
       await updateBearer(current.id, {spent: true})
       setSelectedIds(new Set<string>())
-      notify(
-        'Payment requested and the note is locked as spent - confirming...',
-        NotifyKind.LOADING
-      )
-      startPolling(current)
+      finishMelt(current, result)
     } catch (err) {
       notify((err as Error).message, NotifyKind.ERROR)
     } finally {
@@ -438,14 +463,10 @@ const Melt: Component = () => {
         verified: true,
         mintPubkey: merged.mintPubkey
       })
-      await meltNote(spend.callback, noteK1(spend.url)!, invoice)
+      const result = await meltNote(spend.callback, noteK1(spend.url)!, invoice)
       await updateBearer(spend.id, {spent: true})
       setSelectedIds(new Set<string>())
-      notify(
-        'Payment requested and the note is locked as spent - confirming...',
-        NotifyKind.LOADING
-      )
-      startPolling(spend)
+      finishMelt(spend, result)
     } catch (err) {
       notify((err as Error).message, NotifyKind.ERROR)
     } finally {
@@ -596,9 +617,9 @@ const Melt: Component = () => {
               <figure class="setup-card">
                 <figcaption>Confirming payment</figcaption>
                 <p class="bearer-hint">
-                  Trying to rotate the locked note to find out what happened:
-                  succeeding means it's still yours (the payment failed) -
-                  anything else means the service already burned it.
+                  Checking the mint's own melt proof (LUD-25) for this payment -
+                  once it reports the outgoing payment settled, the note is
+                  confirmed gone for good.
                 </p>
                 <div class="btns">
                   <button

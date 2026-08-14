@@ -37,7 +37,11 @@ import {msatToSats} from './helpers'
 // note isn't confirmed spent until it settles, and is restored to
 // outstanding if it fails (see meltNote). Any other callback naming a k1
 // that's mid-melt is rejected with {"status":"ERROR","reason":"pending"}
-// until it resolves one way or the other.
+// until it resolves one way or the other. A SERVICE MAY additionally prove
+// a melt happened by returning `pr`/`verify` on it (LUD-25 melt proof) -
+// a LUD-21-style URL that reports the outgoing payment's own settlement,
+// so its actual fate can be confirmed the same way Mint.tsx confirms an
+// incoming one, rather than by re-probing the note with a rotate.
 
 // ---- LUD-01 bech32 encoding ----
 
@@ -347,6 +351,10 @@ export type WithdrawSuccessResponse = {
   status: 'OK'
   sig?: string
   sig2?: string
+  // LUD-25 melt proof (optional): only present on a melt's response, and
+  // only when SERVICE advertises it - see meltNote
+  pr?: string
+  verify?: string
 }
 
 // thrown for the exact {"status":"ERROR","reason":"pending"} case (see
@@ -386,6 +394,14 @@ const callbackRequest = async (
   return body as WithdrawSuccessResponse
 }
 
+export type MeltResult = {
+  // LUD-25 melt proof (optional): a LUD-21-style URL SERVICE MAY return,
+  // proving this exact outgoing payment settled - see
+  // fetchInvoiceVerification. Absent unless SERVICE advertises it
+  // (lnurl-mint: only when VERIFY_ENABLED).
+  verify?: string
+}
+
 // melt: burn a single note, the service pays `pr` of exactly its value -
 // merge first to melt several notes in one payment (the spec dropped
 // multi-k1 melt). `{"status":"OK"}` here only means the payment is now in
@@ -398,11 +414,12 @@ export const meltNote = async (
   callback: string,
   k1: string,
   pr: string
-): Promise<void> => {
-  await callbackRequest(callback, [
+): Promise<MeltResult> => {
+  const body = await callbackRequest(callback, [
     ['k1', k1],
     ['pr', pr.trim()]
   ])
+  return {verify: body.verify}
 }
 
 export type RotateResult = {k1: string; signature?: string}
