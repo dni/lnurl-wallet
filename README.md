@@ -204,6 +204,14 @@ from any subpath - no server configuration needed. The displayed version
 (footer) is read straight from the nearest git tag at build time (see
 `scripts/git-version.mjs`), not a hand-bumped `package.json` field.
 
+Once that deploy succeeds, the same workflow's `release` job creates a
+**GitHub Release** for the tag (`gh release create --generate-notes`), with
+its changelog auto-generated from the commits/PRs merged since the previous
+tag - nothing to write by hand. The release also carries the exact `dist/`
+that got published, packaged as `lnurl-wallet-vX.Y.Z.tar.gz`, alongside a
+`.sha256` file for verifying it - a static-hosting-independent way to fetch
+and confirm a given version's build artifact.
+
 ## License
 
 MIT
