@@ -296,6 +296,28 @@ export const WalletProvider = (props: {children: JSX.Element}) => {
     onCleanup(() => clearInterval(interval))
   })
 
+  // warns before a refresh, tab close, or navigating away while unlocked
+  // and encrypted - aesKey lives in memory only (see activate/lock above),
+  // so any of those effectively re-locks the wallet, requiring the
+  // password again to get back in. Skipped for a plaintext-stored key,
+  // which just silently re-unlocks itself on load (see the onMount above)
+  // - nothing is actually at stake there, so nothing to warn about
+  createEffect(() => {
+    if (state() !== 'unlocked' || !savedKeyIsEncrypted()) return
+    const warnBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault()
+      // legacy assignment some browsers still require to trigger the
+      // native confirm prompt at all - the string itself is ignored by
+      // every modern browser, which shows its own generic "leave site?"
+      // wording instead (a security measure against fake warning text)
+      e.returnValue = ''
+    }
+    window.addEventListener('beforeunload', warnBeforeUnload)
+    onCleanup(() =>
+      window.removeEventListener('beforeunload', warnBeforeUnload)
+    )
+  })
+
   onMount(() => {
     // once the warning is up, passive activity (just moving the mouse
     // toward the toast) is deliberately ignored - only its own "Stay
