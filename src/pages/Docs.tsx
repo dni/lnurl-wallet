@@ -21,10 +21,10 @@ const Docs: Component = () => {
         <h3>
           LNURLcash bearer notes (
           <a
-            href="https://github.com/lnurl/luds/blob/663264923edf3e8e8fc22835a68ef98238b8d692/XX.md"
+            href="https://github.com/lnurl/luds/blob/lnurlcash/25.md"
             target="_blank"
           >
-            LUD-XX draft
+            LUD-25 draft
           </a>
           )
         </h3>

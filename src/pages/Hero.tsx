@@ -45,7 +45,7 @@ const Hero: Component = () => {
       <section class="hero-features">
         <div class="hero-feature">
           <IoCashSharp />
-          <h3>Bearer notes (LUD-XX)</h3>
+          <h3>Bearer notes (LUD-25)</h3>
           <p>
             A note is a plain LNURL-withdraw link whose k1 is the asset -
             whoever holds it controls the sats. Any wallet can cash one out;

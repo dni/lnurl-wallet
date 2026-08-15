@@ -179,7 +179,7 @@ describe('bolt11 invoice', () => {
   })
 })
 
-describe('LUD-XX mint fees', () => {
+describe('LUD-25 mint fees', () => {
   it('parses the flat and ppm components from a metadata entry', () => {
     const metadata = JSON.stringify([
       ['text/plain', 'a mint'],
@@ -266,7 +266,7 @@ describe('offline signature verification', () => {
     return bytesToHex(new Uint8Array([...libSig.subarray(1), libSig[0]]))
   }
 
-  it('verifies a signature made per the LUD-XX Lightning-signmessage scheme', () => {
+  it('verifies a signature made per the LUD-25 Lightning-signmessage scheme', () => {
     const priv = secp256k1.utils.randomSecretKey()
     const pubHex = bytesToHex(secp256k1.getPublicKey(priv, true))
     const amountMsat = 21000

@@ -1,6 +1,6 @@
 import {createSignal} from 'solid-js'
 
-// A mint's signing key (LUD-XX Offline verification's `mintPubkey`) - not a
+// A mint's signing key (LUD-25 Offline verification's `mintPubkey`) - not a
 // secret, just a public identity, so this is plain unencrypted localStorage,
 // unlike bearer notes. A module-level signal (not wrapped behind
 // WalletContext) so plain utility code - receive.ts in particular - can

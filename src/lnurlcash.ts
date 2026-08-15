@@ -5,43 +5,35 @@ import {bytesToHex, hexToBytes, utf8ToBytes} from '@noble/hashes/utils.js'
 import {offlineMode} from './offlineMode'
 import {msatToSats} from './helpers'
 
-// LUD-XX LNURLcash - bearer assets (draft, see luds/XX.md).
+// LUD-25 LNURLcash - bearer assets. Draft spec:
+// https://github.com/lnurl/luds/blob/lnurlcash/25.md
 //
 // A bearer note is an ordinary LUD-03 withdrawRequest link whose k1 *is*
-// the asset: lnurlw://host/path?k1=<secret>&amount=<msat>, encodable as a
-// plain bech32 LNURL. No new endpoint, no new encoding. A GET on the note's
-// LNURL is purely informational (never burns; `amount` is ignored there -
-// it's a claim by whoever encoded the note, the authoritative value is
-// always maxWithdrawable). Every mutating operation goes to the `callback`
-// URL from the withdrawRequest JSON:
+// the asset. No new endpoint, no new encoding. A GET on the note's LNURL
+// is purely informational (the authoritative value is always
+// maxWithdrawable, never the URL's own `amount`); every mutating op goes
+// to the `callback` from that response:
 //
-//   callback?k1=X&pr=<bolt11>    melt: X burned, pr (of exactly its value) paid
-//   callback?k1=X                rotate: X burned, {..., k1: X'} minted, same value
-//   callback?k1=X&amount=<msat>  split: X burned, {..., k1, change} minted
-//   callback?k1=X&k1=Y..         merge: all burned, {..., k1} worth their sum
+//   callback?k1=X&pr=<bolt11>              melt: X burned, pr (of exactly its value) paid
+//   callback?k1=X&h=<sha256(X')>           rotate: X burned, a note keyed by h minted, same value
+//   callback?k1=X&amount=<msat>&h&h2       split: X burned, notes keyed by h (amount) + h2 (change) minted
+//   callback?k1=X&k1=Y..&h=<sha256(Z)>     merge: all burned, one note keyed by h minted, worth their sum
 //
-// (multiple k1 + pr - "merged melt" - was removed from the spec: merge
-// first to melt several notes in one payment.)
+// `h`/`h2` are hashes of secrets this wallet generates itself, never
+// SERVICE (see generateNoteSecret) - the response carries no new k1, just
+// {"status":"OK"} (plus sig/sig2, see Offline verification below).
 //
 // Minting: a LUD-06 payRequest may advertise `withdrawLink` (raw LUD-17 URL
 // of the withdraw endpoint) - the payment preimage of its paid invoice
-// becomes a valid k1 there, so withdrawLink?k1=<preimage>&amount=<msat> is
-// the note.
-//
-// Offline verification (optional): a SERVICE MAY publish a `mintPubkey`
-// (33-byte compressed secp256k1, hex) on the withdrawRequest response and
-// sign rotated/split/merged notes, letting a holder verify issuer+amount
-// without contacting SERVICE. See verifyNoteSignature below.
+// becomes a valid k1 there.
 //
 // A melt's {"status":"OK"} only means the payment is now in flight - the
 // note isn't confirmed spent until it settles, and is restored to
 // outstanding if it fails (see meltNote). Any other callback naming a k1
 // that's mid-melt is rejected with {"status":"ERROR","reason":"pending"}
-// until it resolves one way or the other. A SERVICE MAY additionally prove
-// a melt happened by returning `pr`/`verify` on it (LUD-25 melt proof) -
-// a LUD-21-style URL that reports the outgoing payment's own settlement,
-// so its actual fate can be confirmed the same way Mint.tsx confirms an
-// incoming one, rather than by re-probing the note with a rotate.
+// until it resolves one way or the other. SERVICE MAY additionally prove a
+// melt happened via a `pr`/`verify` melt proof (LUD-21-style), so its fate
+// can be confirmed without re-probing the note with a rotate.
 
 // ---- LUD-01 bech32 encoding ----
 
@@ -555,7 +547,7 @@ export type PayRequestInfo = {
   minSendable: number
   maxSendable: number
   metadata: string
-  // LUD-XX: present when paying this mints a bearer note - the payment
+  // LUD-25: present when paying this mints a bearer note - the payment
   // preimage becomes a valid k1 at this (raw LUD-17) withdraw endpoint
   withdrawLink?: string
   // rarely present here in practice: a WALLET that pays the invoice can
@@ -565,13 +557,13 @@ export type PayRequestInfo = {
   // merged notes. Kept optional here too since nothing forbids a SERVICE
   // from including it anyway.
   mintPubkey?: string
-  // LUD-XX (optional): parsed from metadata (see parseMintFee) - absent
+  // LUD-25 (optional): parsed from metadata (see parseMintFee) - absent
   // means SERVICE didn't advertise one, which the spec says to read as
   // fee-free, not "unknown"
   mintFee?: MintFee
 }
 
-// LUD-XX mint fees (optional): SERVICE signals what it withholds on minting
+// LUD-25 mint fees (optional): SERVICE signals what it withholds on minting
 // via an extra ["text/plain", "Mint fees: <base_fee_msat>,<fee_percent_ppm>"]
 // entry in a payRequest's metadata array, so a WALLET can warn the payer up
 // front that the note it ends up holding may be worth less than the invoice

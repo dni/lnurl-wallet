@@ -76,7 +76,7 @@ const VERIFY_POLL_SECONDS = 5
 // just fails normally and the holder can type the real address by hand.
 const guessMintAddress = (server: string): string => `mint@${server}`
 
-// LUD-XX minting: pay a payRequest that advertises `withdrawLink` - the
+// LUD-25 minting: pay a payRequest that advertises `withdrawLink` - the
 // payment preimage IS the bearer secret. This wallet has no node of its
 // own, so the invoice is paid externally and the preimage (which every
 // Lightning wallet reveals after a successful payment) is claimed here -
@@ -263,7 +263,7 @@ const Mint: Component = () => {
   }
 
   // what amountSats() is typed as is the note value the holder wants to end
-  // up with, not the invoice amount - if the mint advertises a fee (LUD-XX,
+  // up with, not the invoice amount - if the mint advertises a fee (LUD-25,
   // see mintFee on PayRequestInfo) those diverge, so the actual invoice
   // requested is grossed up to net exactly the typed amount once the fee
   // comes out. Bounds are checked against the grossed-up amount, since
