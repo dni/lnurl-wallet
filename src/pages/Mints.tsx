@@ -9,15 +9,13 @@ import {
   isMintTrusted,
   PUBLIC_MINTS
 } from '../trustedMints'
-import {resolveMintInput, fetchPayRequest, serverOf} from '../lnurlcash'
+import {resolveMintInput, serverOf} from '../lnurlcash'
 import {notify, NotifyKind, formatDate} from '../helpers'
-import {offlineMode} from '../offlineMode'
 
 const Mints: Component = () => {
   const [server, setServer] = createSignal('')
   const [pubkey, setPubkey] = createSignal('')
   const [confirmDelete, setConfirmDelete] = createSignal<string | null>(null)
-  const [trusting, setTrusting] = createSignal<string | null>(null)
 
   const add = () => {
     try {
@@ -40,27 +38,6 @@ const Mints: Component = () => {
     }
   }
 
-  // looks the address up to fetch its published signing key, same as
-  // Mint.tsx's own lookup - this list is just addresses, not server+pubkey
-  // pairs, so there's no key to trust until this call comes back
-  const trustPublicMint = async (address: string) => {
-    setTrusting(address)
-    try {
-      const url = resolveMintInput(address)
-      if (!url) throw new Error('Could not resolve this mint address.')
-      const info = await fetchPayRequest(url)
-      if (!info.mintPubkey) {
-        throw new Error('This mint does not publish a signing key.')
-      }
-      addTrustedMint(serverOf(url), info.mintPubkey)
-      notify('Mint added to your trusted list.', NotifyKind.SUCCESS)
-    } catch (err) {
-      notify((err as Error).message, NotifyKind.ERROR)
-    } finally {
-      setTrusting(null)
-    }
-  }
-
   return (
     <div id="mints" class="page">
       <h2>Trusted mints</h2>
@@ -76,37 +53,46 @@ const Mints: Component = () => {
           <figure class="setup-card">
             <h4>Public mints</h4>
             <p>
-              A small curated list, for a quick start - looks up and trusts the
-              mint's published signing key in one step.
+              A small curated list, for a quick start - opens the mint's own
+              site in a new tab so you can look it up before trusting it
+              manually below.
             </p>
             <div class="mint-picker">
+              {/* opens the mint's site rather than fetching its payRequest
+              and auto-trusting whatever signing key came back (the previous
+              behavior here): per LUD-25, a mintPubkey is only guaranteed at
+              the withdraw endpoint used for a rotated/split/merged note, not
+              necessarily the payRequest a bare address resolves to - a
+              perfectly spec-compliant mint could 404 there with a confusing
+              "does not publish a signing key" error. Mint.tsx's own lookup
+              already handles that correctly (it only offers a trust prompt
+              when a pubkey is actually present); this list just points at
+              the site instead of guessing. */}
               <For each={PUBLIC_MINTS}>
                 {address => {
                   const url = resolveMintInput(address)
                   const alreadyTrusted = () =>
                     !!url && isMintTrusted(serverOf(url))
                   return (
-                    <button
-                      disabled={
-                        trusting() === address ||
-                        alreadyTrusted() ||
-                        offlineMode()
-                      }
-                      title={
-                        offlineMode()
-                          ? 'Offline mode is on'
-                          : alreadyTrusted()
-                            ? 'Already in your trusted list'
-                            : ''
-                      }
-                      onClick={() => trustPublicMint(address)}
-                    >
-                      <Show when={alreadyTrusted()}>
-                        <IoLockClosedSharp />
-                        &nbsp;
-                      </Show>
-                      {address}
-                    </button>
+                    <Show when={url}>
+                      <a
+                        class="link-btn"
+                        href={`https://${serverOf(url!)}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        title={
+                          alreadyTrusted()
+                            ? 'Already in your trusted list - opens its site'
+                            : "Open this mint's site"
+                        }
+                      >
+                        <Show when={alreadyTrusted()}>
+                          <IoLockClosedSharp />
+                          &nbsp;
+                        </Show>
+                        {address}
+                      </a>
+                    </Show>
                   )
                 }}
               </For>
