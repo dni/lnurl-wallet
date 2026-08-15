@@ -145,33 +145,39 @@ const Transfer: Component = () => {
     })
   }
 
+  // when the selection is worth more than target, splits off the exact
+  // amount directly from every selected note in one request - split takes
+  // one or many k1s per LUD-25, so no merge round trip first. Only an exact
+  // match (no split needed) still goes through mergePrepareSelectionIfNeeded
   const prepareNote = async () => {
     const picked = prepareSelectedBearers()
     const target = prepareAmountMsat()
     if (!canPrepare() || target === null) return
     setPreparing(true)
     try {
-      let current = await mergePrepareSelectionIfNeeded(picked)
-      if (current.amount > target) {
+      const total = prepareSelectedTotal()
+      let current: Bearer
+      if (total > target) {
+        const base = picked[0]
         const parts = await splitNote(
-          current.callback,
-          noteK1(current.url)!,
+          base.callback,
+          picked.map(b => noteK1(b.url)!),
           target
         )
-        removeBearer(current.id)
-        // settleNote: the change may be worth less than current.amount -
-        // target if this mint charges fees (LUD-25 deducts them from
-        // change, never the prepared amount) - stored at its true value,
-        // not the naive pre-fee one, or its signature won't verify
+        for (const bearer of picked) removeBearer(bearer.id)
+        // settleNote: the change may be worth less than total - target if
+        // this mint charges fees (LUD-25 deducts them from change, never
+        // the prepared amount) - stored at its true value, not the naive
+        // pre-fee one, or its signature won't verify
         const settledChange = await settleNote(
-          current.url,
+          base.url,
           parts.change,
-          current.amount - target,
+          total - target,
           parts.changeSignature
         )
         await addBearer({
           url: withNewK1(
-            current.url,
+            base.url,
             settledChange.k1,
             settledChange.amountMsat,
             settledChange.signature
@@ -179,15 +185,17 @@ const Transfer: Component = () => {
           callback: settledChange.callback,
           amount: settledChange.amountMsat,
           verified: true,
-          mintPubkey: current.mintPubkey
+          mintPubkey: base.mintPubkey
         })
         current = await addBearer({
-          url: withNewK1(current.url, parts.k1, target, parts.signature),
-          callback: current.callback,
+          url: withNewK1(base.url, parts.k1, target, parts.signature),
+          callback: base.callback,
           amount: target,
           verified: true,
-          mintPubkey: current.mintPubkey
+          mintPubkey: base.mintPubkey
         })
+      } else {
+        current = await mergePrepareSelectionIfNeeded(picked)
       }
       setPreparedBearer(current)
       setPrepareSelectedIds(new Set<string>())

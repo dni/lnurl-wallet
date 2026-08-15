@@ -50,7 +50,7 @@ describe.runIf(!!process.env.MINT_K1)('against a live lnurl-mint', () => {
     expect(rotatedInfo.maxWithdrawable).toBe(21000)
 
     // split 6 sats off
-    const parts = await splitNote(received.callback, rotatedK1, 6000)
+    const parts = await splitNote(received.callback, [rotatedK1], 6000)
     const partInfo = await fetchNoteInfo(buildNoteUrl(WITHDRAW, parts.k1, 6000))
     const changeInfo = await fetchNoteInfo(
       buildNoteUrl(WITHDRAW, parts.change, 15000)

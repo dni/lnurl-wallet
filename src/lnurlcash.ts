@@ -16,7 +16,7 @@ import {msatToSats} from './helpers'
 //
 //   callback?k1=X&pr=<bolt11>              melt: X burned, pr (of exactly its value) paid
 //   callback?k1=X&h=<sha256(X')>           rotate: X burned, a note keyed by h minted, same value
-//   callback?k1=X&amount=<msat>&h&h2       split: X burned, notes keyed by h (amount) + h2 (change) minted
+//   callback?k1=X..&amount=<msat>&h&h2     split: one or many k1s burned, notes keyed by h (amount) + h2 (change) minted
 //   callback?k1=X&k1=Y..&h=<sha256(Z)>     merge: all burned, one note keyed by h minted, worth their sum
 //
 // `h`/`h2` are hashes of secrets this wallet generates itself, never
@@ -450,18 +450,20 @@ export type SplitResult = {
   changeSignature?: string
 }
 
-// split: burn k1, mint one note worth `amountMsat` and one carrying the
-// remainder - both secrets wallet-generated per LUD-25 (see rotateNote),
-// disclosed as h/h2
+// split: burn one or many k1s (LUD-25: "one or many | no | yes"), mint one
+// note worth `amountMsat` and one carrying the remainder of their combined
+// value - both secrets wallet-generated per LUD-25 (see rotateNote),
+// disclosed as h/h2. Splitting several notes at once needs no prior merge:
+// this burns all of them in a single request, same as mergeNotes does
 export const splitNote = async (
   callback: string,
-  k1: string,
+  k1s: string[],
   amountMsat: number
 ): Promise<SplitResult> => {
   const newK1 = generateNoteSecret()
   const changeK1 = generateNoteSecret()
   const body = await callbackRequest(callback, [
-    ['k1', k1],
+    ...k1s.map((k1): [string, string] => ['k1', k1]),
     ['amount', String(amountMsat)],
     ['h', hashK1(newK1)],
     ['h2', hashK1(changeK1)]

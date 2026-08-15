@@ -416,9 +416,13 @@ const Melt: Component = () => {
     }
   }
 
-  // for a selection worth more than the invoice: merges it into one note
-  // (if needed), splits off the exact amount owed - keeping the remainder
-  // as a fresh note - then melts that exact piece, all in one click
+  // for a selection worth more than the invoice: splits off the exact
+  // amount owed directly from every selected note - keeping the remainder
+  // as a fresh note - then melts that exact piece, all in one click. Split
+  // takes one or many k1s per LUD-25 ("one or many | no | yes"), so this
+  // burns the whole selection in a single callback request; no merge round
+  // trip first, unlike an exact-amount pay (see payInvoice/meltNote, which
+  // only ever takes a single k1 and still needs one)
   const splitAndPay = async () => {
     const invoice = pastedInvoice()
     const picked = selectedBearers()
@@ -427,26 +431,27 @@ const Melt: Component = () => {
     if (picked.length === 0) return
     setPaying(true)
     try {
-      const merged = await mergeSelectionIfNeeded(picked)
+      const base = picked[0]
+      const total = picked.reduce((sum, b) => sum + b.amount, 0)
       const parts = await splitNote(
-        merged.callback,
-        noteK1(merged.url)!,
+        base.callback,
+        picked.map(b => noteK1(b.url)!),
         target
       )
-      removeBearer(merged.id)
-      // settleNote: the change may be worth less than merged.amount -
-      // target if this mint charges fees (LUD-25 deducts them from
-      // change, never the melted amount) - stored at its true value, not
-      // the naive pre-fee one, or its signature won't verify against it
+      for (const bearer of picked) removeBearer(bearer.id)
+      // settleNote: the change may be worth less than total - target if
+      // this mint charges fees (LUD-25 deducts them from change, never the
+      // melted amount) - stored at its true value, not the naive pre-fee
+      // one, or its signature won't verify against it
       const settledChange = await settleNote(
-        merged.url,
+        base.url,
         parts.change,
-        merged.amount - target,
+        total - target,
         parts.changeSignature
       )
       await addBearer({
         url: withNewK1(
-          merged.url,
+          base.url,
           settledChange.k1,
           settledChange.amountMsat,
           settledChange.signature
@@ -454,14 +459,14 @@ const Melt: Component = () => {
         callback: settledChange.callback,
         amount: settledChange.amountMsat,
         verified: true,
-        mintPubkey: merged.mintPubkey
+        mintPubkey: base.mintPubkey
       })
       const spend = await addBearer({
-        url: withNewK1(merged.url, parts.k1, target, parts.signature),
-        callback: merged.callback,
+        url: withNewK1(base.url, parts.k1, target, parts.signature),
+        callback: base.callback,
         amount: target,
         verified: true,
-        mintPubkey: merged.mintPubkey
+        mintPubkey: base.mintPubkey
       })
       const result = await meltNote(spend.callback, noteK1(spend.url)!, invoice)
       await updateBearer(spend.id, {spent: true})

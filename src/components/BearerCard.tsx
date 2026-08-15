@@ -201,7 +201,7 @@ const BearerCard: Component<BearerCardProps> = props => {
         const expectedChange = currentAmount - msat
         let result: SplitResult
         try {
-          result = await splitNote(props.bearer.callback, currentK1, msat)
+          result = await splitNote(props.bearer.callback, [currentK1], msat)
         } catch (err) {
           try {
             const rotated = await rotateNote(props.bearer.callback, currentK1)
