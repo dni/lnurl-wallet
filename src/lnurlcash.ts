@@ -124,6 +124,21 @@ export const noteK1 = (url: string): string | null => {
   }
 }
 
+// like noteK1, but throws instead of returning null - a device-backed
+// bearer's url deliberately never carries a real k1 (see withoutK1), so
+// any call site about to use one for a mint mutation should call this
+// instead: it fails loudly and specifically rather than silently sending
+// a blank/wrong k1 to a mint
+export const requireNoteK1 = (url: string): string => {
+  const k1 = noteK1(url)
+  if (!k1) {
+    throw new Error(
+      'This note has no secret in the browser - it may be device-backed.'
+    )
+  }
+  return k1
+}
+
 // the amount a note *claims* to carry, straight from the URL - only a claim
 // by whoever encoded it (SERVICE ignores it at the informational endpoint),
 // safe to show before contacting SERVICE but not to be trusted without a
@@ -189,6 +204,23 @@ export const withNewK1 = (
 ): string => {
   const newUrl = new URL(url)
   newUrl.searchParams.set('k1', k1)
+  newUrl.searchParams.set('amount', String(amountMsat))
+  if (signature) newUrl.searchParams.set('sig', signature)
+  else newUrl.searchParams.delete('sig')
+  return newUrl.toString()
+}
+
+// like withNewK1, but deletes k1 instead of setting it - for re-deriving a
+// device-backed bearer's blank-mirror url from an existing note's own url
+// template (same host/path), after a rotate/split/merge whose fresh secret
+// now lives on the device, not in this browser
+export const withoutK1 = (
+  url: string,
+  amountMsat: number,
+  signature?: string
+): string => {
+  const newUrl = new URL(url)
+  newUrl.searchParams.delete('k1')
   newUrl.searchParams.set('amount', String(amountMsat))
   if (signature) newUrl.searchParams.set('sig', signature)
   else newUrl.searchParams.delete('sig')
@@ -421,6 +453,62 @@ export const meltNote = async (
   return {verify: body.verify}
 }
 
+// ---- hash-parameterized primitives ----
+//
+// The actual mint call behind rotate/split/merge, taking a hash the caller
+// already has instead of generating one itself. This is what LNURLvault
+// integration (see deviceOrchestration.ts) drives directly - a device's own
+// new_secret/new_secret_pair produces `h`/`h2` there, not this browser's
+// generateNoteSecret(). rotateNote/splitNote/mergeNotes below are just the
+// browser-generates-its-own-secret case of these.
+
+export type HashedMutationResult = {signature?: string}
+
+export const rotateNoteWithHash = async (
+  callback: string,
+  k1: string,
+  h: string
+): Promise<HashedMutationResult> => {
+  const body = await callbackRequest(callback, [
+    ['k1', k1],
+    ['h', h]
+  ])
+  return {signature: body.sig}
+}
+
+export type HashedSplitResult = {
+  signature?: string
+  changeSignature?: string
+}
+
+export const splitNoteWithHash = async (
+  callback: string,
+  k1s: string[],
+  amountMsat: number,
+  h: string,
+  h2: string
+): Promise<HashedSplitResult> => {
+  const body = await callbackRequest(callback, [
+    ...k1s.map((k1): [string, string] => ['k1', k1]),
+    ['amount', String(amountMsat)],
+    ['h', h],
+    ['h2', h2]
+  ])
+  return {signature: body.sig, changeSignature: body.sig2}
+}
+
+export const mergeNotesWithHash = async (
+  callback: string,
+  k1s: string[],
+  h: string
+): Promise<HashedMutationResult> => {
+  const body = await callbackRequest(callback, [
+    ...k1s.map((k1): [string, string] => ['k1', k1]),
+    ['h', h]
+  ])
+  return {signature: body.sig}
+}
+
 export type RotateResult = {k1: string; signature?: string}
 
 // rotate: burn k1, get a fresh secret of the same value - closes the window
@@ -436,11 +524,8 @@ export const rotateNote = async (
   k1: string
 ): Promise<RotateResult> => {
   const newK1 = generateNoteSecret()
-  const body = await callbackRequest(callback, [
-    ['k1', k1],
-    ['h', hashK1(newK1)]
-  ])
-  return {k1: newK1, signature: body.sig}
+  const result = await rotateNoteWithHash(callback, k1, hashK1(newK1))
+  return {k1: newK1, signature: result.signature}
 }
 
 export type SplitResult = {
@@ -462,17 +547,18 @@ export const splitNote = async (
 ): Promise<SplitResult> => {
   const newK1 = generateNoteSecret()
   const changeK1 = generateNoteSecret()
-  const body = await callbackRequest(callback, [
-    ...k1s.map((k1): [string, string] => ['k1', k1]),
-    ['amount', String(amountMsat)],
-    ['h', hashK1(newK1)],
-    ['h2', hashK1(changeK1)]
-  ])
+  const result = await splitNoteWithHash(
+    callback,
+    k1s,
+    amountMsat,
+    hashK1(newK1),
+    hashK1(changeK1)
+  )
   return {
     k1: newK1,
-    signature: body.sig,
+    signature: result.signature,
     change: changeK1,
-    changeSignature: body.sig2
+    changeSignature: result.changeSignature
   }
 }
 
@@ -483,11 +569,8 @@ export const mergeNotes = async (
   k1s: string[]
 ): Promise<RotateResult> => {
   const newK1 = generateNoteSecret()
-  const body = await callbackRequest(callback, [
-    ...k1s.map((k1): [string, string] => ['k1', k1]),
-    ['h', hashK1(newK1)]
-  ])
-  return {k1: newK1, signature: body.sig}
+  const result = await mergeNotesWithHash(callback, k1s, hashK1(newK1))
+  return {k1: newK1, signature: result.signature}
 }
 
 export type SettledNote = {

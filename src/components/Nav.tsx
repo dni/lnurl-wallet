@@ -11,13 +11,16 @@ import {
   IoSaveSharp,
   IoBookSharp,
   IoShieldCheckmarkSharp,
-  IoCloudOfflineSharp
+  IoCloudOfflineSharp,
+  IoHardwareChipSharp
 } from 'solid-icons/io'
 import {useWallet} from '../WalletContext'
+import {useDevice} from '../DeviceContext'
 import {offlineMode, setOfflineMode} from '../offlineMode'
 
 const Nav = () => {
   const {state, encrypted, lock} = useWallet()
+  const {connectionState} = useDevice()
   const navigate = useNavigate()
   const [menuOpen, setMenuOpen] = createSignal(false)
 
@@ -90,6 +93,17 @@ const Nav = () => {
           <A href="/mints" title="Trusted mints">
             <IoShieldCheckmarkSharp />
             <span class="nav-label">&nbsp;Mints</span>
+          </A>
+          <A
+            href="/vault"
+            title={
+              connectionState() === 'connected'
+                ? 'LNURLvault - connected'
+                : 'LNURLvault - pair a hardware device'
+            }
+          >
+            <IoHardwareChipSharp />
+            <span class="nav-label">&nbsp;Vault</span>
           </A>
           <A href="/docs" title="Documentation">
             <IoBookSharp />

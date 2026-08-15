@@ -252,11 +252,15 @@ h4 {
   }
 }
 
-// :where() keeps a.icon-btn's contribution to specificity at just `a` - so
-// .icon-btn below (and its own padding/margin overrides) still wins on an
-// <a>, exactly as it already does on a <button>
+// :where() keeps a.icon-btn/.link-btn's contribution to specificity at
+// just `a` - so .icon-btn below (and its own padding/margin overrides)
+// still wins on an <a>, exactly as it already does on a <button>. .link-btn
+// is the same idea for a plain text link that should just look like a
+// button (e.g. Mints.tsx's "open this mint's site" - a real <a
+// target="_blank">, not a button+window.open(), so ctrl/middle-click and
+// the browser's own link preview keep working)
 button,
-a:where(.icon-btn) {
+a:where(.icon-btn, .link-btn) {
   background-color: rgba($accent-base, $transparency);
   border-radius: 5px;
   color: $font-color;
@@ -1051,6 +1055,13 @@ body.dragging-note {
 
 .bearer-spent {
   color: #f66;
+  font-size: 0.8em;
+}
+
+.bearer-device {
+  display: inline-flex;
+  align-items: center;
+  color: #69c;
   font-size: 0.8em;
 }
 

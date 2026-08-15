@@ -39,6 +39,12 @@ export type Bearer = {
   // "rent", "gift for Alex") - purely local, never sent anywhere, no
   // protocol meaning at all
   label?: string
+  // present if this note's secret lives on a paired LNURLvault device,
+  // never in this browser's storage - the device's own note id (see
+  // device.ts's DeviceNote.id). When set, `url` never carries a real k1
+  // (see lnurlcash.ts's withoutK1) - it's a blank mirror, kept
+  // only so this bearer displays like any other (amount/host/label/state)
+  deviceId?: string
   createdAt: number
   updatedAt: number
 }

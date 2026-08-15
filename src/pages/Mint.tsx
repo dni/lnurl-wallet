@@ -19,6 +19,7 @@ import {
 } from 'solid-icons/io'
 
 import {useWallet} from '../WalletContext'
+import {useDevice} from '../DeviceContext'
 import type {PayRequestInfo} from '../lnurlcash'
 import {
   resolveMintInput,
@@ -35,6 +36,7 @@ import {
   grossUpForMintFee,
   describeMintFee
 } from '../lnurlcash'
+import {deviceMint} from '../deviceOrchestration'
 import {
   notify,
   NotifyKind,
@@ -84,6 +86,7 @@ const guessMintAddress = (server: string): string => `mint@${server}`
 // payment made some other way (the mint's own site, a different wallet).
 const Mint: Component = () => {
   const {addBearer, logActivity} = useWallet()
+  const {client: deviceClient} = useDevice()
   const navigate = useNavigate()
 
   // minting is nothing but service calls end to end (look up, get invoice,
@@ -394,6 +397,41 @@ const Mint: Component = () => {
         }
       }
       const mintPubkey = noteInfo.mintPubkey
+
+      // if a vault is connected, this note's secret is generated and held
+      // there instead of in this browser - import the preimage, then
+      // immediately rotate it (deviceMint), same reasoning as the
+      // browser-only rotate below
+      const client = deviceClient()
+      if (client) {
+        const result = await deviceMint(
+          client,
+          info.withdrawLink,
+          noteInfo.callback,
+          serverOf(noteInfo.callback),
+          preimageValue,
+          noteInfo.maxWithdrawable
+        )
+        await addBearer({
+          url: result.url,
+          callback: result.callback,
+          amount: result.amountMsat,
+          verified: true,
+          mintPubkey,
+          deviceId: result.deviceId
+        })
+        logActivity(
+          'mint',
+          `Minted ${msatToSats(result.amountMsat)} sats from ${serverOf(result.url)} (on device).`
+        )
+        notify(
+          `Minted a bearer note of ${msatToSats(result.amountMsat)} sats.`,
+          NotifyKind.SUCCESS
+        )
+        navigate('/wallet')
+        return
+      }
+
       let url = withNewK1(declaredUrl, noteInfo.k1, noteInfo.maxWithdrawable)
       // that informational GET just put the preimage on the wire (server
       // logs, proxies, browser history) - per spec, a WALLET intending to
@@ -505,6 +543,221 @@ const Mint: Component = () => {
                 </button>
               </div>
             </figure>
+            <Show when={pendingTrust()}>
+              {pending => (
+                <figure class="setup-card">
+                  <h4>Trust this mint?</h4>
+                  <p>
+                    First time seeing a signing key from{' '}
+                    <strong>{pending().server}</strong>. Trusting it lets its
+                    notes show as offline-verified against this key - you can
+                    remove the trust later, unless you end up holding a note
+                    from it.
+                  </p>
+                  <pre>{pending().mintPubkey}</pre>
+                  <div class="btns">
+                    <button onClick={confirmTrust}>Trust this mint</button>
+                    <button onClick={cancelTrust}>Cancel</button>
+                    <a
+                      class="icon-btn"
+                      title="Open this mint"
+                      href={`https://${pending().server}`}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      <IoGlobeSharp />
+                    </a>
+                    <a
+                      class="icon-btn icon-btn-gap"
+                      title="Look up this Lightning node on mempool.space"
+                      href={mempoolNodeUrl(pending().mintPubkey)}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      <IoOpenSharp />
+                    </a>
+                  </div>
+                </figure>
+              )}
+            </Show>
+            <Show when={payRequest()}>
+              {info => (
+                <figure class="setup-card">
+                  <div class="tabs">
+                    <button
+                      classList={{active: mode() === 'invoice'}}
+                      onClick={() => {
+                        setMode('invoice')
+                        setDirectPreimage('')
+                      }}
+                    >
+                      Create new invoice
+                    </button>
+                    <button
+                      classList={{active: mode() === 'preimage'}}
+                      onClick={() => {
+                        setMode('preimage')
+                        setInvoice(null)
+                        setPreimage('')
+                      }}
+                    >
+                      I already have a preimage
+                    </button>
+                  </div>
+                  <Show when={info().mintFee}>
+                    {fee => (
+                      <p class="warning">
+                        This mint withholds a fee on minting:{' '}
+                        {describeMintFee(fee())}. The note you end up holding is
+                        worth less than what you pay - amounts below are already
+                        adjusted for it. Melts won't have any additional fees -
+                        this is only charged once, on minting.
+                      </p>
+                    )}
+                  </Show>
+                  <Show
+                    when={mode() === 'preimage'}
+                    fallback={
+                      <>
+                        <label>
+                          Note value (sats, {msatToSats(info().minSendable)} -{' '}
+                          {msatToSats(
+                            info().mintFee
+                              ? floorMsatToSat(
+                                  applyMintFee(
+                                    info().maxSendable,
+                                    info().mintFee!
+                                  )
+                                )
+                              : info().maxSendable
+                          )}
+                          )
+                        </label>
+                        <input
+                          type="number"
+                          min="1"
+                          placeholder="amount in sats"
+                          value={amountSats()}
+                          onInput={e => setAmountSats(e.currentTarget.value)}
+                        />
+                        <Show when={amountBreakdown()}>
+                          {amount => (
+                            <Show when={amount().feeMsat > 0}>
+                              <p class="bearer-hint">
+                                Invoice: {msatToSats(amount().grossMsat)} sats
+                                (includes a {msatToSats(amount().feeMsat)} sat
+                                mint fee) - note: {msatToSats(amount().netMsat)}{' '}
+                                sats
+                              </p>
+                            </Show>
+                          )}
+                        </Show>
+                        <div class="btns">
+                          <button
+                            disabled={busy() || offlineMode()}
+                            onClick={getInvoice}
+                          >
+                            <Show when={busy()}>
+                              <IoRefreshSharp class="spin" />
+                              &nbsp;
+                            </Show>
+                            Get invoice
+                          </button>
+                        </div>
+                      </>
+                    }
+                  >
+                    <label>
+                      Payment preimage - from paying this mint's invoice some
+                      other way (its own site, a different wallet); its value
+                      comes straight from the mint, no need to enter an amount
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="payment preimage (64 hex characters)"
+                      value={directPreimage()}
+                      onInput={e => setDirectPreimage(e.currentTarget.value)}
+                    />
+                    <div class="btns">
+                      <button
+                        disabled={
+                          busy() ||
+                          !isPreimage(directPreimage()) ||
+                          offlineMode()
+                        }
+                        onClick={claimDirect}
+                      >
+                        <Show when={busy()}>
+                          <IoRefreshSharp class="spin" />
+                          &nbsp;
+                        </Show>
+                        Claim note
+                      </button>
+                    </div>
+                  </Show>
+                </figure>
+              )}
+            </Show>
+            <Show when={invoice()}>
+              <figure class="setup-card">
+                <figcaption>
+                  1. Pay this invoice with any Lightning wallet
+                </figcaption>
+                <Qr
+                  value={invoice()!.toUpperCase()}
+                  href={`lightning:${invoice()!.toUpperCase()}`}
+                />
+                <div class="btns">
+                  <button onClick={() => copyToClipboard(invoice()!)}>
+                    Copy invoice
+                  </button>
+                  <Show when={verifyUrl()}>
+                    <button
+                      disabled={verifying() || offlineMode()}
+                      onClick={manualCheck}
+                    >
+                      <Show when={verifying()}>
+                        <IoRefreshSharp class="spin" />
+                        &nbsp;
+                      </Show>
+                      {verifying()
+                        ? 'Checking...'
+                        : `Check payment (${secondsLeft()}s)`}
+                    </button>
+                  </Show>
+                </div>
+                <label>
+                  2. Paste the payment preimage your wallet reveals after paying
+                  - it IS the bearer secret
+                  <Show when={verifyUrl()}>
+                    {' '}
+                    (or wait - this mint supports checking automatically)
+                  </Show>
+                </label>
+                <input
+                  type="text"
+                  placeholder="payment preimage (64 hex characters)"
+                  value={preimage()}
+                  onInput={e => setPreimage(e.currentTarget.value)}
+                />
+                <div class="btns">
+                  <button
+                    disabled={
+                      busy() || !isPreimage(preimage()) || offlineMode()
+                    }
+                    onClick={() =>
+                      claim(preimage(), invoicedMsat(), invoicedGrossMsat())
+                    }
+                  >
+                    <Show when={busy()}>
+                      <IoRefreshSharp class="spin" />
+                      &nbsp;
+                    </Show>
+                    Claim note
+                  </button>
+                </div>
+              </figure>
+            </Show>
           </div>
           <div class="two-col">
             <Show when={storeableMints().length > 0}>
@@ -574,212 +827,6 @@ const Mint: Component = () => {
             </figure>
           </div>
         </div>
-        <Show when={pendingTrust()}>
-          {pending => (
-            <figure class="setup-card">
-              <h4>Trust this mint?</h4>
-              <p>
-                First time seeing a signing key from{' '}
-                <strong>{pending().server}</strong>. Trusting it lets its notes
-                show as offline-verified against this key - you can remove the
-                trust later, unless you end up holding a note from it.
-              </p>
-              <pre>{pending().mintPubkey}</pre>
-              <div class="btns">
-                <button onClick={confirmTrust}>Trust this mint</button>
-                <button onClick={cancelTrust}>Cancel</button>
-                <a
-                  class="icon-btn"
-                  title="Open this mint"
-                  href={`https://${pending().server}`}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  <IoGlobeSharp />
-                </a>
-                <a
-                  class="icon-btn icon-btn-gap"
-                  title="Look up this Lightning node on mempool.space"
-                  href={mempoolNodeUrl(pending().mintPubkey)}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  <IoOpenSharp />
-                </a>
-              </div>
-            </figure>
-          )}
-        </Show>
-        <Show when={payRequest()}>
-          {info => (
-            <figure class="setup-card">
-              <div class="tabs">
-                <button
-                  classList={{active: mode() === 'invoice'}}
-                  onClick={() => {
-                    setMode('invoice')
-                    setDirectPreimage('')
-                  }}
-                >
-                  Create new invoice
-                </button>
-                <button
-                  classList={{active: mode() === 'preimage'}}
-                  onClick={() => {
-                    setMode('preimage')
-                    setInvoice(null)
-                    setPreimage('')
-                  }}
-                >
-                  I already have a preimage
-                </button>
-              </div>
-              <Show when={info().mintFee}>
-                {fee => (
-                  <p class="warning">
-                    This mint withholds a fee on minting:{' '}
-                    {describeMintFee(fee())}. The note you end up holding is
-                    worth less than what you pay - amounts below are already
-                    adjusted for it. Melts won't have any additional fees - this
-                    is only charged once, on minting.
-                  </p>
-                )}
-              </Show>
-              <Show
-                when={mode() === 'preimage'}
-                fallback={
-                  <>
-                    <label>
-                      Note value (sats, {msatToSats(info().minSendable)} -{' '}
-                      {msatToSats(
-                        info().mintFee
-                          ? floorMsatToSat(
-                              applyMintFee(info().maxSendable, info().mintFee!)
-                            )
-                          : info().maxSendable
-                      )}
-                      )
-                    </label>
-                    <input
-                      type="number"
-                      min="1"
-                      placeholder="amount in sats"
-                      value={amountSats()}
-                      onInput={e => setAmountSats(e.currentTarget.value)}
-                    />
-                    <Show when={amountBreakdown()}>
-                      {amount => (
-                        <Show when={amount().feeMsat > 0}>
-                          <p class="bearer-hint">
-                            Invoice: {msatToSats(amount().grossMsat)} sats
-                            (includes a {msatToSats(amount().feeMsat)} sat mint
-                            fee) - note: {msatToSats(amount().netMsat)} sats
-                          </p>
-                        </Show>
-                      )}
-                    </Show>
-                    <div class="btns">
-                      <button
-                        disabled={busy() || offlineMode()}
-                        onClick={getInvoice}
-                      >
-                        <Show when={busy()}>
-                          <IoRefreshSharp class="spin" />
-                          &nbsp;
-                        </Show>
-                        Get invoice
-                      </button>
-                    </div>
-                  </>
-                }
-              >
-                <label>
-                  Payment preimage - from paying this mint's invoice some other
-                  way (its own site, a different wallet); its value comes
-                  straight from the mint, no need to enter an amount
-                </label>
-                <input
-                  type="text"
-                  placeholder="payment preimage (64 hex characters)"
-                  value={directPreimage()}
-                  onInput={e => setDirectPreimage(e.currentTarget.value)}
-                />
-                <div class="btns">
-                  <button
-                    disabled={
-                      busy() || !isPreimage(directPreimage()) || offlineMode()
-                    }
-                    onClick={claimDirect}
-                  >
-                    <Show when={busy()}>
-                      <IoRefreshSharp class="spin" />
-                      &nbsp;
-                    </Show>
-                    Claim note
-                  </button>
-                </div>
-              </Show>
-            </figure>
-          )}
-        </Show>
-        <Show when={invoice()}>
-          <figure class="setup-card">
-            <figcaption>
-              1. Pay this invoice with any Lightning wallet
-            </figcaption>
-            <Qr
-              value={invoice()!.toUpperCase()}
-              href={`lightning:${invoice()!.toUpperCase()}`}
-            />
-            <div class="btns">
-              <button onClick={() => copyToClipboard(invoice()!)}>
-                Copy invoice
-              </button>
-              <Show when={verifyUrl()}>
-                <button
-                  disabled={verifying() || offlineMode()}
-                  onClick={manualCheck}
-                >
-                  <Show when={verifying()}>
-                    <IoRefreshSharp class="spin" />
-                    &nbsp;
-                  </Show>
-                  {verifying()
-                    ? 'Checking...'
-                    : `Check payment (${secondsLeft()}s)`}
-                </button>
-              </Show>
-            </div>
-            <label>
-              2. Paste the payment preimage your wallet reveals after paying -
-              it IS the bearer secret
-              <Show when={verifyUrl()}>
-                {' '}
-                (or wait - this mint supports checking automatically)
-              </Show>
-            </label>
-            <input
-              type="text"
-              placeholder="payment preimage (64 hex characters)"
-              value={preimage()}
-              onInput={e => setPreimage(e.currentTarget.value)}
-            />
-            <div class="btns">
-              <button
-                disabled={busy() || !isPreimage(preimage()) || offlineMode()}
-                onClick={() =>
-                  claim(preimage(), invoicedMsat(), invoicedGrossMsat())
-                }
-              >
-                <Show when={busy()}>
-                  <IoRefreshSharp class="spin" />
-                  &nbsp;
-                </Show>
-                Claim note
-              </button>
-            </div>
-          </figure>
-        </Show>
       </div>
     </RequireWallet>
   )

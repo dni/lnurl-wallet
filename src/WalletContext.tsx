@@ -47,6 +47,7 @@ export type NewBearer = {
   amount: number
   verified: boolean
   mintPubkey?: string
+  deviceId?: string
 }
 
 export type WalletContextType = {

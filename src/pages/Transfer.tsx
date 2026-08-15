@@ -12,10 +12,11 @@ import {
 
 import type {Bearer} from '../storage'
 import {useWallet, groupByServer} from '../WalletContext'
+import {useDevice} from '../DeviceContext'
 import {
   isValidNoteInput,
   isBolt11Invoice,
-  noteK1,
+  requireNoteK1,
   withNewK1,
   mergeNotes,
   splitNote,
@@ -25,6 +26,15 @@ import {
   PendingNoteError
 } from '../lnurlcash'
 import {receiveNote, secureReceivedNote} from '../receive'
+import {
+  deviceMerge,
+  deviceSplit,
+  deviceSettle,
+  deviceReceive,
+  deviceExportForHandoff,
+  deviceMarkSpent,
+  requireDeviceClient
+} from '../deviceOrchestration'
 import {
   notify,
   NotifyKind,
@@ -44,6 +54,7 @@ import RequireWallet from '../components/RequireWallet'
 const Transfer: Component = () => {
   const {addBearer, updateBearer, removeBearer, bearers, logActivity} =
     useWallet()
+  const {client: deviceClient} = useDevice()
   const navigate = useNavigate()
   let pasteRef: HTMLInputElement | null = null
   const [value, setValue] = createSignal('')
@@ -60,6 +71,41 @@ const Transfer: Component = () => {
   )
   const [preparing, setPreparing] = createSignal(false)
   const [preparedBearer, setPreparedBearer] = createSignal<Bearer | null>(null)
+  // the prepared note's real, secret-bearing url - null until revealed.
+  // For a browser-only note this is available the instant it's prepared
+  // (see stagePrepared); a device-backed one needs an explicit export
+  // (physical button press) first - see revealPrepared. Never persisted,
+  // only ever held here in memory.
+  const [revealedUrl, setRevealedUrl] = createSignal<string | null>(null)
+  const [revealing, setRevealing] = createSignal(false)
+
+  // stages a note as "ready to hand over" - browser-only notes reveal
+  // immediately (their url already carries the real secret); device-backed
+  // ones wait for an explicit reveal action
+  const stagePrepared = (bearer: Bearer) => {
+    setPreparedBearer(bearer)
+    setRevealedUrl(bearer.deviceId ? null : bearer.url)
+  }
+
+  const revealPrepared = async () => {
+    const bearer = preparedBearer()
+    if (!bearer?.deviceId) return
+    setRevealing(true)
+    try {
+      const client = requireDeviceClient(deviceClient())
+      const {url} = await deviceExportForHandoff(
+        client,
+        bearer.deviceId,
+        bearer.url,
+        bearer.amount
+      )
+      setRevealedUrl(url)
+    } catch (err) {
+      notify((err as Error).message, NotifyKind.ERROR)
+    } finally {
+      setRevealing(false)
+    }
+  }
 
   const prepareAmountMsat = createMemo(() => {
     const msat = satsToMsat(prepareAmountSats())
@@ -100,11 +146,14 @@ const Transfer: Component = () => {
   }
 
   // a single selected note needs no merge/split (and no amount typed in) to
-  // be handed over - just show what's already there
+  // be handed over - just show what's already there. For a device-backed
+  // note "what's already there" still needs an explicit reveal (see
+  // revealPrepared) - stagePrepared leaves that gated rather than exporting
+  // it right away just because it was selected
   const unveilSelectedNow = () => {
     const picked = prepareSelectedBearers()
     if (picked.length !== 1) return
-    setPreparedBearer(picked[0])
+    stagePrepared(picked[0])
     setPrepareSelectedIds(new Set<string>())
     setPrepareAmountSats('')
   }
@@ -113,16 +162,37 @@ const Transfer: Component = () => {
   // merge only makes sense for 2+. settleNote reads the actual value back
   // (a mint MAY refund part of its fees on merge - LUD-25) and rotates the
   // merged secret, since learning that value necessarily puts it on the
-  // wire
+  // wire. If a vault is connected, the merged note lands there instead -
+  // regardless of whether any of the inputs were themselves device-backed
+  // (mixed selections are fine, see deviceOrchestration.ts)
   const mergePrepareSelectionIfNeeded = async (
     picked: ReturnType<typeof prepareSelectedBearers>
   ) => {
     if (picked.length === 1) return picked[0]
     const base = picked[0]
     const total = picked.reduce((sum, b) => sum + b.amount, 0)
+    const client = deviceClient()
+    if (client) {
+      const merged = await deviceMerge(
+        client,
+        picked.map(b => ({deviceId: b.deviceId, url: b.url})),
+        base.callback,
+        total
+      )
+      const settled = await deviceSettle(client, merged)
+      for (const bearer of picked) removeBearer(bearer.id)
+      return addBearer({
+        url: settled.url,
+        callback: settled.callback,
+        amount: settled.amountMsat,
+        verified: true,
+        mintPubkey: base.mintPubkey,
+        deviceId: settled.deviceId
+      })
+    }
     const merged = await mergeNotes(
       base.callback,
-      picked.map(b => noteK1(b.url)!)
+      picked.map(b => requireNoteK1(b.url))
     )
     const settled = await settleNote(
       base.url,
@@ -148,7 +218,9 @@ const Transfer: Component = () => {
   // when the selection is worth more than target, splits off the exact
   // amount directly from every selected note in one request - split takes
   // one or many k1s per LUD-25, so no merge round trip first. Only an exact
-  // match (no split needed) still goes through mergePrepareSelectionIfNeeded
+  // match (no split needed) still goes through mergePrepareSelectionIfNeeded.
+  // Same device-connected branch as Melt.tsx's splitAndPay: both outputs
+  // land on the vault when one's connected, regardless of input custody.
   const prepareNote = async () => {
     const picked = prepareSelectedBearers()
     const target = prepareAmountMsat()
@@ -156,12 +228,40 @@ const Transfer: Component = () => {
     setPreparing(true)
     try {
       const total = prepareSelectedTotal()
+      const client = deviceClient()
       let current: Bearer
-      if (total > target) {
+      if (total > target && client) {
+        const base = picked[0]
+        const parts = await deviceSplit(
+          client,
+          picked.map(b => ({deviceId: b.deviceId, url: b.url})),
+          base.callback,
+          target,
+          total
+        )
+        for (const bearer of picked) removeBearer(bearer.id)
+        const settledChange = await deviceSettle(client, parts.change)
+        await addBearer({
+          url: settledChange.url,
+          callback: settledChange.callback,
+          amount: settledChange.amountMsat,
+          verified: true,
+          mintPubkey: base.mintPubkey,
+          deviceId: settledChange.deviceId
+        })
+        current = await addBearer({
+          url: parts.target.url,
+          callback: parts.target.callback,
+          amount: target,
+          verified: true,
+          mintPubkey: base.mintPubkey,
+          deviceId: parts.target.deviceId
+        })
+      } else if (total > target) {
         const base = picked[0]
         const parts = await splitNote(
           base.callback,
-          picked.map(b => noteK1(b.url)!),
+          picked.map(b => requireNoteK1(b.url)),
           target
         )
         for (const bearer of picked) removeBearer(bearer.id)
@@ -197,7 +297,7 @@ const Transfer: Component = () => {
       } else {
         current = await mergePrepareSelectionIfNeeded(picked)
       }
-      setPreparedBearer(current)
+      stagePrepared(current)
       setPrepareSelectedIds(new Set<string>())
       setPrepareAmountSats('')
       notify(
@@ -233,10 +333,28 @@ const Transfer: Component = () => {
         return
       }
       // rotate immediately: whoever handed this note over still knows the
-      // old secret until it is burned
+      // old secret until it is burned. If a vault is connected, that fresh
+      // secret is generated and held there instead of in this browser.
       try {
-        const url = await secureReceivedNote(received)
-        await updateBearer(bearer.id, {url})
+        const client = deviceClient()
+        if (client) {
+          const result = await deviceReceive(
+            client,
+            received.url,
+            received.callback,
+            serverOf(received.url),
+            requireNoteK1(received.url),
+            received.amount
+          )
+          await updateBearer(bearer.id, {
+            url: result.url,
+            callback: result.callback,
+            deviceId: result.deviceId
+          })
+        } else {
+          const url = await secureReceivedNote(received)
+          await updateBearer(bearer.id, {url})
+        }
         logActivity(
           'receive',
           `Received ${msatToSats(received.amount)} sats from ${serverOf(received.url)}.`
@@ -456,31 +574,60 @@ const Transfer: Component = () => {
             <figcaption>
               Ready to hand over - {msatToSats(preparedBearer()!.amount)} sats
             </figcaption>
-            <Qr value={toBech32Lnurl(preparedBearer()!.url)} />
-            <div class="btns">
-              <button
-                onClick={() =>
-                  copyToClipboard(toBech32Lnurl(preparedBearer()!.url))
-                }
-              >
-                <IoCopySharp />
-                &nbsp;Copy note
-              </button>
-              <button
-                onClick={() => {
-                  const handedOver = preparedBearer()!
-                  updateBearer(handedOver.id, {spent: true})
-                  setPreparedBearer(null)
-                  logActivity(
-                    'transfer',
-                    `Handed over ${msatToSats(handedOver.amount)} sats from ${serverOf(handedOver.url)}.`
-                  )
-                  notify('Marked as handed over and spent.', NotifyKind.SUCCESS)
-                }}
-              >
-                Done
-              </button>
-            </div>
+            <Show
+              when={revealedUrl()}
+              fallback={
+                <div class="btns">
+                  <button disabled={revealing()} onClick={revealPrepared}>
+                    <Show when={revealing()}>
+                      <IoRefreshSharp class="spin" />
+                      &nbsp;
+                    </Show>
+                    {revealing()
+                      ? 'Waiting for the vault...'
+                      : 'Reveal to hand over'}
+                  </button>
+                </div>
+              }
+            >
+              {url => (
+                <>
+                  <Qr value={toBech32Lnurl(url())} />
+                  <div class="btns">
+                    <button
+                      onClick={() => copyToClipboard(toBech32Lnurl(url()))}
+                    >
+                      <IoCopySharp />
+                      &nbsp;Copy note
+                    </button>
+                    <button
+                      onClick={async () => {
+                        const handedOver = preparedBearer()!
+                        updateBearer(handedOver.id, {spent: true})
+                        if (handedOver.deviceId) {
+                          const client = deviceClient()
+                          if (client) {
+                            await deviceMarkSpent(client, handedOver.deviceId)
+                          }
+                        }
+                        setPreparedBearer(null)
+                        setRevealedUrl(null)
+                        logActivity(
+                          'transfer',
+                          `Handed over ${msatToSats(handedOver.amount)} sats from ${serverOf(handedOver.url)}.`
+                        )
+                        notify(
+                          'Marked as handed over and spent.',
+                          NotifyKind.SUCCESS
+                        )
+                      }}
+                    >
+                      Done
+                    </button>
+                  </div>
+                </>
+              )}
+            </Show>
           </figure>
         </Show>
       </div>

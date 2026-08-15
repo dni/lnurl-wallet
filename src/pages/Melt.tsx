@@ -11,6 +11,7 @@ import {
 
 import type {Bearer} from '../storage'
 import {useWallet, groupByServer} from '../WalletContext'
+import {useDevice} from '../DeviceContext'
 import type {PayRequestInfo} from '../lnurlcash'
 import {
   isBolt11Invoice,
@@ -21,13 +22,21 @@ import {
   fetchInvoiceVerification,
   decodeBolt11AmountMsat,
   serverOf,
-  noteK1,
+  requireNoteK1,
   withNewK1,
   meltNote,
   mergeNotes,
   splitNote,
   settleNote
 } from '../lnurlcash'
+import {
+  deviceMerge,
+  deviceSplit,
+  deviceSettle,
+  deviceMeltRequest,
+  deviceMarkSpent,
+  requireDeviceClient
+} from '../deviceOrchestration'
 import {
   notify,
   NotifyKind,
@@ -53,6 +62,7 @@ const PENDING_POLL_SECONDS = 5
 const Melt: Component = () => {
   const {addBearer, updateBearer, removeBearer, bearers, logActivity} =
     useWallet()
+  const {client: deviceClient} = useDevice()
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   let pasteRef: HTMLInputElement | null = null
@@ -111,6 +121,12 @@ const Melt: Component = () => {
       stopPolling()
       setPendingNote(null)
       setMeltVerifyUrl(null)
+      // this is the settlement-confirmed moment, not optimistic - mirrors
+      // exactly when the local spent-flag above already landed
+      if (note.deviceId) {
+        const client = deviceClient()
+        if (client) await deviceMarkSpent(client, note.deviceId)
+      }
       logActivity(
         'melt',
         `Melted ${msatToSats(note.amount)} sats from ${serverOf(note.url)} to pay an invoice.`
@@ -329,16 +345,38 @@ const Melt: Component = () => {
   // refund part of its fees on merge - LUD-25) and rotates the merged
   // secret, since learning that value necessarily puts it on the wire -
   // melt below demands an exact amount match, so the stored note must be
-  // trustworthy, not the naive pre-fee sum
+  // trustworthy, not the naive pre-fee sum. If a vault is connected, the
+  // merged note lands there instead - regardless of whether any of the
+  // inputs were themselves device-backed (mixed selections are fine, see
+  // deviceOrchestration.ts)
   const mergeSelectionIfNeeded = async (
     picked: ReturnType<typeof selectedBearers>
   ) => {
     if (picked.length === 1) return picked[0]
     const base = picked[0]
     const total = picked.reduce((sum, b) => sum + b.amount, 0)
+    const client = deviceClient()
+    if (client) {
+      const merged = await deviceMerge(
+        client,
+        picked.map(b => ({deviceId: b.deviceId, url: b.url})),
+        base.callback,
+        total
+      )
+      const settled = await deviceSettle(client, merged)
+      for (const bearer of picked) removeBearer(bearer.id)
+      return addBearer({
+        url: settled.url,
+        callback: settled.callback,
+        amount: settled.amountMsat,
+        verified: true,
+        mintPubkey: base.mintPubkey,
+        deviceId: settled.deviceId
+      })
+    }
     const merged = await mergeNotes(
       base.callback,
-      picked.map(b => noteK1(b.url)!)
+      picked.map(b => requireNoteK1(b.url))
     )
     const settled = await settleNote(
       base.url,
@@ -401,11 +439,14 @@ const Melt: Component = () => {
     setPaying(true)
     try {
       const current = await mergeSelectionIfNeeded(picked)
-      const result = await meltNote(
-        current.callback,
-        noteK1(current.url)!,
-        invoice
-      )
+      const result = current.deviceId
+        ? await deviceMeltRequest(
+            requireDeviceClient(deviceClient()),
+            current.deviceId,
+            current.callback,
+            invoice
+          )
+        : await meltNote(current.callback, requireNoteK1(current.url), invoice)
       await updateBearer(current.id, {spent: true})
       setSelectedIds(new Set<string>())
       finishMelt(current, result)
@@ -433,9 +474,47 @@ const Melt: Component = () => {
     try {
       const base = picked[0]
       const total = picked.reduce((sum, b) => sum + b.amount, 0)
+      const client = deviceClient()
+      if (client) {
+        const parts = await deviceSplit(
+          client,
+          picked.map(b => ({deviceId: b.deviceId, url: b.url})),
+          base.callback,
+          target,
+          total
+        )
+        for (const bearer of picked) removeBearer(bearer.id)
+        const settledChange = await deviceSettle(client, parts.change)
+        await addBearer({
+          url: settledChange.url,
+          callback: settledChange.callback,
+          amount: settledChange.amountMsat,
+          verified: true,
+          mintPubkey: base.mintPubkey,
+          deviceId: settledChange.deviceId
+        })
+        const spend = await addBearer({
+          url: parts.target.url,
+          callback: parts.target.callback,
+          amount: target,
+          verified: true,
+          mintPubkey: base.mintPubkey,
+          deviceId: parts.target.deviceId
+        })
+        const result = await deviceMeltRequest(
+          client,
+          parts.target.deviceId,
+          spend.callback,
+          invoice
+        )
+        await updateBearer(spend.id, {spent: true})
+        setSelectedIds(new Set<string>())
+        finishMelt(spend, result)
+        return
+      }
       const parts = await splitNote(
         base.callback,
-        picked.map(b => noteK1(b.url)!),
+        picked.map(b => requireNoteK1(b.url)),
         target
       )
       for (const bearer of picked) removeBearer(bearer.id)
@@ -468,7 +547,11 @@ const Melt: Component = () => {
         verified: true,
         mintPubkey: base.mintPubkey
       })
-      const result = await meltNote(spend.callback, noteK1(spend.url)!, invoice)
+      const result = await meltNote(
+        spend.callback,
+        requireNoteK1(spend.url),
+        invoice
+      )
       await updateBearer(spend.id, {spent: true})
       setSelectedIds(new Set<string>())
       finishMelt(spend, result)

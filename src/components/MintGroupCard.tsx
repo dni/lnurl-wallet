@@ -18,7 +18,9 @@ import {
 import type {Bearer} from '../storage'
 import {compareBearerOrder} from '../storage'
 import {useWallet} from '../WalletContext'
-import {noteK1, withNewK1, mergeNotes, settleNote} from '../lnurlcash'
+import {useDevice} from '../DeviceContext'
+import {requireNoteK1, withNewK1, mergeNotes, settleNote} from '../lnurlcash'
+import {deviceMerge, deviceSettle} from '../deviceOrchestration'
 import {getTrustedMintPubkey} from '../trustedMints'
 import {offlineMode} from '../offlineMode'
 import {
@@ -41,6 +43,7 @@ export type MintGroupCardProps = {
 
 const MintGroupCard: Component<MintGroupCardProps> = props => {
   const {addBearer, updateBearer, removeBearer, logActivity} = useWallet()
+  const {client: deviceClient} = useDevice()
   const [combining, setCombining] = createSignal(false)
   // collapsed by default - a long wallet would otherwise render every
   // note's full card (QR toggle, actions, ...) up front for nothing
@@ -266,31 +269,57 @@ const MintGroupCard: Component<MintGroupCardProps> = props => {
     try {
       const [base] = picked
       const sum = picked.reduce((s, b) => s + b.amount, 0)
-      const merged = await mergeNotes(
-        base.callback,
-        picked.map(b => noteK1(b.url)!)
-      )
-      // a mint MAY refund part of its earlier per-note mint fees on merge
-      // (LUD-25: (n - 1) * base_fee_msat back into the result) - settleNote
-      // reads the actual value back authoritatively rather than assume the
-      // naive sum, and rotates the merged secret (that GET necessarily put
-      // it on the wire), so both the stored amount and the notice below
-      // reflect what the mint actually credited
-      const settled = await settleNote(
-        base.url,
-        merged.k1,
-        sum,
-        merged.signature
-      )
-      const actualAmount = settled.amountMsat
-      for (const bearer of picked) removeBearer(bearer.id)
-      await addBearer({
-        url: withNewK1(base.url, settled.k1, actualAmount, settled.signature),
-        callback: settled.callback,
-        amount: actualAmount,
-        verified: true,
-        mintPubkey: base.mintPubkey
-      })
+      let actualAmount: number
+      const client = deviceClient()
+      if (client) {
+        // if a vault is connected, the merged note lands there instead -
+        // regardless of whether any of the inputs were themselves
+        // device-backed (mixed selections are fine, see
+        // deviceOrchestration.ts)
+        const merged = await deviceMerge(
+          client,
+          picked.map(b => ({deviceId: b.deviceId, url: b.url})),
+          base.callback,
+          sum
+        )
+        const settled = await deviceSettle(client, merged)
+        actualAmount = settled.amountMsat
+        for (const bearer of picked) removeBearer(bearer.id)
+        await addBearer({
+          url: settled.url,
+          callback: settled.callback,
+          amount: actualAmount,
+          verified: true,
+          mintPubkey: base.mintPubkey,
+          deviceId: settled.deviceId
+        })
+      } else {
+        const merged = await mergeNotes(
+          base.callback,
+          picked.map(b => requireNoteK1(b.url))
+        )
+        // a mint MAY refund part of its earlier per-note mint fees on merge
+        // (LUD-25: (n - 1) * base_fee_msat back into the result) - settleNote
+        // reads the actual value back authoritatively rather than assume the
+        // naive sum, and rotates the merged secret (that GET necessarily put
+        // it on the wire), so both the stored amount and the notice below
+        // reflect what the mint actually credited
+        const settled = await settleNote(
+          base.url,
+          merged.k1,
+          sum,
+          merged.signature
+        )
+        actualAmount = settled.amountMsat
+        for (const bearer of picked) removeBearer(bearer.id)
+        await addBearer({
+          url: withNewK1(base.url, settled.k1, actualAmount, settled.signature),
+          callback: settled.callback,
+          amount: actualAmount,
+          verified: true,
+          mintPubkey: base.mintPubkey
+        })
+      }
       props.onSelectAll(
         picked.map(b => b.id),
         false

@@ -5,6 +5,7 @@ import toast, {Toaster} from 'solid-toast'
 import {registerSW} from 'virtual:pwa-register'
 
 import {WalletProvider} from './WalletContext'
+import {DeviceProvider} from './DeviceContext'
 import {notify, NotifyKind} from './helpers'
 import '@fontsource/noto-sans/400.css'
 import '@fontsource/noto-sans/700.css'
@@ -23,6 +24,7 @@ import Melt from './pages/Melt'
 import Activity from './pages/Activity'
 import Backup from './pages/Backup'
 import Docs from './pages/Docs'
+import Vault from './pages/Vault'
 
 const root = document.getElementById('root')
 
@@ -35,17 +37,19 @@ if (import.meta.env.DEV && !(root instanceof HTMLElement)) {
 const App = (props: any) => {
   return (
     <WalletProvider>
-      {/* solid-toast's default top offset sits right under the viewport
-      edge, which the fixed nav (taller still on mobile, see .nav-toggle in
-      style.scss) then overlaps - pushed down past it instead */}
-      <Toaster
-        position="top-right"
-        toastOptions={{duration: 5000}}
-        containerStyle={{top: '64px'}}
-      />
-      <Nav />
-      {props.children}
-      <Footer />
+      <DeviceProvider>
+        {/* solid-toast's default top offset sits right under the viewport
+        edge, which the fixed nav (taller still on mobile, see .nav-toggle in
+        style.scss) then overlaps - pushed down past it instead */}
+        <Toaster
+          position="top-right"
+          toastOptions={{duration: 5000}}
+          containerStyle={{top: '64px'}}
+        />
+        <Nav />
+        {props.children}
+        <Footer />
+      </DeviceProvider>
     </WalletProvider>
   )
 }
@@ -63,6 +67,7 @@ const cleanup = render(
       <Route path="/activity" component={Activity} />
       <Route path="/backup" component={Backup} />
       <Route path="/docs" component={Docs} />
+      <Route path="/vault" component={Vault} />
       <Route path="*" component={() => <h1>Page not found</h1>} />
     </HashRouter>
   ),

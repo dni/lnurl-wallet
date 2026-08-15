@@ -8,11 +8,13 @@ import {
   IoBanSharp,
   IoArrowUndoSharp,
   IoReorderThreeSharp,
-  IoPencilSharp
+  IoPencilSharp,
+  IoHardwareChipSharp
 } from 'solid-icons/io'
 
 import type {Bearer} from '../storage'
 import {useWallet} from '../WalletContext'
+import {useDevice} from '../DeviceContext'
 import type {SplitResult} from '../lnurlcash'
 import {
   noteK1,
@@ -25,6 +27,12 @@ import {
   rotateNote,
   settleNote
 } from '../lnurlcash'
+import {
+  deviceRefresh,
+  migrateNoteToDevice,
+  deviceSplit,
+  deviceSettle
+} from '../deviceOrchestration'
 import {
   msatToSats,
   formatDate,
@@ -54,6 +62,7 @@ export type BearerCardProps = {
 
 const BearerCard: Component<BearerCardProps> = props => {
   const {updateBearer, removeBearer, addBearer, logActivity} = useWallet()
+  const {client: deviceClient} = useDevice()
   const [action, setAction] = createSignal<Action>(null)
   const [busy, setBusy] = createSignal(false)
   const [splitSats, setSplitSats] = createSignal('')
@@ -92,11 +101,59 @@ const BearerCard: Component<BearerCardProps> = props => {
   // the informational GET always puts k1 on the wire now (the spec dropped
   // the optional hash-based lookup), so every refresh is followed by a
   // rotate - per "WALLET SHOULD ... rotate ... after an informational GET
-  // on a note it intends to keep holding"
+  // on a note it intends to keep holding". When a vault is connected, that
+  // replacement secret is generated and held there instead of in this
+  // browser - for an already device-backed note that's deviceRefresh
+  // (export, then GET+rotate with the same secret); for a browser-only
+  // note it's a one-way migration onto the device (see
+  // deviceOrchestration.ts's header comment).
   const refresh = async () => {
     setBusy(true)
     try {
+      const client = deviceClient()
+      const deviceId = props.bearer.deviceId
+      if (deviceId && client) {
+        const result = await deviceRefresh(client, {...props.bearer, deviceId})
+        await updateBearer(props.bearer.id, {
+          url: result.url,
+          callback: result.callback,
+          amount: result.amountMsat,
+          verified: true,
+          mintPubkey: result.mintPubkey ?? props.bearer.mintPubkey,
+          deviceId: result.deviceId
+        })
+        logActivity(
+          'refresh',
+          `Refreshed ${msatToSats(result.amountMsat)} sats from ${serverOf(result.url)} (on device).`
+        )
+        notify('Note refreshed.', NotifyKind.SUCCESS)
+        return
+      }
+
       const info = await fetchNoteInfo(props.bearer.url)
+
+      if (client) {
+        const migrated = await migrateNoteToDevice(client, {
+          url: props.bearer.url,
+          callback: info.callback,
+          amount: info.maxWithdrawable
+        })
+        await updateBearer(props.bearer.id, {
+          url: migrated.url,
+          callback: migrated.callback,
+          amount: info.maxWithdrawable,
+          verified: true,
+          mintPubkey: info.mintPubkey ?? props.bearer.mintPubkey,
+          deviceId: migrated.deviceId
+        })
+        logActivity(
+          'refresh',
+          `Refreshed ${msatToSats(info.maxWithdrawable)} sats from ${serverOf(migrated.url)} - moved onto your vault.`
+        )
+        notify('Note refreshed and moved onto your vault.', NotifyKind.SUCCESS)
+        return
+      }
+
       let url = props.bearer.url
       let rotationError: string | null = null
       try {
@@ -186,7 +243,10 @@ const BearerCard: Component<BearerCardProps> = props => {
       // never dropped, so a failed split costs nothing
       let remainderId = props.bearer.id
       let currentK1 = k1()
+      let currentUrl = props.bearer.url
+      let currentCallback = props.bearer.callback
       let currentAmount = props.bearer.amount
+      let currentDeviceId = props.bearer.deviceId
       // a mint MAY charge a flat fee per split (LUD-25), deducted from the
       // change rather than the split-off amount - so the remainder is read
       // back authoritatively (informational GET) after each split instead
@@ -197,17 +257,61 @@ const BearerCard: Component<BearerCardProps> = props => {
       // like a single one-time deduction
       let totalFeeMsat = 0
       let perSplitFeeMsat = 0
+      const client = deviceClient()
       for (let i = 0; i < times; i++) {
         const expectedChange = currentAmount - msat
+        if (client) {
+          // if a vault is connected, both outputs land on it - regardless
+          // of whether the input being split was itself device-backed
+          // (see deviceOrchestration.ts's "migration" note). No local
+          // rotate-in-place fallback on failure here (unlike the
+          // browser-only branch below): a failed device split never burns
+          // its input (that only happens once the mint call succeeds), so
+          // the existing remainder record is already correct as-is.
+          const parts = await deviceSplit(
+            client,
+            [{deviceId: currentDeviceId, url: currentUrl}],
+            currentCallback,
+            msat,
+            currentAmount
+          )
+          removeBearer(remainderId)
+          await addBearer({
+            url: parts.target.url,
+            callback: parts.target.callback,
+            amount: msat,
+            verified: true,
+            mintPubkey: props.bearer.mintPubkey,
+            deviceId: parts.target.deviceId
+          })
+          const settledChange = await deviceSettle(client, parts.change)
+          perSplitFeeMsat = expectedChange - settledChange.amountMsat
+          totalFeeMsat += perSplitFeeMsat
+          currentAmount = settledChange.amountMsat
+          currentUrl = settledChange.url
+          currentCallback = settledChange.callback
+          currentDeviceId = settledChange.deviceId
+          const remainder = await addBearer({
+            url: settledChange.url,
+            callback: settledChange.callback,
+            amount: settledChange.amountMsat,
+            verified: true,
+            mintPubkey: props.bearer.mintPubkey,
+            deviceId: settledChange.deviceId
+          })
+          remainderId = remainder.id
+          continue
+        }
+
         let result: SplitResult
         try {
-          result = await splitNote(props.bearer.callback, [currentK1], msat)
+          result = await splitNote(currentCallback, [currentK1], msat)
         } catch (err) {
           try {
-            const rotated = await rotateNote(props.bearer.callback, currentK1)
+            const rotated = await rotateNote(currentCallback, currentK1)
             await updateBearer(remainderId, {
               url: withNewK1(
-                props.bearer.url,
+                currentUrl,
                 rotated.k1,
                 currentAmount,
                 rotated.signature
@@ -221,8 +325,8 @@ const BearerCard: Component<BearerCardProps> = props => {
         }
         removeBearer(remainderId)
         await addBearer({
-          url: withNewK1(props.bearer.url, result.k1, msat, result.signature),
-          callback: props.bearer.callback,
+          url: withNewK1(currentUrl, result.k1, msat, result.signature),
+          callback: currentCallback,
           amount: msat,
           verified: true,
           mintPubkey: props.bearer.mintPubkey
@@ -231,7 +335,7 @@ const BearerCard: Component<BearerCardProps> = props => {
         // deducted a fee - LUD-25) and rotates it, since the GET that
         // learns it necessarily puts k1 on the wire
         const settled = await settleNote(
-          props.bearer.url,
+          currentUrl,
           result.change,
           expectedChange,
           result.changeSignature
@@ -240,13 +344,15 @@ const BearerCard: Component<BearerCardProps> = props => {
         totalFeeMsat += perSplitFeeMsat
         currentAmount = settled.amountMsat
         currentK1 = settled.k1
+        currentUrl = withNewK1(
+          currentUrl,
+          settled.k1,
+          settled.amountMsat,
+          settled.signature
+        )
+        currentCallback = settled.callback
         const remainder = await addBearer({
-          url: withNewK1(
-            props.bearer.url,
-            settled.k1,
-            settled.amountMsat,
-            settled.signature
-          ),
+          url: currentUrl,
           callback: settled.callback,
           amount: settled.amountMsat,
           verified: true,
@@ -362,6 +468,15 @@ const BearerCard: Component<BearerCardProps> = props => {
             >
               <IoShieldCheckmarkSharp />
               &nbsp;signed
+            </span>
+          </Show>
+          <Show when={props.bearer.deviceId}>
+            <span
+              class="bearer-device"
+              title="This note's secret lives on your paired vault, not this browser"
+            >
+              <IoHardwareChipSharp />
+              &nbsp;on device
             </span>
           </Show>
           <Show when={isSpent()}>

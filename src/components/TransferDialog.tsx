@@ -5,6 +5,7 @@ import {IoRefreshSharp} from 'solid-icons/io'
 
 import type {Bearer} from '../storage'
 import {useWallet} from '../WalletContext'
+import {useDevice} from '../DeviceContext'
 import type {PayRequestInfo} from '../lnurlcash'
 import {
   resolveMintInput,
@@ -16,13 +17,18 @@ import {
   fetchNoteInfo,
   rotateNote,
   meltNote,
-  noteK1,
+  requireNoteK1,
   serverOf,
   isPreimage,
   applyMintFee,
   describeMintFee,
   PendingNoteError
 } from '../lnurlcash'
+import {
+  deviceMeltRequest,
+  deviceMint,
+  requireDeviceClient
+} from '../deviceOrchestration'
 import {notify, NotifyKind, msatToSats, copyToClipboard} from '../helpers'
 import {isMintTrusted, addTrustedMint, trustedMints} from '../trustedMints'
 import {offlineMode} from '../offlineMode'
@@ -49,6 +55,7 @@ const TRANSFER_POLL_SECONDS = 5
 // its own payment, not a third party snooping the verify endpoint)
 const TransferDialog: Component<TransferDialogProps> = props => {
   const {addBearer, updateBearer, logActivity} = useWallet()
+  const {client: deviceClient} = useDevice()
   const navigate = useNavigate()
 
   const [mintInput, setMintInput] = createSignal('')
@@ -75,7 +82,7 @@ const TransferDialog: Component<TransferDialogProps> = props => {
     pollTimer = null
   }
 
-  const sourceK1 = () => noteK1(props.sourceBearer.url)!
+  const sourceK1 = () => requireNoteK1(props.sourceBearer.url)
 
   const lookup = async () => {
     const url = resolveMintInput(mintInput())
@@ -171,7 +178,16 @@ const TransferDialog: Component<TransferDialogProps> = props => {
         info.callback,
         props.sourceBearer.amount
       )
-      await meltNote(props.sourceBearer.callback, sourceK1(), result.pr)
+      if (props.sourceBearer.deviceId) {
+        await deviceMeltRequest(
+          requireDeviceClient(deviceClient()),
+          props.sourceBearer.deviceId,
+          props.sourceBearer.callback,
+          result.pr
+        )
+      } else {
+        await meltNote(props.sourceBearer.callback, sourceK1(), result.pr)
+      }
       await updateBearer(props.sourceBearer.id, {spent: true})
       setInvoice(result.pr)
       if (result.verify) setVerifyUrl(result.verify)
@@ -189,7 +205,9 @@ const TransferDialog: Component<TransferDialogProps> = props => {
 
   // claims the destination note once its preimage is known - same claim
   // sequence as Mint.tsx: verify (also settling the k1), rotate to close
-  // the exposure that GET just created, then store it
+  // the exposure that GET just created, then store it. If a vault is
+  // connected, that fresh secret is generated and held there instead of in
+  // this browser (deviceMint - import then rotate).
   const claimDestination = async (preimageValue: string) => {
     const info = payRequest()
     if (!info?.withdrawLink || !isPreimage(preimageValue)) return
@@ -200,6 +218,40 @@ const TransferDialog: Component<TransferDialogProps> = props => {
         props.sourceBearer.amount
       )
       const noteInfo = await fetchNoteInfo(declaredUrl)
+
+      const client = deviceClient()
+      if (client) {
+        const result = await deviceMint(
+          client,
+          info.withdrawLink,
+          noteInfo.callback,
+          serverOf(noteInfo.callback),
+          preimageValue,
+          noteInfo.maxWithdrawable
+        )
+        await addBearer({
+          url: result.url,
+          callback: result.callback,
+          amount: result.amountMsat,
+          verified: true,
+          mintPubkey: noteInfo.mintPubkey,
+          deviceId: result.deviceId
+        })
+        setClaimed(true)
+        stopPolling()
+        logActivity(
+          'transfer',
+          `Transferred ${msatToSats(result.amountMsat)} sats from ${serverOf(props.sourceBearer.url)} to ${serverOf(result.url)}.`
+        )
+        notify(
+          `Transferred ${msatToSats(result.amountMsat)} sats to ${serverOf(result.url)}.`,
+          NotifyKind.SUCCESS
+        )
+        navigate('/wallet')
+        props.onClose()
+        return
+      }
+
       const mintPubkey = noteInfo.mintPubkey
       let url = withNewK1(declaredUrl, noteInfo.k1, noteInfo.maxWithdrawable)
       let rotationError: string | null = null
@@ -276,7 +328,19 @@ const TransferDialog: Component<TransferDialogProps> = props => {
           }
         }
       }
-      if (!claimed() && !sourceConfirmed()) {
+      // no equivalent probe exists for a device-backed source: the
+      // browser-only rotate above is free (k1 already in hand) and tests
+      // the MINT's own state directly - a failed rotate means the mint no
+      // longer considers the note spendable, i.e. the melt went through.
+      // Doing the same against a device-backed note would demand a
+      // physical button press every 5-second tick just to check, which
+      // isn't worth the cost - list_notes only reflects this wallet's own
+      // prior commands, not the mint's truth, so it can't substitute. The
+      // destination's own settlement check (above) is what actually
+      // confirms success for a device-backed transfer; if the melt failed,
+      // "Unspend anyway" on the source note's card remains the manual way
+      // back, same as any other melt failure.
+      if (!claimed() && !sourceConfirmed() && !props.sourceBearer.deviceId) {
         try {
           const rotated = await rotateNote(
             props.sourceBearer.callback,

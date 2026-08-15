@@ -87,7 +87,10 @@ const Backup: Component = () => {
             One JSON file with all {bearers().length} bearer note(s), exactly as
             they sit in local storage: AES-GCM ciphertext, never plaintext -
             plus your {trustedMints().length} trusted mint(s), which aren't
-            secret and so travel in plain.
+            secret and so travel in plain. Notes marked "on device" are only a
+            blank mirror here (amount/host/label) - their real secret lives on
+            your paired vault, not in this file, so recovering them needs the
+            vault itself, not this backup.
             <Show
               when={savedKeyIsEncrypted()}
               fallback={
