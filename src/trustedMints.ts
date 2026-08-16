@@ -19,7 +19,12 @@ export type TrustedMint = {
 // unrelated to whether any given entry ends up in the trusted-mints
 // registry above (appearing here says nothing about a mint's signing key or
 // whether this wallet has ever used it).
-export const PUBLIC_MINTS = ['mint@mint.600.wtf', 'mint@lnurl.21mint.me']
+export const PUBLIC_MINTS = [
+  'mint@mint.600.wtf',
+  'mint@lnurl.21mint.me',
+  'mint@mint.forgesworn.dev',
+  'mint@minty.exe.xyz'
+]
 
 const STORAGE_KEY = 'lnurlcash_trusted_mints'
 
