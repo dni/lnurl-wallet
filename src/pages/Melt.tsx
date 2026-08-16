@@ -12,7 +12,7 @@ import {
 import type {Bearer} from '../storage'
 import {useWallet, groupByServer} from '../WalletContext'
 import {useDevice} from '../DeviceContext'
-import type {PayRequestInfo} from '../lnurlcash'
+import type {PayRequestInfo, MeltResult} from '../lnurlcash'
 import {
   isBolt11Invoice,
   isLightningAddress,
@@ -27,7 +27,8 @@ import {
   meltNote,
   mergeNotes,
   splitNote,
-  settleNote
+  settleNote,
+  NoteSpentError
 } from '../lnurlcash'
 import {
   deviceMerge,
@@ -439,14 +440,33 @@ const Melt: Component = () => {
     setPaying(true)
     try {
       const current = await mergeSelectionIfNeeded(picked)
-      const result = current.deviceId
-        ? await deviceMeltRequest(
-            requireDeviceClient(deviceClient()),
-            current.deviceId,
-            current.callback,
-            invoice
+      let result: MeltResult
+      try {
+        result = current.deviceId
+          ? await deviceMeltRequest(
+              requireDeviceClient(deviceClient()),
+              current.deviceId,
+              current.callback,
+              invoice
+            )
+          : await meltNote(
+              current.callback,
+              requireNoteK1(current.url),
+              invoice
+            )
+      } catch (err) {
+        // this melt names a single note (current), so a NoteSpentError here
+        // is unambiguous - it's already gone, lock it the same way a
+        // successful melt would have rather than leave it looking spendable
+        if (err instanceof NoteSpentError) {
+          await updateBearer(current.id, {spent: true})
+          logActivity(
+            'spent',
+            `${serverOf(current.url)} reports ${msatToSats(current.amount)} sats as already spent - marked spent locally.`
           )
-        : await meltNote(current.callback, requireNoteK1(current.url), invoice)
+        }
+        throw err
+      }
       await updateBearer(current.id, {spent: true})
       setSelectedIds(new Set<string>())
       finishMelt(current, result)
@@ -501,12 +521,24 @@ const Melt: Component = () => {
           mintPubkey: base.mintPubkey,
           deviceId: parts.target.deviceId
         })
-        const result = await deviceMeltRequest(
-          client,
-          parts.target.deviceId,
-          spend.callback,
-          invoice
-        )
+        let result: MeltResult
+        try {
+          result = await deviceMeltRequest(
+            client,
+            parts.target.deviceId,
+            spend.callback,
+            invoice
+          )
+        } catch (err) {
+          if (err instanceof NoteSpentError) {
+            await updateBearer(spend.id, {spent: true})
+            logActivity(
+              'spent',
+              `${serverOf(spend.url)} reports ${msatToSats(spend.amount)} sats as already spent - marked spent locally.`
+            )
+          }
+          throw err
+        }
         await updateBearer(spend.id, {spent: true})
         setSelectedIds(new Set<string>())
         finishMelt(spend, result)
@@ -547,11 +579,23 @@ const Melt: Component = () => {
         verified: true,
         mintPubkey: base.mintPubkey
       })
-      const result = await meltNote(
-        spend.callback,
-        requireNoteK1(spend.url),
-        invoice
-      )
+      let result: MeltResult
+      try {
+        result = await meltNote(
+          spend.callback,
+          requireNoteK1(spend.url),
+          invoice
+        )
+      } catch (err) {
+        if (err instanceof NoteSpentError) {
+          await updateBearer(spend.id, {spent: true})
+          logActivity(
+            'spent',
+            `${serverOf(spend.url)} reports ${msatToSats(spend.amount)} sats as already spent - marked spent locally.`
+          )
+        }
+        throw err
+      }
       await updateBearer(spend.id, {spent: true})
       setSelectedIds(new Set<string>())
       finishMelt(spend, result)

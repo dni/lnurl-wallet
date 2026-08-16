@@ -25,7 +25,8 @@ import {
   verifyNoteSignature,
   splitNote,
   rotateNote,
-  settleNote
+  settleNote,
+  NoteSpentError
 } from '../lnurlcash'
 import {
   deviceRefresh,
@@ -193,6 +194,17 @@ const BearerCard: Component<BearerCardProps> = props => {
         notify('Note refreshed.', NotifyKind.SUCCESS)
       }
     } catch (err) {
+      // the service just told us - unambiguously, this GET named exactly
+      // this note's own k1 - that it's already spent. Trust it and lock
+      // the note the same way markSpent() does, rather than leave it
+      // sitting there looking spendable until someone notices by hand.
+      if (err instanceof NoteSpentError) {
+        await updateBearer(props.bearer.id, {spent: true})
+        logActivity(
+          'spent',
+          `${serverOf(props.bearer.url)} reports ${msatToSats(props.bearer.amount)} sats as already spent - marked spent locally.`
+        )
+      }
       notify((err as Error).message, NotifyKind.ERROR)
     } finally {
       setBusy(false)
@@ -307,6 +319,18 @@ const BearerCard: Component<BearerCardProps> = props => {
         try {
           result = await splitNote(currentCallback, [currentK1], msat)
         } catch (err) {
+          // a single-k1 request, so a NoteSpentError here is unambiguous:
+          // it's remainderId that's already gone, not some other selected
+          // note - lock it the same way refresh() does, and skip the
+          // rotate-in-place attempt below (there's nothing left to rotate)
+          if (err instanceof NoteSpentError) {
+            await updateBearer(remainderId, {spent: true})
+            logActivity(
+              'spent',
+              `${serverOf(currentUrl)} reports ${msatToSats(currentAmount)} sats as already spent - marked spent locally.`
+            )
+            throw err
+          }
           try {
             const rotated = await rotateNote(currentCallback, currentK1)
             await updateBearer(remainderId, {

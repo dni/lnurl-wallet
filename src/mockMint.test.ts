@@ -13,8 +13,12 @@ import {
   mergeNotes,
   meltNote,
   settleNote,
-  PendingNoteError
+  toBech32Lnurl,
+  PendingNoteError,
+  NoteSpentError,
+  NoteUnknownError
 } from './lnurlcash'
+import {receiveNote} from './receive'
 
 // Exercises the stateful multi-step flows Mint.tsx/Melt.tsx/Transfer.tsx
 // drive (mint -> rotate -> split -> merge -> melt, pending-note recovery,
@@ -50,6 +54,11 @@ type Melt = {noteHash: string; settled: boolean}
 // discloses as h/h2.
 class MockMint {
   private notes = new Map<string, Note>()
+  // hashes of notes once outstanding but since burned (rotate/split/merge
+  // input, or a settled melt) - kept around, like the real lnurl-mint keeps
+  // spent=1 rows rather than deleting them, so GET /w can tell "this was
+  // spent" apart from "this was never a note at all"
+  private spent = new Set<string>()
   private invoices = new Map<string, Invoice>()
   private melts = new Map<string, Melt>()
   private invoiceCounter = 0
@@ -85,6 +94,7 @@ class MockMint {
     const melt = this.melts.get(meltId)
     if (!melt) throw new Error('no such melt')
     melt.settled = true
+    this.spent.add(melt.noteHash)
     this.notes.delete(melt.noteHash)
   }
 
@@ -164,8 +174,13 @@ class MockMint {
     if (url.pathname === '/w') {
       const k1 = params.get('k1')
       if (!k1) return this.error('missing k1')
-      const note = this.notes.get(hashK1(k1))
-      if (!note) return this.error('not found')
+      const hash = hashK1(k1)
+      const note = this.notes.get(hash)
+      if (!note) {
+        return this.error(
+          this.spent.has(hash) ? 'Note already spent.' : 'Unknown note.'
+        )
+      }
       return this.respond({
         tag: 'withdrawRequest',
         callback: WITHDRAW_CALLBACK,
@@ -201,7 +216,10 @@ class MockMint {
       if (h && !h2 && !amount && !pr && k1s.length === 1) {
         if (this.rotateFails) return this.error('simulated failure')
         const total = notes.reduce((sum, n) => sum + n!.amountMsat, 0)
-        for (const hash of hashes) this.notes.delete(hash)
+        for (const hash of hashes) {
+          this.spent.add(hash)
+          this.notes.delete(hash)
+        }
         this.notes.set(h, {amountMsat: total, pending: false})
         return this.ok()
       }
@@ -212,7 +230,10 @@ class MockMint {
         const total = notes.reduce((sum, n) => sum + n!.amountMsat, 0)
         const change = total - target
         if (change < 0) return this.error('insufficient value')
-        for (const hash of hashes) this.notes.delete(hash)
+        for (const hash of hashes) {
+          this.spent.add(hash)
+          this.notes.delete(hash)
+        }
         this.notes.set(h, {amountMsat: target, pending: false})
         this.notes.set(h2, {amountMsat: change, pending: false})
         return this.ok()
@@ -221,7 +242,10 @@ class MockMint {
       // merge: many k1s, h only, no amount/pr
       if (h && !h2 && !amount && !pr && k1s.length > 1) {
         const total = notes.reduce((sum, n) => sum + n!.amountMsat, 0)
-        for (const hash of hashes) this.notes.delete(hash)
+        for (const hash of hashes) {
+          this.spent.add(hash)
+          this.notes.delete(hash)
+        }
         this.notes.set(h, {amountMsat: total, pending: false})
         return this.ok()
       }
@@ -272,7 +296,8 @@ describe('mint -> rotate -> split -> merge -> melt', () => {
     expect(rotated.k1).not.toBe(preimage)
     expect(mint.isOutstanding(preimage)).toBe(false)
     expect(mint.isOutstanding(rotated.k1)).toBe(true)
-    await expect(fetchNoteInfo(noteUrl)).rejects.toThrow(/not found/)
+    await expect(fetchNoteInfo(noteUrl)).rejects.toBeInstanceOf(NoteSpentError)
+    await expect(fetchNoteInfo(noteUrl)).rejects.toThrow(/spent/i)
 
     // split: one k1, one piece + change (LUD-25 also allows many at once,
     // covered by the "one or many k1s" test below)
@@ -314,7 +339,7 @@ describe('mint -> rotate -> split -> merge -> melt', () => {
     expect(mint.isOutstanding(merged.k1)).toBe(false)
     await expect(
       fetchNoteInfo(buildNoteUrl(WITHDRAW_URL, merged.k1, 21000))
-    ).rejects.toThrow(/not found/)
+    ).rejects.toThrow(/spent/i)
   })
 
   it('splits one or many k1s in a single request (LUD-25)', async () => {
@@ -363,7 +388,7 @@ describe('pending-note recovery', () => {
     mint.settleMelt(idFromVerifyUrl(melt.verify!))
     await expect(
       fetchNoteInfo(buildNoteUrl(WITHDRAW_URL, k1, 10000))
-    ).rejects.toThrow(/not found/)
+    ).rejects.toThrow(/spent/i)
   })
 
   it('restores the note to outstanding if the outgoing payment fails', async () => {
@@ -377,6 +402,66 @@ describe('pending-note recovery', () => {
     // never happened
     const rotated = await rotateNote(WITHDRAW_CALLBACK, k1)
     expect(mint.isOutstanding(rotated.k1)).toBe(true)
+  })
+})
+
+describe('spent vs. unknown note classification', () => {
+  it('reports a never-issued k1 as unknown, not spent', async () => {
+    const neverIssued = randomHex(32)
+    await expect(
+      fetchNoteInfo(buildNoteUrl(WITHDRAW_URL, neverIssued, 1000))
+    ).rejects.toBeInstanceOf(NoteUnknownError)
+    await expect(
+      fetchNoteInfo(buildNoteUrl(WITHDRAW_URL, neverIssued, 1000))
+    ).rejects.toThrow(/unknown/i)
+  })
+
+  it('reports a burned k1 as spent once it has actually been redeemed', async () => {
+    const k1 = randomHex(32)
+    mint.seed(k1, 1000)
+    await rotateNote(WITHDRAW_CALLBACK, k1)
+    await expect(
+      fetchNoteInfo(buildNoteUrl(WITHDRAW_URL, k1, 1000))
+    ).rejects.toBeInstanceOf(NoteSpentError)
+  })
+
+  it('a mutating callback naming an unknown k1 is also classified, even from its generic wording', async () => {
+    const neverIssued = randomHex(32)
+    await expect(
+      rotateNote(WITHDRAW_CALLBACK, neverIssued)
+    ).rejects.toBeInstanceOf(NoteUnknownError)
+  })
+})
+
+describe('receiveNote surfaces a definitive spent/unknown report', () => {
+  it('throws instead of silently storing an already-spent note as unverified', async () => {
+    const k1 = randomHex(32)
+    mint.seed(k1, 1000)
+    await rotateNote(WITHDRAW_CALLBACK, k1) // burns k1
+
+    const url = buildNoteUrl(WITHDRAW_URL, k1, 1000)
+    await expect(receiveNote(toBech32Lnurl(url), [])).rejects.toBeInstanceOf(
+      NoteSpentError
+    )
+  })
+
+  it('throws for a note the service never issued', async () => {
+    const neverIssued = randomHex(32)
+    const url = buildNoteUrl(WITHDRAW_URL, neverIssued, 1000)
+    await expect(receiveNote(toBech32Lnurl(url), [])).rejects.toBeInstanceOf(
+      NoteUnknownError
+    )
+  })
+
+  it('still falls back to an unverified note when the service is unreachable', async () => {
+    vi.stubGlobal('fetch', (() => {
+      throw new Error('network down')
+    }) as unknown as typeof fetch)
+    const k1 = randomHex(32)
+    const url = buildNoteUrl(WITHDRAW_URL, k1, 1000)
+    const received = await receiveNote(toBech32Lnurl(url), [])
+    expect(received.verified).toBe(false)
+    expect(received.amount).toBe(1000)
   })
 })
 

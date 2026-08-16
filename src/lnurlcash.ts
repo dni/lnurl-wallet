@@ -357,7 +357,12 @@ export const fetchNoteInfo = async (
   // has the service ignore here anyway) are left as-is.
   const reqUrl = new URL(url)
   reqUrl.searchParams.delete('sig')
-  const body = await lnurlFetch(reqUrl)
+  let body: any
+  try {
+    body = await lnurlFetch(reqUrl)
+  } catch (err) {
+    throw classifyNoteError((err as Error).message)
+  }
   if (
     body?.tag !== 'withdrawRequest' ||
     typeof body.callback !== 'string' ||
@@ -401,6 +406,45 @@ export class PendingNoteError extends Error {
   }
 }
 
+// thrown when SERVICE reports the k1 as unambiguously already spent (burned
+// by a prior melt/rotate/split/merge, or replayed after one of those) -
+// distinct from NoteUnknownError below because SERVICE is authoritative
+// here: a wallet holding this k1 locally can safely lock it as spent
+// without asking, the same as if it had just melted it itself
+export class NoteSpentError extends Error {
+  constructor(reason: string) {
+    super(`This note has already been spent (service says: "${reason}").`)
+    this.name = 'NoteSpentError'
+  }
+}
+
+// thrown when SERVICE reports the k1 as never having been a valid note at
+// all - never minted here, minted at a different service, or simply
+// mistyped/corrupted. Distinct from NoteSpentError: nothing here proves
+// this wallet's copy was ever real, so it's surfaced as an error rather
+// than silently locked as spent
+export class NoteUnknownError extends Error {
+  constructor(reason: string) {
+    super(
+      `The service doesn't recognize this note (service says: "${reason}").`
+    )
+    this.name = 'NoteUnknownError'
+  }
+}
+
+// SERVICE's own wording for "this k1 is dead" varies by implementation and
+// by endpoint - the informational GET can afford to distinguish "Note
+// already spent." from "Unknown note.", while the mutating callback (an
+// atomic, possibly multi-k1 request) can only ever say something like
+// "Invalid or already spent k1." since it can't tell which case applies to
+// which k1. Classified here so every note-specific call site gets a
+// consistent, typed error instead of each re-parsing raw reason text.
+const classifyNoteError = (reason: string): Error => {
+  if (/spent/i.test(reason)) return new NoteSpentError(reason)
+  if (/unknown|not found/i.test(reason)) return new NoteUnknownError(reason)
+  return new Error(reason)
+}
+
 const callbackRequest = async (
   callback: string,
   params: [string, string][]
@@ -417,7 +461,7 @@ const callbackRequest = async (
     if ((err as Error).message === 'pending') {
       throw new PendingNoteError()
     }
-    throw err
+    throw classifyNoteError((err as Error).message)
   }
   if (body?.status !== 'OK') {
     throw new Error('Operation was not confirmed by the service.')

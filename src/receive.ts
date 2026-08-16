@@ -5,7 +5,9 @@ import {
   serverOf,
   fetchNoteInfo,
   rotateNote,
-  withNewK1
+  withNewK1,
+  NoteSpentError,
+  NoteUnknownError
 } from './lnurlcash'
 import type {Bearer} from './storage'
 import type {NewBearer} from './WalletContext'
@@ -40,9 +42,18 @@ export const receiveNote = async (
       verified: true,
       mintPubkey: info.mintPubkey
     }
-  } catch {
-    // service unreachable - fall back to the sender's own (unverified)
-    // declared amount so the note isn't shown as worth nothing
+  } catch (err) {
+    // the service positively told us this k1 is dead - that's worth more
+    // than the sender's own claim, so don't paper over it with an
+    // unverified fallback the way an unreachable/unknown-shaped error
+    // below does. The caller (Transfer.tsx) surfaces this and never stores
+    // the note.
+    if (err instanceof NoteSpentError || err instanceof NoteUnknownError) {
+      throw err
+    }
+    // service unreachable (or some other non-definitive failure) - fall
+    // back to the sender's own (unverified) declared amount so the note
+    // isn't shown as worth nothing
     return {
       url,
       callback: '',
