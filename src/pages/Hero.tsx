@@ -6,7 +6,8 @@ import {
   IoLockClosedSharp,
   IoServerSharp,
   IoGitBranchSharp,
-  IoSaveSharp
+  IoSaveSharp,
+  IoHardwareChipSharp
 } from 'solid-icons/io'
 
 import {useWallet} from '../WalletContext'
@@ -83,6 +84,15 @@ const Hero: Component = () => {
           <p>
             Download all your bearer notes as one file - still encrypted,
             exactly as stored. Restore them anywhere with your seed phrase.
+          </p>
+        </div>
+        <div class="hero-feature">
+          <IoHardwareChipSharp />
+          <h3>Optional hardware vault</h3>
+          <p>
+            Pair an LNURLvault device over USB or Bluetooth and it takes over
+            generating and holding your note secrets - this wallet only ever
+            keeps a blank mirror of what's on it, never the real thing.
           </p>
         </div>
       </section>
