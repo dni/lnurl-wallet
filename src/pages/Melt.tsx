@@ -46,6 +46,7 @@ import {
   pasteFromClipboard
 } from '../helpers'
 import {offlineMode} from '../offlineMode'
+import {getTrustedMintNodeColor} from '../trustedMints'
 import {
   storeableMeltAddresses,
   addStoreableMeltAddress,
@@ -794,53 +795,67 @@ const Melt: Component = () => {
                 fallback={<p>No bearer notes to pay with yet.</p>}
               >
                 <For each={groupByServer(unspentBearers())}>
-                  {([server, group]) => (
-                    <div class="form-item">
-                      <label>{server}</label>
-                      <div class="bearer-list">
-                        <For each={group}>
-                          {bearer => (
-                            <figure class="bearer-card">
-                              <div class="bearer-head">
-                                <label class="bearer-select">
-                                  <input
-                                    type="checkbox"
-                                    checked={selectedIds().has(bearer.id)}
-                                    disabled={!bearer.callback}
-                                    onChange={e =>
+                  {([server, group]) => {
+                    // same mint for the whole group, so the same node color
+                    // (if any's cached) applies to every note in it - see
+                    // BearerCard's own noteColor for the tinting itself
+                    const noteColor = () => getTrustedMintNodeColor(server)
+                    return (
+                      <div class="form-item">
+                        <label>{server}</label>
+                        <div class="bearer-list">
+                          <For each={group}>
+                            {bearer => (
+                              <figure
+                                class="bearer-card"
+                                classList={{tinted: !!noteColor()}}
+                                style={
+                                  noteColor()
+                                    ? {'--note-tint': noteColor()!}
+                                    : undefined
+                                }
+                              >
+                                <div class="bearer-head">
+                                  <label class="bearer-select">
+                                    <input
+                                      type="checkbox"
+                                      checked={selectedIds().has(bearer.id)}
+                                      disabled={!bearer.callback}
+                                      onChange={e =>
+                                        toggleSelect(
+                                          bearer.id,
+                                          e.currentTarget.checked
+                                        )
+                                      }
+                                    />
+                                  </label>
+                                  <div
+                                    class="bearer-title clickable"
+                                    onClick={() =>
+                                      bearer.callback &&
                                       toggleSelect(
                                         bearer.id,
-                                        e.currentTarget.checked
+                                        !selectedIds().has(bearer.id)
                                       )
                                     }
-                                  />
-                                </label>
-                                <div
-                                  class="bearer-title clickable"
-                                  onClick={() =>
-                                    bearer.callback &&
-                                    toggleSelect(
-                                      bearer.id,
-                                      !selectedIds().has(bearer.id)
-                                    )
-                                  }
-                                >
-                                  <span class="bearer-amount">
-                                    {msatToSats(bearer.amount)} sats
-                                  </span>
-                                  <Show when={!bearer.callback}>
-                                    <span class="bearer-pending">
-                                      unverified
+                                  >
+                                    <span class="bearer-amount">
+                                      {msatToSats(bearer.amount)} sats
                                     </span>
-                                  </Show>
+                                    <Show when={!bearer.callback}>
+                                      <span class="bearer-pending">
+                                        unverified
+                                      </span>
+                                    </Show>
+                                  </div>
                                 </div>
-                              </div>
-                            </figure>
-                          )}
-                        </For>
+                              </figure>
+                            )}
+                          </For>
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    )
+                  }}
                 </For>
               </Show>
               <Show when={selectedBearers().length > 0}>
