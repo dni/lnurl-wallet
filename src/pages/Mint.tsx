@@ -51,12 +51,12 @@ import {
   pasteFromClipboard,
   mempoolNodeUrl
 } from '../helpers'
-import type {TrustedMintNodeInfo} from '../trustedMints'
 import {
   isMintTrusted,
   addTrustedMint,
   cacheTrustedMintNodeInfo,
   getTrustedMintAddress,
+  mintAddressCacheInfo,
   trustedMints,
   PUBLIC_MINTS
 } from '../trustedMints'
@@ -89,28 +89,6 @@ const guessMintAddress = (server: string): string => `mint@${server}`
 // else the same best-effort guess selectMint has always fallen back to
 const mintAddressFor = (server: string): string =>
   getTrustedMintAddress(server) || guessMintAddress(server)
-
-// just the cacheable subset of a mint-address lookup (see trustedMints.ts's
-// TrustedMintNodeInfo) - MintAddressInfo also carries protocol fields
-// (callback, payLink, nodePubkey, ...) that have no business ending up
-// alongside a TrustedMint entry in storage. `username` is independent of
-// whether the mint-address endpoint itself succeeded - it comes straight
-// from the input typed/pasted/scanned, so it's cached even when info is
-// null (no mint-address support, or the lookup hasn't run yet).
-const nodeCacheInfo = (
-  info: MintAddressInfo | null,
-  username: string | null
-): TrustedMintNodeInfo | undefined => {
-  if (!info && !username) return undefined
-  return {
-    nodeAlias: info?.nodeAlias,
-    nodeColor: info?.nodeColor,
-    nodeCapacityMsat: info?.nodeCapacityMsat,
-    nodeNumChannels: info?.nodeNumChannels,
-    nodeNumPeers: info?.nodeNumPeers,
-    username: username ?? undefined
-  }
-}
 
 // LUD-25 minting: pay a payRequest that advertises `withdrawLink` - the
 // payment preimage IS the bearer secret. This wallet has no node of its
@@ -310,7 +288,7 @@ const Mint: Component = () => {
       }
       // already trusted - still worth refreshing the cached display info
       // (Mints.tsx) with whatever this lookup just (re)discovered
-      const cached = nodeCacheInfo(nodeInfo, username)
+      const cached = mintAddressCacheInfo(nodeInfo, username)
       if (cached) cacheTrustedMintNodeInfo(server, cached)
       proceedWithPayRequest(info)
     } catch (err) {
@@ -339,7 +317,7 @@ const Mint: Component = () => {
     addTrustedMint(
       pending.server,
       pending.mintPubkey,
-      nodeCacheInfo(pending.nodeInfo, pending.username)
+      mintAddressCacheInfo(pending.nodeInfo, pending.username)
     )
     setPendingTrust(null)
     proceedWithPayRequest(pending.info)

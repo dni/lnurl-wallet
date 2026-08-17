@@ -1,4 +1,5 @@
 import {createSignal} from 'solid-js'
+import type {MintAddressInfo} from './lnurlcash'
 
 // A mint's signing key (LUD-25 Offline verification's `mintPubkey`) - not a
 // secret, just a public identity, so this is plain unencrypted localStorage,
@@ -42,6 +43,29 @@ export type TrustedMintNodeInfo = {
   nodeNumChannels?: number
   nodeNumPeers?: number
   username?: string
+}
+
+// distills a mint-address lookup (see lnurlcash.ts's fetchMintAddress) down
+// to just the cacheable display fields above - shared by Mint.tsx's lookup
+// flow and Mints.tsx's "add by address" widget, so both cache node info the
+// same way rather than duplicating this shape-narrowing themselves.
+// `username` is independent of whether the mint-address endpoint itself
+// succeeded - it's cached even when info is null (no mint-address support,
+// or the lookup hasn't run yet), since it comes straight from whichever
+// payRequest URL was actually resolved, not from that endpoint's response.
+export const mintAddressCacheInfo = (
+  info: MintAddressInfo | null,
+  username: string | null
+): TrustedMintNodeInfo | undefined => {
+  if (!info && !username) return undefined
+  return {
+    nodeAlias: info?.nodeAlias,
+    nodeColor: info?.nodeColor,
+    nodeCapacityMsat: info?.nodeCapacityMsat,
+    nodeNumChannels: info?.nodeNumChannels,
+    nodeNumPeers: info?.nodeNumPeers,
+    username: username ?? undefined
+  }
 }
 
 // A small curated list of known public mints, for a one-click quick start -
