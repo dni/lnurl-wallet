@@ -7,15 +7,18 @@ import {
   IoClipboardSharp,
   IoCloseSharp,
   IoReturnDownForwardSharp,
-  IoRefreshSharp
+  IoRefreshSharp,
+  IoGlobeSharp
 } from 'solid-icons/io'
 
+import type {TrustedMint} from '../trustedMints'
 import {
   trustedMints,
   addTrustedMint,
   removeTrustedMint,
   isMintTrusted,
   mintAddressCacheInfo,
+  getTrustedMintAddress,
   PUBLIC_MINTS
 } from '../trustedMints'
 import {
@@ -49,6 +52,14 @@ const Mints: Component = () => {
   // from elsewhere (its own site, a friend, etc).
   const [addressInput, setAddressInput] = createSignal('')
   const [addressBusy, setAddressBusy] = createSignal(false)
+  // which trusted mint's own refresh button is currently in flight - only
+  // used to put a spinner on the one card that was actually clicked;
+  // addressBusy() above still gates every button on the page against a
+  // second concurrent lookup, same single-flow-at-a-time rule the "add by
+  // address" widget already follows
+  const [refreshingServer, setRefreshingServer] = createSignal<string | null>(
+    null
+  )
 
   const addByAddress = async (value?: string) => {
     const raw = value ?? addressInput()
@@ -98,6 +109,22 @@ const Mints: Component = () => {
     if (text !== null) setAddressInput(text)
   }
 
+  // re-runs the same mint-address lookup addByAddress does, against
+  // whichever address this mint was last actually reached at (its cached
+  // username, same convention Mint.tsx's own mintAddressFor uses) or the
+  // "mint" username default if none was ever cached - addTrustedMint
+  // upserts, so this both refreshes an already-trusted entry's alias/color/
+  // capacity/channels/peers and re-confirms its pubkey hasn't changed.
+  const refreshMint = async (mint: TrustedMint) => {
+    const address = getTrustedMintAddress(mint.server) || `mint@${mint.server}`
+    setRefreshingServer(mint.server)
+    try {
+      await addByAddress(address)
+    } finally {
+      setRefreshingServer(null)
+    }
+  }
+
   const add = () => {
     try {
       addTrustedMint(server(), pubkey())
@@ -134,21 +161,13 @@ const Mints: Component = () => {
           <figure class="setup-card">
             <h4>Public mints</h4>
             <p>
-              A small curated list, for a quick start - opens the mint's own
-              site in a new tab so you can look it up before trusting it
-              manually below.
+              A small curated list, for a quick start - click one to look up and
+              trust its signing key via its mint-address discovery endpoint
+              (same as "Add a mint by address" below), or refresh it if it's
+              already trusted. The globe icon opens the mint's own site instead,
+              to look it up by hand first.
             </p>
             <div class="mint-picker">
-              {/* opens the mint's site rather than fetching its payRequest
-              and auto-trusting whatever signing key came back (the previous
-              behavior here): per LUD-25, a mintPubkey is only guaranteed at
-              the withdraw endpoint used for a rotated/split/merged note, not
-              necessarily the payRequest a bare address resolves to - a
-              perfectly spec-compliant mint could 404 there with a confusing
-              "does not publish a signing key" error. Mint.tsx's own lookup
-              already handles that correctly (it only offers a trust prompt
-              when a pubkey is actually present); this list just points at
-              the site instead of guessing. */}
               <For each={PUBLIC_MINTS}>
                 {address => {
                   const url = resolveMintInput(address)
@@ -156,23 +175,34 @@ const Mints: Component = () => {
                     !!url && isMintTrusted(serverOf(url))
                   return (
                     <Show when={url}>
-                      <a
-                        class="link-btn"
-                        href={`https://${serverOf(url!)}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        title={
-                          alreadyTrusted()
-                            ? 'Already in your trusted list - opens its site'
-                            : "Open this mint's site"
-                        }
-                      >
-                        <Show when={alreadyTrusted()}>
-                          <IoLockClosedSharp />
-                          &nbsp;
-                        </Show>
-                        {address}
-                      </a>
+                      <span class="mint-picker-entry">
+                        <button
+                          disabled={addressBusy() || offlineMode()}
+                          title={
+                            offlineMode()
+                              ? 'Offline mode is on'
+                              : alreadyTrusted()
+                                ? "Refresh this mint's cached info"
+                                : 'Look up and trust this mint'
+                          }
+                          onClick={() => addByAddress(address)}
+                        >
+                          <Show when={alreadyTrusted()}>
+                            <IoLockClosedSharp />
+                            &nbsp;
+                          </Show>
+                          {address}
+                        </button>
+                        <a
+                          class="icon-btn"
+                          title="Open this mint's site"
+                          href={`https://${serverOf(url!)}`}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          <IoGlobeSharp />
+                        </a>
+                      </span>
                     </Show>
                   )
                 }}
@@ -245,6 +275,22 @@ const Mints: Component = () => {
                     </Show>
                     <p class="mint-pubkey">{mint.mintPubkey}</p>
                     <p class="mint-date">added {formatDate(mint.addedAt)}</p>
+                    <div class="btns">
+                      <button
+                        disabled={addressBusy() || offlineMode()}
+                        title={
+                          offlineMode()
+                            ? 'Offline mode is on'
+                            : "Refresh this mint's cached info"
+                        }
+                        onClick={() => refreshMint(mint)}
+                      >
+                        <IoRefreshSharp
+                          classList={{spin: refreshingServer() === mint.server}}
+                        />
+                        &nbsp;Refresh
+                      </button>
+                    </div>
                     <Show
                       when={!mint.locked}
                       fallback={
