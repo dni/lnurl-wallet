@@ -10,7 +10,7 @@ import {
   PUBLIC_MINTS
 } from '../trustedMints'
 import {resolveMintInput, serverOf} from '../lnurlcash'
-import {notify, NotifyKind, formatDate} from '../helpers'
+import {notify, NotifyKind, formatDate, msatToSats} from '../helpers'
 
 const Mints: Component = () => {
   const [server, setServer] = createSignal('')
@@ -112,7 +112,56 @@ const Mints: Component = () => {
               <For each={trustedMints()}>
                 {mint => (
                   <figure class="mint-card">
-                    <h4>{mint.server}</h4>
+                    <h4>
+                      <Show when={mint.nodeColor}>
+                        <span
+                          class="mint-color-dot"
+                          style={{'background-color': mint.nodeColor!}}
+                        />
+                      </Show>
+                      {mint.nodeAlias || mint.server}
+                    </h4>
+                    {/* h4 above already reads as mint.server when there's no
+                    alias to show instead - this line only adds anything new
+                    when there's an alias (so the bare hostname still needs
+                    showing somewhere) or a cached username (so it's worth
+                    spelling out the full address, not just the host) */}
+                    <Show when={mint.nodeAlias || mint.username}>
+                      <p class="mint-date">
+                        {mint.username
+                          ? `${mint.username}@${mint.server}`
+                          : mint.server}
+                      </p>
+                    </Show>
+                    <Show when={mint.nodeCapacityMsat !== undefined}>
+                      <p class="mint-date">
+                        Channel capacity: {msatToSats(mint.nodeCapacityMsat!)}{' '}
+                        sats
+                      </p>
+                    </Show>
+                    <Show
+                      when={
+                        mint.nodeNumChannels !== undefined ||
+                        mint.nodeNumPeers !== undefined
+                      }
+                    >
+                      <p class="mint-date">
+                        <Show when={mint.nodeNumChannels !== undefined}>
+                          {mint.nodeNumChannels} channels
+                        </Show>
+                        <Show
+                          when={
+                            mint.nodeNumChannels !== undefined &&
+                            mint.nodeNumPeers !== undefined
+                          }
+                        >
+                          &nbsp;·&nbsp;
+                        </Show>
+                        <Show when={mint.nodeNumPeers !== undefined}>
+                          {mint.nodeNumPeers} peers
+                        </Show>
+                      </p>
+                    </Show>
                     <p class="mint-pubkey">{mint.mintPubkey}</p>
                     <p class="mint-date">added {formatDate(mint.addedAt)}</p>
                     <Show

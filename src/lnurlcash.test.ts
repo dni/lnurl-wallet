@@ -24,7 +24,9 @@ import {
   decodeBolt11AmountMsat,
   parseMintFee,
   applyMintFee,
-  grossUpForMintFee
+  grossUpForMintFee,
+  mintAddressUrl,
+  lightningAddressUsername
 } from './lnurlcash'
 
 const K1 = 'a'.repeat(64)
@@ -82,6 +84,35 @@ describe('input resolution', () => {
     expect(resolveNoteInput('https://mint.example.com/withdraw')).toBeNull()
     expect(isValidNoteInput(NOTE_URL)).toBe(true)
     expect(isValidNoteInput('you@example.com')).toBe(false)
+  })
+
+  it('mirrors a resolved payRequest URL onto its withdraw-side mint address', () => {
+    // derived from the resolved URL's own path, not the raw input - works
+    // identically whether that URL came from a Lightning Address...
+    expect(mintAddressUrl(resolveLnurlInput('mint@mint.example.com')!)).toBe(
+      'https://mint.example.com/.well-known/lnurlw/mint'
+    )
+    // ...or a bare URL that already happens to follow the same convention
+    expect(
+      mintAddressUrl('https://mint.example.com/.well-known/lnurlp/mint')
+    ).toBe('https://mint.example.com/.well-known/lnurlw/mint')
+    // only a URL at that conventional path has an "other side" to mirror
+    expect(mintAddressUrl(NOTE_URL)).toBeNull()
+    expect(mintAddressUrl('https://mint.example.com/pay')).toBeNull()
+    expect(mintAddressUrl('nonsense')).toBeNull()
+  })
+
+  it('extracts a payRequest URL username, cacheable onto TrustedMint', () => {
+    expect(
+      lightningAddressUsername(resolveLnurlInput('mint@mint.example.com')!)
+    ).toBe('mint')
+    expect(
+      lightningAddressUsername(
+        'https://mint.example.com/.well-known/lnurlp/mint'
+      )
+    ).toBe('mint')
+    expect(lightningAddressUsername(NOTE_URL)).toBeNull()
+    expect(lightningAddressUsername('nonsense')).toBeNull()
   })
 })
 

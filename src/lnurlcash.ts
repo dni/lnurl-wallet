@@ -99,6 +99,48 @@ export const resolveMintInput = (value: string): string | null => {
   return null
 }
 
+// matches the LUD-16 .well-known/lnurlp/{name} path any resolved payRequest
+// URL follows - whether it got there via an actual Lightning Address
+// (lnAddressToUrl above), a bech32 LNURL that happens to decode to the same
+// convention, or a raw URL typed/scanned directly. Shared by mintAddressUrl
+// and lightningAddressUsername below so neither has to re-derive it from
+// the raw input text (which a bech32/scanned URL never carried in the
+// first place) - the resolved URL's own path already has the answer.
+const LNURLP_PATH_RE = /^(.*\/\.well-known\/)lnurlp\/([^/]+)$/
+
+// LUD-25 mint address (theoretical/experimental - see lnurl-mint's README):
+// the withdraw-side mirror of a payRequest URL, at .well-known/lnurlw/{name}
+// instead of .../lnurlp/{name} - same username, same origin. Derived
+// straight from the payRequest URL itself (whatever this wallet already
+// resolved mint input to - see resolveMintInput), not guessed from the raw
+// input: null for anything not at that conventional path, nothing to
+// mirror.
+export const mintAddressUrl = (payUrl: string): string | null => {
+  let parsed: URL
+  try {
+    parsed = new URL(payUrl)
+  } catch {
+    return null
+  }
+  const match = parsed.pathname.match(LNURLP_PATH_RE)
+  if (!match) return null
+  return `${parsed.origin}${match[1]}lnurlw/${match[2]}`
+}
+
+// the username segment of a resolved payRequest URL ("mint" out of
+// .../.well-known/lnurlp/mint) - null for a URL that isn't at that
+// conventional path. Cached onto TrustedMint (see trustedMints.ts) so a
+// later quick-select can reconstruct the exact address this mint was
+// actually reached at, instead of guessing "mint@<server>" (see Mint.tsx's
+// guessMintAddress) for a mint that uses a different one.
+export const lightningAddressUsername = (payUrl: string): string | null => {
+  try {
+    return new URL(payUrl).pathname.match(LNURLP_PATH_RE)?.[2] ?? null
+  } catch {
+    return null
+  }
+}
+
 // resolves arbitrary LNURL-ish input (bech32, LUD-17 scheme, Lightning
 // Address, plain http(s)) down to a fetchable URL
 export const resolveLnurlInput = (value: string): string | null => {
@@ -381,6 +423,58 @@ export const fetchNoteInfo = async (
     )
   }
   return body as WithdrawRequestInfo
+}
+
+// LUD-25 mint address (see mintAddressUrl above): the withdraw-side
+// discovery response a mint MAY publish there - this mint's own node
+// identity (alias/uri/color/capacity), the amount bounds a freshly minted
+// note can actually fall into, and payLink back to the real payRequest.
+// Unlike WithdrawRequestInfo there's no real k1 behind this - it's purely
+// informational (this mint only ever custodies bearer notes, never
+// per-user accounts, so there's no balance behind a username to withdraw),
+// so it's typed and parsed separately rather than reusing that type with
+// an optional k1: nothing here is ever safe to treat as spendable.
+export type MintAddressInfo = {
+  tag: 'withdrawRequest'
+  callback: string
+  minWithdrawable: number
+  maxWithdrawable: number
+  defaultDescription?: string
+  // the wire field is still `mintPubkey` (LUD-25's term for a note's own
+  // signing key) - renamed on this side to sit next to nodeAlias/nodeUri/
+  // nodeColor, since at this endpoint it's never a note's key, always this
+  // mint's own underlying node identity (see lnurl-mint's
+  // _mint_address_response: derived straight from NodeInfo.uri)
+  nodePubkey?: string
+  payLink: string
+  nodeAlias?: string
+  nodeUri?: string
+  nodeColor?: string
+  nodeCapacityMsat?: number
+  nodeNumChannels?: number
+  nodeNumPeers?: number
+}
+
+// Best-effort discovery only: this endpoint is experimental (not part of
+// any numbered LUD), so most mints - including ones this wallet otherwise
+// works fine with - simply won't have it. Callers should treat a rejection
+// here as "no extra info available" and fall back to the payRequest lookup
+// (fetchPayRequest), which remains the only functional path to actually
+// mint a note.
+export const fetchMintAddress = async (
+  url: string
+): Promise<MintAddressInfo> => {
+  const body = await lnurlFetch(url)
+  if (
+    body?.tag !== 'withdrawRequest' ||
+    typeof body.callback !== 'string' ||
+    typeof body.payLink !== 'string' ||
+    typeof body.maxWithdrawable !== 'number'
+  ) {
+    throw new Error('Not a mint address response (unexpected shape).')
+  }
+  const {mintPubkey, ...rest} = body
+  return {...rest, nodePubkey: mintPubkey} as MintAddressInfo
 }
 
 export type WithdrawSuccessResponse = {

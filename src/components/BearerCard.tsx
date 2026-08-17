@@ -41,7 +41,7 @@ import {
   notify,
   NotifyKind
 } from '../helpers'
-import {getTrustedMintPubkey} from '../trustedMints'
+import {getTrustedMintPubkey, getTrustedMintNodeColor} from '../trustedMints'
 import {offlineMode} from '../offlineMode'
 
 type Action = 'split' | null
@@ -76,6 +76,20 @@ const BearerCard: Component<BearerCardProps> = props => {
   const k1 = () => noteK1(props.bearer.url) || ''
   const hasCallback = () => props.bearer.callback !== ''
   const isSpent = () => !!props.bearer.spent
+
+  // this note's issuing mint's self-reported node color (cached via the
+  // mint-address lookup, see trustedMints.ts) - tints the card's own
+  // background gradient (see the .tinted rule in style.scss) instead of
+  // the app's default accent, purely cosmetic. Absent whenever no lookup
+  // has ever cached one for this server, same fallback story as
+  // offlineVerified's mintPubkey below.
+  const noteColor = createMemo(() =>
+    getTrustedMintNodeColor(serverOf(props.bearer.url))
+  )
+  const cardStyle = createMemo(() => ({
+    ...props.dragStyle,
+    ...(noteColor() ? {'--note-tint': noteColor()!} : {})
+  }))
   // the amount and server text are also click targets for select-to-combine
   // - a bigger, more obvious target than the small checkbox alone, which
   // stays as the visible indicator of the current state either way
@@ -447,8 +461,8 @@ const BearerCard: Component<BearerCardProps> = props => {
   return (
     <figure
       class="bearer-card"
-      classList={{dragging: props.dragging}}
-      style={props.dragStyle}
+      classList={{dragging: props.dragging, tinted: !!noteColor()}}
+      style={cardStyle()}
       ref={props.setRef}
     >
       <div class="bearer-head">

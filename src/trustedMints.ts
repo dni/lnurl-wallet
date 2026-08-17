@@ -13,6 +13,35 @@ export type TrustedMint = {
   // holding funds there, not a standalone opinion, so it can't be revoked
   // by deleting it here (see removeTrustedMint)
   locked: boolean
+  // best-effort node identity/capacity, cached from the mint-address
+  // discovery endpoint (see lnurlcash.ts's fetchMintAddress) purely for
+  // display (Mints.tsx) - absent for a mint that doesn't support it, or one
+  // trusted before this wallet learned to ask. Never used for anything
+  // security-relevant; mintPubkey above remains the only thing a note's
+  // signature is ever checked against.
+  nodeAlias?: string
+  nodeColor?: string
+  nodeCapacityMsat?: number
+  nodeNumChannels?: number
+  nodeNumPeers?: number
+  // the local-part this mint was actually reached at ("mint" out of
+  // "mint@host" - see lnurlcash.ts's lightningAddressUsername), cached so a
+  // later quick-select (Mint.tsx) can reconstruct the exact address instead
+  // of guessing "mint@<server>" for a mint that uses a different one.
+  // Absent for a mint only ever looked up as a bech32 LNURL, which has no
+  // such concept.
+  username?: string
+}
+
+// the subset of TrustedMint that's cacheable display metadata, as opposed
+// to the server/mintPubkey/addedAt/locked fields every entry has regardless
+export type TrustedMintNodeInfo = {
+  nodeAlias?: string
+  nodeColor?: string
+  nodeCapacityMsat?: number
+  nodeNumChannels?: number
+  nodeNumPeers?: number
+  username?: string
 }
 
 // A small curated list of known public mints, for a one-click quick start -
@@ -57,6 +86,22 @@ export const isMintTrusted = (server: string): boolean =>
 export const getTrustedMintPubkey = (server: string): string | null =>
   trustedMints().find(m => m.server === server)?.mintPubkey ?? null
 
+// this mint's self-reported node color, for tinting its notes' background
+// (see BearerCard) - purely cosmetic, absent whenever no mint-address
+// lookup has ever cached one for this server
+export const getTrustedMintNodeColor = (server: string): string | null =>
+  trustedMints().find(m => m.server === server)?.nodeColor ?? null
+
+// the exact Lightning Address this mint was last reached at (see
+// TrustedMint.username), for a quick-select that reconstructs it instead of
+// guessing "mint@<server>" - null for a mint with no cached username
+// (looked up as a bech32 LNURL, or trusted before this wallet learned to
+// remember one)
+export const getTrustedMintAddress = (server: string): string | null => {
+  const username = trustedMints().find(m => m.server === server)?.username
+  return username ? `${username}@${server}` : null
+}
+
 // Called whenever this wallet ends up holding (or already holds) a bearer
 // from `server` - minting, receiving, splitting, merging, refreshing all
 // route through WalletContext's addBearer/updateBearer, which is where
@@ -85,8 +130,14 @@ export const lockTrustedMint = (server: string, mintPubkey: string): void => {
 // Manual add from the Mints page, or a user-confirmed first encounter (see
 // Mint.tsx's lookup) - unlocked, since no bearer necessarily backs it yet.
 // Validates and throws instead of silently no-op'ing, since a human is
-// waiting on the result either way.
-export const addTrustedMint = (server: string, mintPubkey: string): void => {
+// waiting on the result either way. `nodeInfo` is whatever the mint-address
+// lookup (if any) turned up alongside this pubkey - optional, since a
+// manual add (Mints.tsx) or a mint without that endpoint has none to give.
+export const addTrustedMint = (
+  server: string,
+  mintPubkey: string,
+  nodeInfo?: TrustedMintNodeInfo
+): void => {
   const trimmedServer = server.trim()
   const key = mintPubkey.trim().toLowerCase()
   if (!trimmedServer) {
@@ -102,7 +153,7 @@ export const addTrustedMint = (server: string, mintPubkey: string): void => {
   persist(
     existing
       ? current.map(m =>
-          m.server === trimmedServer ? {...m, mintPubkey: key} : m
+          m.server === trimmedServer ? {...m, mintPubkey: key, ...nodeInfo} : m
         )
       : [
           ...current,
@@ -110,10 +161,27 @@ export const addTrustedMint = (server: string, mintPubkey: string): void => {
             server: trimmedServer,
             mintPubkey: key,
             addedAt: Date.now(),
-            locked: false
+            locked: false,
+            ...nodeInfo
           }
         ]
   )
+}
+
+// refreshes just the cached display info (Mints.tsx) for a server already
+// in the list - never touches mintPubkey/addedAt/locked, and no-ops for a
+// server that isn't trusted yet (that's addTrustedMint's job, which takes
+// the same info directly alongside the pubkey it's trusting for the first
+// time). Called opportunistically whenever a lookup re-discovers a mint
+// address for a mint this wallet already trusts, so the cache doesn't just
+// freeze at whatever was known the moment trust was first established.
+export const cacheTrustedMintNodeInfo = (
+  server: string,
+  nodeInfo: TrustedMintNodeInfo
+): void => {
+  const current = trustedMints()
+  if (!current.some(m => m.server === server)) return
+  persist(current.map(m => (m.server === server ? {...m, ...nodeInfo} : m)))
 }
 
 // only succeeds for entries not backed by a held bearer - see
@@ -149,7 +217,22 @@ export const mergeTrustedMints = (incoming: TrustedMint[]): number => {
       server: mint.server,
       mintPubkey: mint.mintPubkey.toLowerCase(),
       addedAt: mint.addedAt,
-      locked: !!mint.locked
+      locked: !!mint.locked,
+      nodeAlias:
+        typeof mint.nodeAlias === 'string' ? mint.nodeAlias : undefined,
+      nodeColor:
+        typeof mint.nodeColor === 'string' ? mint.nodeColor : undefined,
+      nodeCapacityMsat:
+        typeof mint.nodeCapacityMsat === 'number'
+          ? mint.nodeCapacityMsat
+          : undefined,
+      nodeNumChannels:
+        typeof mint.nodeNumChannels === 'number'
+          ? mint.nodeNumChannels
+          : undefined,
+      nodeNumPeers:
+        typeof mint.nodeNumPeers === 'number' ? mint.nodeNumPeers : undefined,
+      username: typeof mint.username === 'string' ? mint.username : undefined
     })
     knownServers.add(mint.server)
     added++

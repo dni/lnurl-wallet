@@ -973,6 +973,30 @@ nav {
   }
 }
 
+// per-note background tint from the issuing mint's own self-reported node
+// color (see BearerCard's noteColor / trustedMints.ts's
+// getTrustedMintNodeColor), swapped in via the --note-tint custom property
+// set inline on the card - applied only when a color is actually cached
+// (the .tinted class BearerCard toggles), so a note from a mint with none
+// cached, or before this feature existed, keeps the plain .bearer-card
+// gradient above untouched. color-mix's percentage mirrors the plain rgba()
+// alpha the untinted rule uses, so the same note reads identically before
+// and after a mint's color becomes known - just re-hued.
+.bearer-card.tinted {
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--note-tint) #{$transparency * 100}%, transparent) 0%,
+    rgba($bg, $transparency) 75%
+  );
+  &:hover {
+    background: linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--note-tint) 85%, transparent) 0%,
+      rgba($bg, 0.85) 75%
+    );
+  }
+}
+
 .bearer-head {
   display: flex;
   align-items: center;
@@ -1152,6 +1176,17 @@ body.dragging-note {
   font-size: 0.75em;
   opacity: 0.5;
   margin: 4px 0 0 0;
+}
+
+// node.color swatch on the mint-address discovery card (Mint.tsx) - same
+// "#rrggbb" the mint's own node self-reports, already validated server-side
+.mint-color-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-right: 6px;
+  vertical-align: middle;
 }
 
 .mint-locked {

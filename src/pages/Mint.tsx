@@ -20,7 +20,7 @@ import {
 
 import {useWallet} from '../WalletContext'
 import {useDevice} from '../DeviceContext'
-import type {PayRequestInfo} from '../lnurlcash'
+import type {PayRequestInfo, MintAddressInfo} from '../lnurlcash'
 import {
   resolveMintInput,
   fetchPayRequest,
@@ -34,7 +34,10 @@ import {
   isPreimage,
   applyMintFee,
   grossUpForMintFee,
-  describeMintFee
+  describeMintFee,
+  mintAddressUrl,
+  fetchMintAddress,
+  lightningAddressUsername
 } from '../lnurlcash'
 import {deviceMint} from '../deviceOrchestration'
 import {
@@ -48,9 +51,12 @@ import {
   pasteFromClipboard,
   mempoolNodeUrl
 } from '../helpers'
+import type {TrustedMintNodeInfo} from '../trustedMints'
 import {
   isMintTrusted,
   addTrustedMint,
+  cacheTrustedMintNodeInfo,
+  getTrustedMintAddress,
   trustedMints,
   PUBLIC_MINTS
 } from '../trustedMints'
@@ -70,13 +76,41 @@ type Mode = 'invoice' | 'preimage'
 // button and the cadence of the automatic check
 const VERIFY_POLL_SECONDS = 5
 
-// trustedMints only stores a bare hostname (see trustedMints.ts) - there's
-// no record of *how* it was originally reached, so re-selecting one guesses
-// the same mint@<host> Lightning Address convention this wallet's own
-// reference mint (lnurl-mint) defaults to. A reasonable quick-fill, not a
-// guarantee: if a given mint uses a different username, the lookup below
+// fallback for a trusted mint with no cached username (see
+// trustedMints.ts's TrustedMint.username - e.g. one only ever looked up as
+// a bech32 LNURL, or trusted before this wallet learned to remember one) -
+// guesses the same mint@<host> Lightning Address convention this wallet's
+// own reference mint (lnurl-mint) defaults to. A reasonable quick-fill, not
+// a guarantee: if a given mint uses a different username, the lookup below
 // just fails normally and the holder can type the real address by hand.
 const guessMintAddress = (server: string): string => `mint@${server}`
+
+// the exact address a trusted mint was last reached at when one's cached,
+// else the same best-effort guess selectMint has always fallen back to
+const mintAddressFor = (server: string): string =>
+  getTrustedMintAddress(server) || guessMintAddress(server)
+
+// just the cacheable subset of a mint-address lookup (see trustedMints.ts's
+// TrustedMintNodeInfo) - MintAddressInfo also carries protocol fields
+// (callback, payLink, nodePubkey, ...) that have no business ending up
+// alongside a TrustedMint entry in storage. `username` is independent of
+// whether the mint-address endpoint itself succeeded - it comes straight
+// from the input typed/pasted/scanned, so it's cached even when info is
+// null (no mint-address support, or the lookup hasn't run yet).
+const nodeCacheInfo = (
+  info: MintAddressInfo | null,
+  username: string | null
+): TrustedMintNodeInfo | undefined => {
+  if (!info && !username) return undefined
+  return {
+    nodeAlias: info?.nodeAlias,
+    nodeColor: info?.nodeColor,
+    nodeCapacityMsat: info?.nodeCapacityMsat,
+    nodeNumChannels: info?.nodeNumChannels,
+    nodeNumPeers: info?.nodeNumPeers,
+    username: username ?? undefined
+  }
+}
 
 // LUD-25 minting: pay a payRequest that advertises `withdrawLink` - the
 // payment preimage IS the bearer secret. This wallet has no node of its
@@ -120,7 +154,17 @@ const Mint: Component = () => {
     server: string
     mintPubkey: string
     info: PayRequestInfo
+    nodeInfo: MintAddressInfo | null
+    username: string | null
   } | null>(null)
+
+  // LUD-25 mint address (experimental, see lnurlcash.ts's mintAddressUrl):
+  // best-effort node identity/capacity + mint limits, discovered alongside
+  // the payRequest lookup below - purely informational, so a mint without
+  // this endpoint just leaves it null and lookup() proceeds unaffected
+  const [mintNodeInfo, setMintNodeInfo] = createSignal<MintAddressInfo | null>(
+    null
+  )
 
   // LUD-21: only present when the invoice's own callback response
   // advertised a verify URL - the whole check-automatically UI is optional
@@ -213,9 +257,37 @@ const Mint: Component = () => {
       return
     }
     setPendingTrust(null)
+    setMintNodeInfo(null)
     setBusy(true)
     try {
-      const info = await fetchPayRequest(url)
+      // best-effort mint-address discovery (see mintAddressUrl) - derived
+      // straight from `url`'s own .well-known/lnurlp/{name} path, not
+      // guessed from the raw input text, so it works the same whether
+      // mintInput() was typed as a Lightning Address or arrived as a bech32
+      // LNURL/scanned URL that resolved to the same convention. Most mints
+      // won't have this experimental endpoint at all, so a failure here
+      // just falls back to this wallet's own guessed payRequest URL (`url`
+      // above); when it does succeed, its own payLink is the authoritative
+      // place to fetch the payRequest from instead.
+      const addressUrl = mintAddressUrl(url)
+      let nodeInfo: MintAddressInfo | null = null
+      let payUrl = url
+      if (addressUrl) {
+        try {
+          nodeInfo = await fetchMintAddress(addressUrl)
+          setMintNodeInfo(nodeInfo)
+          payUrl = nodeInfo.payLink
+        } catch {
+          // no mint-address support here - proceed with just the guess
+        }
+      }
+      // same .well-known/lnurlp/{name} convention mintAddressUrl looked
+      // for, read off whichever payRequest URL is actually about to be
+      // fetched (the mint's own payLink when mint-address discovery
+      // succeeded, this wallet's own guess otherwise)
+      const username = lightningAddressUsername(payUrl)
+
+      const info = await fetchPayRequest(payUrl)
       if (!info.withdrawLink) {
         notify(
           'This payRequest does not advertise lnurlcash minting (no withdrawLink).',
@@ -223,14 +295,23 @@ const Mint: Component = () => {
         )
         return
       }
-      const server = serverOf(url)
+      const server = serverOf(payUrl)
+
       // first time seeing this server's signing key - pause for a decision
-      // instead of trusting it silently (a mint with no mintPubkey at all
-      // just isn't offline-verifiable, nothing to trust or ask about)
-      if (info.mintPubkey && !isMintTrusted(server)) {
-        setPendingTrust({server, mintPubkey: info.mintPubkey, info})
+      // instead of trusting it silently (a mint with no signing key at all
+      // just isn't offline-verifiable, nothing to trust or ask about).
+      // Prefer the mint-address endpoint's nodePubkey when present - it's
+      // available up front, before paying anything, unlike payRequest's own
+      // mintPubkey (rarely present in practice - see PayRequestInfo)
+      const mintPubkey = nodeInfo?.nodePubkey || info.mintPubkey
+      if (mintPubkey && !isMintTrusted(server)) {
+        setPendingTrust({server, mintPubkey, info, nodeInfo, username})
         return
       }
+      // already trusted - still worth refreshing the cached display info
+      // (Mints.tsx) with whatever this lookup just (re)discovered
+      const cached = nodeCacheInfo(nodeInfo, username)
+      if (cached) cacheTrustedMintNodeInfo(server, cached)
       proceedWithPayRequest(info)
     } catch (err) {
       notify((err as Error).message, NotifyKind.ERROR)
@@ -255,7 +336,11 @@ const Mint: Component = () => {
   const confirmTrust = () => {
     const pending = pendingTrust()
     if (!pending) return
-    addTrustedMint(pending.server, pending.mintPubkey)
+    addTrustedMint(
+      pending.server,
+      pending.mintPubkey,
+      nodeCacheInfo(pending.nodeInfo, pending.username)
+    )
     setPendingTrust(null)
     proceedWithPayRequest(pending.info)
   }
@@ -543,6 +628,57 @@ const Mint: Component = () => {
                 </button>
               </div>
             </figure>
+            <Show when={mintNodeInfo()}>
+              {node => (
+                <figure class="setup-card">
+                  <h4>
+                    <Show when={node().nodeColor}>
+                      <span
+                        class="mint-color-dot"
+                        style={{'background-color': node().nodeColor!}}
+                      />
+                    </Show>
+                    {node().nodeAlias || 'Mint node'}
+                  </h4>
+                  <Show when={node().nodeCapacityMsat !== undefined}>
+                    <p>
+                      Channel capacity: {msatToSats(node().nodeCapacityMsat!)}{' '}
+                      sats
+                    </p>
+                  </Show>
+                  <Show
+                    when={
+                      node().nodeNumChannels !== undefined ||
+                      node().nodeNumPeers !== undefined
+                    }
+                  >
+                    <p>
+                      <Show when={node().nodeNumChannels !== undefined}>
+                        {node().nodeNumChannels} channels
+                      </Show>
+                      <Show
+                        when={
+                          node().nodeNumChannels !== undefined &&
+                          node().nodeNumPeers !== undefined
+                        }
+                      >
+                        &nbsp;·&nbsp;
+                      </Show>
+                      <Show when={node().nodeNumPeers !== undefined}>
+                        {node().nodeNumPeers} peers
+                      </Show>
+                    </p>
+                  </Show>
+                  <p>
+                    Mint limits: {msatToSats(node().minWithdrawable)} -{' '}
+                    {msatToSats(node().maxWithdrawable)} sats
+                  </p>
+                  <Show when={node().nodeUri}>
+                    <p class="mint-pubkey">{node().nodeUri}</p>
+                  </Show>
+                </figure>
+              )}
+            </Show>
             <Show when={pendingTrust()}>
               {pending => (
                 <figure class="setup-card">
@@ -799,9 +935,7 @@ const Mint: Component = () => {
                     {mint => (
                       <button
                         disabled={busy() || offlineMode()}
-                        onClick={() =>
-                          selectMint(guessMintAddress(mint.server))
-                        }
+                        onClick={() => selectMint(mintAddressFor(mint.server))}
                       >
                         {mint.server}
                       </button>

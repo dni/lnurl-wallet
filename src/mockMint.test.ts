@@ -8,6 +8,7 @@ import {
   fetchInvoiceVerification,
   buildNoteUrl,
   fetchNoteInfo,
+  fetchMintAddress,
   rotateNote,
   splitNote,
   mergeNotes,
@@ -34,6 +35,9 @@ const PAY_URL = `${BASE}/pay`
 const PAY_CALLBACK = `${BASE}/pay/cb`
 const WITHDRAW_URL = `${BASE}/w`
 const WITHDRAW_CALLBACK = `${BASE}/w/cb`
+const MINT_ADDRESS_URL = `${BASE}/mintaddress`
+const MINT_ADDRESS_BAD_URL = `${BASE}/mintaddress-bad`
+const MINT_ADDRESS_UNKNOWN_URL = `${BASE}/mintaddress-unknown`
 
 const randomHex = (bytes: number): string =>
   bytesToHex(crypto.getRandomValues(new Uint8Array(bytes)))
@@ -147,6 +151,32 @@ class MockMint {
         verify: `${BASE}/verify/pay/${id}`,
         disposable: true
       })
+    }
+
+    // LUD-25 mint address (experimental) - the withdraw-side discovery
+    // response fetchMintAddress parses (see lnurlcash.ts)
+    if (url.pathname === '/mintaddress') {
+      return this.respond({
+        tag: 'withdrawRequest',
+        callback: WITHDRAW_URL,
+        minWithdrawable: 1000,
+        maxWithdrawable: 100_000_000,
+        payLink: PAY_URL,
+        mintPubkey: 'deadbeef',
+        nodeAlias: 'mock node',
+        nodeUri: 'deadbeef@127.0.0.1:9735',
+        nodeColor: '#3399ff',
+        nodeCapacityMsat: 750_000_000,
+        nodeNumChannels: 3,
+        nodeNumPeers: 5
+      })
+    }
+    if (url.pathname === '/mintaddress-bad') {
+      // missing payLink/maxWithdrawable - not a well-formed mint address
+      return this.respond({tag: 'withdrawRequest', callback: WITHDRAW_URL})
+    }
+    if (url.pathname === '/mintaddress-unknown') {
+      return this.error('Unknown user.')
     }
 
     const payVerify = url.pathname.match(/^\/verify\/pay\/(.+)$/)
@@ -266,6 +296,38 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals()
+})
+
+describe('LUD-25 mint address (experimental)', () => {
+  it('parses node identity/capacity and mint limits', async () => {
+    const info = await fetchMintAddress(MINT_ADDRESS_URL)
+    expect(info.tag).toBe('withdrawRequest')
+    expect(info.payLink).toBe(PAY_URL)
+    expect(info.callback).toBe(WITHDRAW_URL)
+    expect(info.minWithdrawable).toBe(1000)
+    expect(info.maxWithdrawable).toBe(100_000_000)
+    // the wire field is still `mintPubkey` (mocked above) - fetchMintAddress
+    // renames it to nodePubkey (see MintAddressInfo)
+    expect(info.nodePubkey).toBe('deadbeef')
+    expect(info.nodeAlias).toBe('mock node')
+    expect(info.nodeUri).toBe('deadbeef@127.0.0.1:9735')
+    expect(info.nodeColor).toBe('#3399ff')
+    expect(info.nodeCapacityMsat).toBe(750_000_000)
+    expect(info.nodeNumChannels).toBe(3)
+    expect(info.nodeNumPeers).toBe(5)
+  })
+
+  it('rejects a response missing payLink/maxWithdrawable', async () => {
+    await expect(fetchMintAddress(MINT_ADDRESS_BAD_URL)).rejects.toThrow(
+      'Not a mint address response'
+    )
+  })
+
+  it('surfaces the service error for an unknown username', async () => {
+    await expect(fetchMintAddress(MINT_ADDRESS_UNKNOWN_URL)).rejects.toThrow(
+      'Unknown user.'
+    )
+  })
 })
 
 describe('mint -> rotate -> split -> merge -> melt', () => {
