@@ -987,7 +987,11 @@ nav {
 .bearer-card.tinted {
   background: linear-gradient(
     135deg,
-    color-mix(in srgb, var(--note-tint) #{$transparency * 100}%, transparent) 0%,
+    // literal 60%, not an interpolated `#{$transparency * 100}%` - Sass
+    // inserts a stray space before the unit ("60 %"), which is invalid as a
+    // CSS <percentage> and silently drops this whole background
+    // declaration, same alpha $transparency (0.6) gives everywhere else
+    color-mix(in srgb, var(--note-tint) 60%, transparent) 0%,
     rgba($bg, $transparency) 75%
   );
   &:hover {
