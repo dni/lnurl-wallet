@@ -3,6 +3,7 @@ import {Show, For, createSignal, createMemo} from 'solid-js'
 import {
   IoCopySharp,
   IoGitMergeSharp,
+  IoGitBranchSharp,
   IoSwapHorizontalSharp,
   IoRefreshSharp,
   IoCheckboxSharp,
@@ -19,8 +20,14 @@ import type {Bearer} from '../storage'
 import {compareBearerOrder} from '../storage'
 import {useWallet} from '../WalletContext'
 import {useDevice} from '../DeviceContext'
-import {requireNoteK1, withNewK1, mergeNotes, settleNote} from '../lnurlcash'
-import {deviceMerge, deviceSettle} from '../deviceOrchestration'
+import {
+  requireNoteK1,
+  withNewK1,
+  mergeNotes,
+  splitNote,
+  settleNote
+} from '../lnurlcash'
+import {deviceMerge, deviceSplit, deviceSettle} from '../deviceOrchestration'
 import {getTrustedMintPubkey} from '../trustedMints'
 import {offlineMode} from '../offlineMode'
 import {
@@ -45,6 +52,14 @@ const MintGroupCard: Component<MintGroupCardProps> = props => {
   const {addBearer, updateBearer, removeBearer, logActivity} = useWallet()
   const {client: deviceClient} = useDevice()
   const [combining, setCombining] = createSignal(false)
+  // "combine & split" - like combine, but instead of merging the selected
+  // notes into one, splits their sum into two: a note of a chosen amount
+  // and a change note for the remainder. showSplitInput just toggles the
+  // amount form below the action row, same as BearerCard's own split
+  // toggle (action === 'split') does per-note.
+  const [showSplitInput, setShowSplitInput] = createSignal(false)
+  const [splitSats, setSplitSats] = createSignal('')
+  const [splitting, setSplitting] = createSignal(false)
   // collapsed by default - a long wallet would otherwise render every
   // note's full card (QR toggle, actions, ...) up front for nothing
   const [showNotes, setShowNotes] = createSignal(false)
@@ -351,6 +366,127 @@ const MintGroupCard: Component<MintGroupCardProps> = props => {
     }
   }
 
+  // combine & split: same selection as combineSelected, but instead of
+  // merging into one note, burns them all and mints two - splitSats() worth
+  // and a change note for the remainder. This is exactly what splitNote's
+  // "one or many" k1s already support (LUD-25 dropped multi-k1 melt, not
+  // multi-k1 split) - no combine-then-split round trip needed.
+  const combineAndSplit = async () => {
+    const picked = selectedEligible()
+    if (picked.length < 2) return
+    // whole sats only - same reasoning as BearerCard's own split
+    const sats = Math.trunc(Number(splitSats()))
+    const msat = sats * 1000
+    if (!splitSats() || !Number.isFinite(sats) || sats <= 0) {
+      notify('Enter a whole number of sats.', NotifyKind.ERROR)
+      return
+    }
+    const sum = picked.reduce((s, b) => s + b.amount, 0)
+    if (msat >= sum) {
+      notify('Split amount must be below the combined value.', NotifyKind.ERROR)
+      return
+    }
+    setSplitting(true)
+    try {
+      const [base] = picked
+      let targetAmount: number
+      let changeAmount: number
+      const client = deviceClient()
+      if (client) {
+        // if a vault is connected, both outputs land on it - regardless of
+        // whether any of the inputs were themselves device-backed (mixed
+        // selections are fine, same as combineSelected's merge above)
+        const parts = await deviceSplit(
+          client,
+          picked.map(b => ({deviceId: b.deviceId, url: b.url})),
+          base.callback,
+          msat,
+          sum
+        )
+        for (const bearer of picked) removeBearer(bearer.id)
+        await addBearer({
+          url: parts.target.url,
+          callback: parts.target.callback,
+          amount: msat,
+          verified: true,
+          mintPubkey: base.mintPubkey,
+          deviceId: parts.target.deviceId
+        })
+        const settledChange = await deviceSettle(client, parts.change)
+        targetAmount = msat
+        changeAmount = settledChange.amountMsat
+        await addBearer({
+          url: settledChange.url,
+          callback: settledChange.callback,
+          amount: settledChange.amountMsat,
+          verified: true,
+          mintPubkey: base.mintPubkey,
+          deviceId: settledChange.deviceId
+        })
+      } else {
+        const result = await splitNote(
+          base.callback,
+          picked.map(b => requireNoteK1(b.url)),
+          msat
+        )
+        for (const bearer of picked) removeBearer(bearer.id)
+        await addBearer({
+          url: withNewK1(base.url, result.k1, msat, result.signature),
+          callback: base.callback,
+          amount: msat,
+          verified: true,
+          mintPubkey: base.mintPubkey
+        })
+        // a mint MAY charge a flat fee (LUD-25), deducted from the change -
+        // settleNote reads the actual value back authoritatively and
+        // rotates it, same as combineSelected's merge does for its result
+        const settled = await settleNote(
+          base.url,
+          result.change,
+          sum - msat,
+          result.changeSignature
+        )
+        targetAmount = msat
+        changeAmount = settled.amountMsat
+        await addBearer({
+          url: withNewK1(
+            base.url,
+            settled.k1,
+            settled.amountMsat,
+            settled.signature
+          ),
+          callback: settled.callback,
+          amount: settled.amountMsat,
+          verified: true,
+          mintPubkey: base.mintPubkey
+        })
+      }
+      props.onSelectAll(
+        picked.map(b => b.id),
+        false
+      )
+      const feeMsat = sum - msat - changeAmount
+      const feeNote =
+        feeMsat > 0
+          ? ` ${msatToSats(feeMsat)} sats fee deducted from the change.`
+          : ''
+      logActivity(
+        'split',
+        `Combined ${picked.length} notes from ${props.server} and split into ${msatToSats(targetAmount)} + ${msatToSats(changeAmount)} sats.${feeNote}`
+      )
+      notify(
+        `Split into ${msatToSats(targetAmount)} sats and ${msatToSats(changeAmount)} sats change.${feeNote}`,
+        NotifyKind.SUCCESS
+      )
+      setShowSplitInput(false)
+      setSplitSats('')
+    } catch (err) {
+      notify((err as Error).message, NotifyKind.ERROR)
+    } finally {
+      setSplitting(false)
+    }
+  }
+
   return (
     <>
       <figure class="setup-card mint-group-card">
@@ -457,6 +593,25 @@ const MintGroupCard: Component<MintGroupCardProps> = props => {
               </Show>
             </button>
             <button
+              class="icon-btn split-btn"
+              disabled={!canCombine() || splitting() || offlineMode()}
+              title={
+                offlineMode()
+                  ? 'Offline mode is on'
+                  : canCombine()
+                    ? 'Combine the selected notes and split off an amount, leaving the rest as change'
+                    : 'Select 2+ verified, unspent notes here to combine & split'
+              }
+              onClick={() => setShowSplitInput(v => !v)}
+            >
+              <Show when={splitting()} fallback={<IoGitBranchSharp />}>
+                <IoRefreshSharp class="spin" />
+              </Show>
+              <Show when={selectedEligible().length > 0}>
+                &nbsp;({selectedEligible().length})
+              </Show>
+            </button>
+            <button
               class="icon-btn transfer-btn"
               disabled={!canTransfer() || offlineMode()}
               title={
@@ -498,6 +653,49 @@ const MintGroupCard: Component<MintGroupCardProps> = props => {
             already withheld when these notes were minted - you get back all but
             one base fee.
           </p>
+        </Show>
+        <Show when={showNotes() && showSplitInput() && canCombine()}>
+          <div class="form-item">
+            <label>
+              Split off (sats, of{' '}
+              {msatToSats(selectedEligible().reduce((s, b) => s + b.amount, 0))}
+              )
+            </label>
+            <input
+              type="number"
+              min="1"
+              step="1"
+              placeholder="amount in sats"
+              value={splitSats()}
+              onInput={e => setSplitSats(e.currentTarget.value)}
+            />
+            <p class="bearer-hint">
+              Burns the {selectedEligible().length} selected notes and mints
+              two: this amount, and a change note for the rest. If this mint
+              charges a fee, it's deducted from the change, not the amount split
+              off.
+            </p>
+            <div class="btns">
+              <button
+                disabled={splitting() || offlineMode()}
+                onClick={combineAndSplit}
+              >
+                <Show when={splitting()}>
+                  <IoRefreshSharp class="spin" />
+                  &nbsp;
+                </Show>
+                Split
+              </button>
+              <button
+                onClick={() => {
+                  setShowSplitInput(false)
+                  setSplitSats('')
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
         </Show>
         <Show when={showNotes()}>
           <div class="bearer-list">

@@ -918,11 +918,12 @@ nav {
 }
 
 // the mint-group card's action row (Copy pubkey, Show notes, Select all,
-// Combine, Transfer) - smaller than the app's default buttons so a row of
-// five doesn't dominate the card
+// Combine, Combine & Split, Transfer) - smaller than the app's default
+// buttons so a row of six doesn't dominate the card
 .show-notes-btn,
 .select-all-btn,
 .combine-btn,
+.split-btn,
 .transfer-btn {
   padding: 4px 10px;
   font-size: 0.9em;
@@ -933,9 +934,10 @@ nav {
 }
 
 // .combine-btn sits right after .select-all-btn (a regular button, whose
-// own margin-right already spaces it out), but .transfer-btn follows
-// another .icon-btn - those have margin-right:0, so without this the two
-// would touch with no gap between them
+// own margin-right already spaces it out), but .split-btn/.transfer-btn
+// each follow another .icon-btn - those have margin-right:0, so without
+// this the two would touch with no gap between them
+.split-btn,
 .transfer-btn {
   margin-left: 8px;
 }
