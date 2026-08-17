@@ -87,8 +87,22 @@ const SendDialog: Component<SendDialogProps> = props => {
     const msat = satsToMsat(amountSats())
     return amountSats() && Number.isFinite(msat) && msat > 0 ? msat : null
   })
+  // only notes that could actually carve this amount off on their own are
+  // worth showing at all - a spent note is gone for good, and one smaller
+  // than the target can never be picked toward it (this dialog carves an
+  // amount down out of notes, it never tops several small ones up to reach
+  // a bigger target)
+  const eligibleBearers = createMemo(() => {
+    const target = amountMsat()
+    if (target === null) return []
+    return bearers().filter(b => !b.spent && b.amount >= target)
+  })
+  // filtered against eligibleBearers, not the raw bearers() list, so a note
+  // that falls out of eligibility (the amount was edited up after it was
+  // checked) drops out of the selection too, instead of staying counted
+  // toward selectedTotal while no longer even shown to uncheck
   const selectedBearers = createMemo(() =>
-    bearers().filter(b => selectedIds().has(b.id))
+    eligibleBearers().filter(b => selectedIds().has(b.id))
   )
   const selectedTotal = createMemo(() =>
     selectedBearers().reduce((sum, b) => sum + b.amount, 0)
@@ -302,10 +316,16 @@ const SendDialog: Component<SendDialogProps> = props => {
         />
         <Show when={amountMsat() !== null}>
           <Show
-            when={bearers().length > 0}
-            fallback={<p>No bearer notes to prepare from yet.</p>}
+            when={eligibleBearers().length > 0}
+            fallback={
+              <p>
+                {bearers().length > 0
+                  ? 'No unspent notes are big enough to carve that amount out of - try a smaller amount.'
+                  : 'No bearer notes to prepare from yet.'}
+              </p>
+            }
           >
-            <For each={groupByServer(bearers())}>
+            <For each={groupByServer(eligibleBearers())}>
               {([server, group]) => (
                 <div class="form-item">
                   <label>{server}</label>
@@ -315,14 +335,13 @@ const SendDialog: Component<SendDialogProps> = props => {
                         <input
                           type="checkbox"
                           checked={selectedIds().has(bearer.id)}
-                          disabled={!bearer.callback || bearer.spent}
+                          disabled={!bearer.callback}
                           onChange={e =>
                             toggleSelect(bearer.id, e.currentTarget.checked)
                           }
                         />
                         &nbsp;{msatToSats(bearer.amount)} sats
-                        <Show when={bearer.spent}>&nbsp;(spent)</Show>
-                        <Show when={!bearer.callback && !bearer.spent}>
+                        <Show when={!bearer.callback}>
                           &nbsp;(not verified yet)
                         </Show>
                       </label>
