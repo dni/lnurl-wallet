@@ -24,8 +24,13 @@ const Wallet: Component = () => {
   const [unlocking, setUnlocking] = createSignal(false)
   const [selected, setSelected] = createSignal<Set<string>>(new Set())
   const [confirmClearSpent, setConfirmClearSpent] = createSignal(false)
-  const [showSend, setShowSend] = createSignal(false)
-  const [showReceive, setShowReceive] = createSignal(false)
+  // mutually exclusive - opening one closes the other rather than letting
+  // both dialogs be up (and independently mutating wallet state) at once
+  const [openDialog, setOpenDialog] = createSignal<'send' | 'receive' | null>(
+    null
+  )
+  const showSend = () => openDialog() === 'send'
+  const showReceive = () => openDialog() === 'receive'
 
   // the hero's balance/mint count is always the spendable view (excludes
   // spent notes) - "Total balance" shouldn't count sats that aren't
@@ -171,14 +176,14 @@ const Wallet: Component = () => {
                   <button
                     type="button"
                     class="hero-btn hero-btn-primary"
-                    onClick={() => setShowReceive(true)}
+                    onClick={() => setOpenDialog('receive')}
                   >
                     <IoArrowDownCircleSharp />
                     &nbsp;Receive
                   </button>
                 </div>
                 <Show when={showReceive()}>
-                  <ReceiveDialog onClose={() => setShowReceive(false)} />
+                  <ReceiveDialog onClose={() => setOpenDialog(null)} />
                 </Show>
               </section>
             </div>
@@ -246,21 +251,21 @@ const Wallet: Component = () => {
                 </Show>
               </div>
               <div class="btns">
-                <button type="button" onClick={() => setShowReceive(true)}>
+                <button type="button" onClick={() => setOpenDialog('receive')}>
                   <IoArrowDownCircleSharp />
                   &nbsp;Receive
                 </button>
-                <button type="button" onClick={() => setShowSend(true)}>
+                <button type="button" onClick={() => setOpenDialog('send')}>
                   <IoPaperPlaneSharp />
                   &nbsp;Send
                 </button>
               </div>
             </section>
             <Show when={showReceive()}>
-              <ReceiveDialog onClose={() => setShowReceive(false)} />
+              <ReceiveDialog onClose={() => setOpenDialog(null)} />
             </Show>
             <Show when={showSend()}>
-              <SendDialog onClose={() => setShowSend(false)} />
+              <SendDialog onClose={() => setOpenDialog(null)} />
             </Show>
             <For each={serverNames()}>
               {server => (

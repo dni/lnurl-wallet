@@ -8,7 +8,8 @@ import {
   IoCloseSharp,
   IoReturnDownForwardSharp,
   IoRefreshSharp,
-  IoGlobeSharp
+  IoGlobeSharp,
+  IoOpenSharp
 } from 'solid-icons/io'
 
 import type {TrustedMint} from '../trustedMints'
@@ -33,7 +34,8 @@ import {
   NotifyKind,
   formatDate,
   msatToSats,
-  pasteFromClipboard
+  pasteFromClipboard,
+  mempoolNodeUrl
 } from '../helpers'
 import {offlineMode} from '../offlineMode'
 import ScanToggle from '../components/ScanToggle'
@@ -290,6 +292,24 @@ const Mints: Component = () => {
                         />
                         &nbsp;Refresh
                       </button>
+                      <a
+                        class="icon-btn"
+                        title="Open this mint"
+                        href={`https://${mint.server}`}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        <IoGlobeSharp />
+                      </a>
+                      <a
+                        class="icon-btn icon-btn-gap"
+                        title="Look up this Lightning node on mempool.space"
+                        href={mempoolNodeUrl(mint.mintPubkey)}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        <IoOpenSharp />
+                      </a>
                     </div>
                     <Show
                       when={!mint.locked}

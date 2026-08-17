@@ -654,6 +654,28 @@ const Mint: Component = () => {
                   <Show when={node().nodeUri}>
                     <p class="mint-pubkey">{node().nodeUri}</p>
                   </Show>
+                  <div class="btns">
+                    <a
+                      class="icon-btn"
+                      title="Open this mint"
+                      href={`https://${serverOf(node().payLink)}`}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      <IoGlobeSharp />
+                    </a>
+                    <Show when={node().nodePubkey}>
+                      <a
+                        class="icon-btn icon-btn-gap"
+                        title="Look up this Lightning node on mempool.space"
+                        href={mempoolNodeUrl(node().nodePubkey!)}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        <IoOpenSharp />
+                      </a>
+                    </Show>
+                  </div>
                 </figure>
               )}
             </Show>
