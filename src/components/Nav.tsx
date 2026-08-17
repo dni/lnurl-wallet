@@ -5,7 +5,6 @@ import {
   IoCloseSharp,
   IoWalletSharp,
   IoAddCircleSharp,
-  IoSwapHorizontalSharp,
   IoFlameSharp,
   IoLockClosedSharp,
   IoSaveSharp,
@@ -68,10 +67,6 @@ const Nav = () => {
             <A href="/melt" class="nav-link">
               <IoFlameSharp />
               &nbsp;Melt
-            </A>
-            <A href="/transfer" class="nav-link">
-              <IoSwapHorizontalSharp />
-              &nbsp;Transfer
             </A>
           </Show>
         </div>

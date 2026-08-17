@@ -3,7 +3,8 @@ import {Show, For, createSignal, createMemo} from 'solid-js'
 import {A} from '@solidjs/router'
 import {
   IoAddCircleSharp,
-  IoSwapHorizontalSharp,
+  IoPaperPlaneSharp,
+  IoArrowDownCircleSharp,
   IoLockOpenSharp,
   IoRefreshSharp,
   IoTrashSharp,
@@ -14,6 +15,8 @@ import {useWallet, groupByServer} from '../WalletContext'
 import {serverOf} from '../lnurlcash'
 import {notify, NotifyKind, msatToSats} from '../helpers'
 import MintGroupCard from '../components/MintGroupCard'
+import SendDialog from '../components/SendDialog'
+import ReceiveDialog from '../components/ReceiveDialog'
 
 const Wallet: Component = () => {
   const {state, bearers, unlock, removeBearer} = useWallet()
@@ -21,6 +24,8 @@ const Wallet: Component = () => {
   const [unlocking, setUnlocking] = createSignal(false)
   const [selected, setSelected] = createSignal<Set<string>>(new Set())
   const [confirmClearSpent, setConfirmClearSpent] = createSignal(false)
+  const [showSend, setShowSend] = createSignal(false)
+  const [showReceive, setShowReceive] = createSignal(false)
 
   // the hero's balance/mint count is always the spendable view (excludes
   // spent notes) - "Total balance" shouldn't count sats that aren't
@@ -163,11 +168,18 @@ const Wallet: Component = () => {
                     <IoAddCircleSharp />
                     &nbsp;Mint
                   </A>
-                  <A href="/transfer" class="hero-btn hero-btn-primary">
-                    <IoSwapHorizontalSharp />
-                    &nbsp;Transfer
-                  </A>
+                  <button
+                    type="button"
+                    class="hero-btn hero-btn-primary"
+                    onClick={() => setShowReceive(true)}
+                  >
+                    <IoArrowDownCircleSharp />
+                    &nbsp;Receive
+                  </button>
                 </div>
+                <Show when={showReceive()}>
+                  <ReceiveDialog onClose={() => setShowReceive(false)} />
+                </Show>
               </section>
             </div>
           }
@@ -233,7 +245,23 @@ const Wallet: Component = () => {
                   </div>
                 </Show>
               </div>
+              <div class="btns">
+                <button type="button" onClick={() => setShowReceive(true)}>
+                  <IoArrowDownCircleSharp />
+                  &nbsp;Receive
+                </button>
+                <button type="button" onClick={() => setShowSend(true)}>
+                  <IoPaperPlaneSharp />
+                  &nbsp;Send
+                </button>
+              </div>
             </section>
+            <Show when={showReceive()}>
+              <ReceiveDialog onClose={() => setShowReceive(false)} />
+            </Show>
+            <Show when={showSend()}>
+              <SendDialog onClose={() => setShowSend(false)} />
+            </Show>
             <For each={serverNames()}>
               {server => (
                 <section class="server-group">

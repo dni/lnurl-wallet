@@ -389,7 +389,7 @@ export const deviceMeltRequest = async (
 // its settlement is confirmed (Melt.tsx's checkPending / TransferDialog's
 // checkTransfer already detect that point for the local spent-flag, this
 // is the same moment, not optimistic), or a prepared note once its "Done"/
-// handed-over action fires (Transfer.tsx). Routed through the same
+// handed-over action fires (SendDialog.tsx). Routed through the same
 // recovery queue as every other device commit (with no outputs, just a
 // burn id) so a disconnect right at this instant doesn't strand the device
 // thinking the note is still CONFIRMED - the next reconnect retries it.

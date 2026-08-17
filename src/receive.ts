@@ -46,7 +46,7 @@ export const receiveNote = async (
     // the service positively told us this k1 is dead - that's worth more
     // than the sender's own claim, so don't paper over it with an
     // unverified fallback the way an unreachable/unknown-shaped error
-    // below does. The caller (Transfer.tsx) surfaces this and never stores
+    // below does. The caller (ReceiveDialog.tsx) surfaces this and never stores
     // the note.
     if (err instanceof NoteSpentError || err instanceof NoteUnknownError) {
       throw err

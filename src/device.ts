@@ -18,7 +18,7 @@
 //
 // This is the transport + command layer only. Wiring device-backed secrets
 // into this wallet's existing rotate/split/merge/melt flows (Mint.tsx,
-// Melt.tsx, Transfer.tsx, BearerCard.tsx today generate/hold secrets
+// Melt.tsx, SendDialog.tsx, BearerCard.tsx today generate/hold secrets
 // in-browser via lnurlcash.ts's generateNoteSecret) is a deliberate,
 // separate follow-up - see DeviceContext.tsx / pages/Vault.tsx for what's
 // wired up so far: pairing, device info, and the device's own note list.

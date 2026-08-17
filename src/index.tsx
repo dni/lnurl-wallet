@@ -19,7 +19,6 @@ import Wallet from './pages/Wallet'
 import Setup from './pages/Setup'
 import Mint from './pages/Mint'
 import Mints from './pages/Mints'
-import Transfer from './pages/Transfer'
 import Melt from './pages/Melt'
 import Activity from './pages/Activity'
 import Backup from './pages/Backup'
@@ -62,7 +61,6 @@ const cleanup = render(
       <Route path="/setup" component={Setup} />
       <Route path="/mint" component={Mint} />
       <Route path="/mints" component={Mints} />
-      <Route path="/transfer" component={Transfer} />
       <Route path="/melt" component={Melt} />
       <Route path="/activity" component={Activity} />
       <Route path="/backup" component={Backup} />
