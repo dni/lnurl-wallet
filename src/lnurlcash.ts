@@ -88,14 +88,32 @@ const lnAddressToUrl = (address: string): string => {
   return `${scheme}://${domain}/.well-known/lnurlp/${name}`
 }
 
-// narrower than resolveLnurlInput below - a mint lookup only ever accepts a
-// bech32 LNURL or a Lightning Address, both of which point unambiguously at
-// one payRequest with no guessing at scheme or path, unlike a bare host
+// a bare mint domain, with no local-part - either literally bare
+// ("mint.600.wtf") or with a leading "@" the way some mints display their
+// own address ("@mint.600.wtf", NIP-05-style), no scheme and no path. Not a
+// general-purpose "guess a URL from a hostname" - specific to this wallet's
+// own default mint@<domain> convention (see Mint.tsx's guessMintAddress,
+// PUBLIC_MINTS below), the same "mint" username lnurl-mint itself defaults
+// USERNAME to, so a mint that actually uses a different one still just
+// fails normally and has to be typed out in full.
+const isBareMintDomain = (value: string): boolean => {
+  const trimmed = value.trim()
+  return /^@?[^\s@/]+\.[^\s@/]+$/.test(trimmed) && !isLightningAddress(trimmed)
+}
+
+const bareMintDomainToUrl = (value: string): string =>
+  lnAddressToUrl(`mint@${value.trim().replace(/^@/, '')}`)
+
+// narrower than resolveLnurlInput below - a mint lookup accepts a bech32
+// LNURL, a Lightning Address, or a bare mint domain (see isBareMintDomain),
+// all of which point unambiguously at one payRequest with no guessing at
+// scheme or path beyond the "mint" username default the bare form assumes
 export const resolveMintInput = (value: string): string | null => {
   const trimmed = value.trim()
   if (!trimmed) return null
   if (isBech32Lnurl(trimmed)) return fromBech32Lnurl(trimmed)
   if (isLightningAddress(trimmed)) return lnAddressToUrl(trimmed)
+  if (isBareMintDomain(trimmed)) return bareMintDomainToUrl(trimmed)
   return null
 }
 

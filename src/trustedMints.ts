@@ -47,12 +47,15 @@ export type TrustedMintNodeInfo = {
 // A small curated list of known public mints, for a one-click quick start -
 // unrelated to whether any given entry ends up in the trusted-mints
 // registry above (appearing here says nothing about a mint's signing key or
-// whether this wallet has ever used it).
+// whether this wallet has ever used it). The bare "@domain" form (see
+// lnurlcash.ts's isBareMintDomain) rather than spelling out "mint@domain" -
+// still resolves to the exact same address, just how these mints tend to
+// actually display their own.
 export const PUBLIC_MINTS = [
-  'mint@mint.600.wtf',
-  'mint@lnurl.21mint.me',
-  'mint@mint.forgesworn.dev',
-  'mint@minty.exe.xyz'
+  '@mint.600.wtf',
+  '@lnurl.21mint.me',
+  '@mint.forgesworn.dev',
+  '@minty.exe.xyz'
 ]
 
 const STORAGE_KEY = 'lnurlcash_trusted_mints'

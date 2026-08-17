@@ -10,6 +10,7 @@ import {
   fromLud17,
   toLud17w,
   resolveLnurlInput,
+  resolveMintInput,
   resolveNoteInput,
   isValidNoteInput,
   noteK1,
@@ -113,6 +114,28 @@ describe('input resolution', () => {
     ).toBe('mint')
     expect(lightningAddressUsername(NOTE_URL)).toBeNull()
     expect(lightningAddressUsername('nonsense')).toBeNull()
+  })
+
+  it('resolves a bare mint domain to the default mint@<domain> address', () => {
+    // literally bare...
+    expect(resolveMintInput('mint.example.com')).toBe(
+      'https://mint.example.com/.well-known/lnurlp/mint'
+    )
+    // ...or with the leading "@" some mints display their own address as
+    // (see PUBLIC_MINTS) - both are shorthand for the same address
+    expect(resolveMintInput('@mint.example.com')).toBe(
+      'https://mint.example.com/.well-known/lnurlp/mint'
+    )
+    // an actual Lightning Address still takes precedence - not reinterpreted
+    // as a bare domain missing its "@"
+    expect(resolveMintInput('mint@mint.example.com')).toBe(
+      'https://mint.example.com/.well-known/lnurlp/mint'
+    )
+    // a scheme or path disqualifies it as "bare" - resolveMintInput has no
+    // guess for those, same as before this existed
+    expect(resolveMintInput('https://mint.example.com')).toBeNull()
+    expect(resolveMintInput('mint.example.com/p')).toBeNull()
+    expect(resolveMintInput('nonsense')).toBeNull()
   })
 })
 
