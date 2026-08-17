@@ -19,12 +19,7 @@ import {
 } from '../lnurlcash'
 import {receiveNote, secureReceivedNote} from '../receive'
 import {deviceReceive} from '../deviceOrchestration'
-import {
-  notify,
-  NotifyKind,
-  msatToSats,
-  pasteFromClipboard
-} from '../helpers'
+import {notify, NotifyKind, msatToSats, pasteFromClipboard} from '../helpers'
 import {offlineMode} from '../offlineMode'
 import ScanToggle from './ScanToggle'
 

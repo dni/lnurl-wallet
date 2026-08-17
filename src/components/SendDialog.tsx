@@ -46,9 +46,7 @@ const SendDialog: Component<SendDialogProps> = props => {
   const [amountSats, setAmountSats] = createSignal('')
   const [selectedIds, setSelectedIds] = createSignal<Set<string>>(new Set())
   const [preparing, setPreparing] = createSignal(false)
-  const [preparedBearer, setPreparedBearer] = createSignal<Bearer | null>(
-    null
-  )
+  const [preparedBearer, setPreparedBearer] = createSignal<Bearer | null>(null)
   // the prepared note's real, secret-bearing url - null until revealed.
   // For a browser-only note this is available the instant it's prepared
   // (see stagePrepared); a device-backed one needs an explicit export
