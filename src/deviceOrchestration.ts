@@ -11,6 +11,8 @@ import {
   requireNoteK1,
   noteSignature,
   serverOf,
+  probeBurnedNote,
+  AmbiguousMintError,
   type HashedMutationResult,
   type HashedSplitResult,
   type MeltResult
@@ -80,6 +82,31 @@ const commitToDevice = async (
   await drainPendingDeviceOps(client)
 }
 
+// what a failed mint call behind a staged device secret means for that
+// secret. A parsed status:ERROR is a definitive rejection - nothing was
+// burned, the staged secret is clutter: 'discard'. A transport-ambiguous
+// failure (see AmbiguousMintError) is probed against an input k1 first:
+// still live means the same as a definitive rejection; 'gone' means the
+// burn landed and the staged secret is the only copy of the money - it
+// must be committed, never discarded; 'unknown' keeps it staged rather
+// than gambling either way (the caller throws a descriptive error - the
+// reconcile path is a refresh with the vault connected)
+const stagedMutationFate = async (
+  err: unknown,
+  probeUrl: string
+): Promise<'discard' | 'commit' | 'keep'> => {
+  if (!(err instanceof AmbiguousMintError)) return 'discard'
+  const outcome = await probeBurnedNote(probeUrl)
+  if (outcome === 'gone') return 'commit'
+  if (outcome === 'unknown') return 'keep'
+  return 'discard'
+}
+
+const ambiguousStagedError = (err: unknown): Error =>
+  new Error(
+    `${(err as Error).message} The operation may still have gone through mint-side, so the staged secret was kept on the vault - refresh this note with the vault connected to reconcile.`
+  )
+
 // shared core of rotate/migrate/mint/receive/settle: given a secret already
 // in hand (exported, imported, or just read from browser storage) and
 // where it should be re-custodied, stages a fresh device secret, makes the
@@ -95,24 +122,35 @@ const rotateK1OnDevice = async (
 ): Promise<DeviceMutationResult> => {
   const host = serverOf(note.callback)
   const {id, h} = await client.newSecret(parentDeviceId ? [parentDeviceId] : [])
-  let result: HashedMutationResult
+  let signature: string | undefined
   try {
-    result = await rotateNoteWithHash(note.callback, k1, h)
+    const result = await rotateNoteWithHash(note.callback, k1, h)
+    signature = result.signature
   } catch (err) {
-    await client.discard(id).catch(() => {})
-    throw err
+    const fate = await stagedMutationFate(
+      err,
+      withNewK1(note.url, k1, amountMsat)
+    )
+    if (fate === 'discard') {
+      await client.discard(id).catch(() => {})
+      throw err
+    }
+    if (fate === 'keep') throw ambiguousStagedError(err)
+    // 'commit': the burn landed despite the lost response - the staged
+    // secret is the only copy of the rotated note, so it falls through to
+    // the commit below (without the signature the response carried)
   }
   await commitToDevice(
     client,
-    [{deviceId: id, amountMsat, host, signature: result.signature}],
+    [{deviceId: id, amountMsat, host, signature}],
     parentDeviceId ? [parentDeviceId] : []
   )
   return {
     deviceId: id,
     amountMsat,
-    url: withoutK1(note.url, amountMsat, result.signature),
+    url: withoutK1(note.url, amountMsat, signature),
     callback: note.callback,
-    signature: result.signature
+    signature
   }
 }
 
@@ -220,31 +258,35 @@ export const deviceMerge = async (
   const host = serverOf(callback)
   const parentIds = inputs.flatMap(i => (i.deviceId ? [i.deviceId] : []))
   const {id, h} = await client.newSecret(parentIds)
-  let result: HashedMutationResult
+  let signature: string | undefined
   try {
-    result = await mergeNotesWithHash(callback, k1s, h)
+    const result = await mergeNotesWithHash(callback, k1s, h)
+    signature = result.signature
   } catch (err) {
-    await client.discard(id).catch(() => {})
-    throw err
+    const fate = await stagedMutationFate(
+      err,
+      withNewK1(inputs[0].url, k1s[0], totalAmountMsat)
+    )
+    if (fate === 'discard') {
+      await client.discard(id).catch(() => {})
+      throw err
+    }
+    if (fate === 'keep') throw ambiguousStagedError(err)
+    // 'commit': the burn landed despite the lost response - the staged
+    // secret is the only copy of the merged note, so it falls through to
+    // the commit below (without the signature the response carried)
   }
   await commitToDevice(
     client,
-    [
-      {
-        deviceId: id,
-        amountMsat: totalAmountMsat,
-        host,
-        signature: result.signature
-      }
-    ],
+    [{deviceId: id, amountMsat: totalAmountMsat, host, signature}],
     parentIds
   )
   return {
     deviceId: id,
     amountMsat: totalAmountMsat,
-    url: withoutK1(inputs[0].url, totalAmountMsat, result.signature),
+    url: withoutK1(inputs[0].url, totalAmountMsat, signature),
     callback,
-    signature: result.signature
+    signature
   }
 }
 
@@ -267,27 +309,35 @@ export const deviceSplit = async (
   const host = serverOf(callback)
   const parentIds = inputs.flatMap(i => (i.deviceId ? [i.deviceId] : []))
   const {id, h, id2, h2} = await client.newSecretPair(parentIds)
-  let result: HashedSplitResult
+  let signature: string | undefined
+  let changeSignature: string | undefined
   try {
-    result = await splitNoteWithHash(callback, k1s, amountMsat, h, h2)
+    const result = await splitNoteWithHash(callback, k1s, amountMsat, h, h2)
+    signature = result.signature
+    changeSignature = result.changeSignature
   } catch (err) {
-    await Promise.all([
-      client.discard(id).catch(() => {}),
-      client.discard(id2).catch(() => {})
-    ])
-    throw err
+    const fate = await stagedMutationFate(
+      err,
+      withNewK1(inputs[0].url, k1s[0], totalMsat)
+    )
+    if (fate === 'discard') {
+      await Promise.all([
+        client.discard(id).catch(() => {}),
+        client.discard(id2).catch(() => {})
+      ])
+      throw err
+    }
+    if (fate === 'keep') throw ambiguousStagedError(err)
+    // 'commit': the burn landed despite the lost response - the staged
+    // secrets are the only copies of both outputs, so they fall through
+    // to the commit below (without the signatures the response carried)
   }
   const changeMsat = totalMsat - amountMsat
   await commitToDevice(
     client,
     [
-      {deviceId: id, amountMsat, host, signature: result.signature},
-      {
-        deviceId: id2,
-        amountMsat: changeMsat,
-        host,
-        signature: result.changeSignature
-      }
+      {deviceId: id, amountMsat, host, signature},
+      {deviceId: id2, amountMsat: changeMsat, host, signature: changeSignature}
     ],
     parentIds
   )
@@ -296,16 +346,16 @@ export const deviceSplit = async (
     target: {
       deviceId: id,
       amountMsat,
-      url: withoutK1(template, amountMsat, result.signature),
+      url: withoutK1(template, amountMsat, signature),
       callback,
-      signature: result.signature
+      signature
     },
     change: {
       deviceId: id2,
       amountMsat: changeMsat,
-      url: withoutK1(template, changeMsat, result.changeSignature),
+      url: withoutK1(template, changeMsat, changeSignature),
       callback,
-      signature: result.changeSignature
+      signature: changeSignature
     }
   }
 }

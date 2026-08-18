@@ -42,6 +42,10 @@ const Setup: Component = () => {
   // set when a backup file's own key was skipped because this device
   // already has a wallet - see applyBackup's linkingKeySkipped
   const [backupSkipped, setBackupSkipped] = createSignal(false)
+  // set when a backup installed its own linking key: the restore then holds
+  // at an explicit source-trust acknowledgment instead of proceeding
+  // straight into a wallet keyed by material the file's author may know
+  const [backupKeyRestored, setBackupKeyRestored] = createSignal(false)
   let backupFileRef: HTMLInputElement | undefined
 
   const generate = () => {
@@ -102,23 +106,12 @@ const Setup: Component = () => {
       const data = JSON.parse(await file.text())
       const result = applyBackup(data)
       if (result.linkingKeyRestored) {
-        if (savedKeyIsEncrypted()) {
-          refreshState()
-          notify(
-            `Wallet restored from backup (${result.added} bearer(s) merged) - unlock it with the password it was encrypted with.`,
-            NotifyKind.SUCCESS
-          )
-        } else {
-          // a plaintext-stored key has no password to ask for - activate
-          // it right away (buildBackup never exports one, but applyBackup
-          // accepts a well-formed one)
-          await unlock()
-          notify(
-            `Wallet restored from backup (${result.added} bearer(s) merged).`,
-            NotifyKind.SUCCESS
-          )
-        }
-        navigate('/wallet')
+        // never activated automatically, whatever its storage form: whoever
+        // wrote the file necessarily had the key (encrypted or not), so the
+        // restore pauses for an explicit source-trust acknowledgment - see
+        // the warning shown in this tab
+        setBackupKeyRestored(true)
+        refreshState()
         return
       }
       if (result.linkingKeySkipped) {
@@ -137,6 +130,23 @@ const Setup: Component = () => {
       notify((err as Error).message, NotifyKind.ERROR)
     } finally {
       setBackupBusy(false)
+    }
+  }
+
+  // the user has acknowledged the source-trust warning for a
+  // backup-installed key - proceed into it: the unlock screen for an
+  // encrypted key, straight in for a plaintext one
+  const proceedWithBackupKey = async () => {
+    setBackupKeyRestored(false)
+    if (savedKeyIsEncrypted()) {
+      navigate('/wallet')
+      return
+    }
+    try {
+      await unlock()
+      navigate('/wallet')
+    } catch (err) {
+      notify((err as Error).message, NotifyKind.ERROR)
     }
   }
 
@@ -274,6 +284,20 @@ const Setup: Component = () => {
               <A href="/backup">Backup &amp; restore</A>), then select this file
               again.
             </p>
+          </Show>
+          <Show when={backupKeyRestored()}>
+            <p class="warning">
+              The backup's linking key was installed. Whoever wrote that file
+              may know this key - encrypted or not - so only continue if you
+              trust the file's source completely. Otherwise forget this wallet
+              (see <A href="/backup">Backup &amp; restore</A>) and set up a
+              fresh one from your own seed phrase instead.
+            </p>
+            <div class="btns">
+              <button onClick={proceedWithBackupKey}>
+                I trust this file - continue
+              </button>
+            </div>
           </Show>
           <input
             ref={backupFileRef}

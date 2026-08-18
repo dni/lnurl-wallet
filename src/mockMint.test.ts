@@ -15,9 +15,12 @@ import {
   meltNote,
   settleNote,
   toBech32Lnurl,
+  probeBurnedNote,
   PendingNoteError,
   NoteSpentError,
-  NoteUnknownError
+  NoteUnknownError,
+  AmbiguousMintError,
+  AmbiguousMutationError
 } from './lnurlcash'
 import {receiveNote} from './receive'
 
@@ -67,6 +70,12 @@ class MockMint {
   private melts = new Map<string, Melt>()
   private invoiceCounter = 0
   private meltCounter = 0
+  // when set, /w/cb requests are still fully processed (state mutated),
+  // but the response never arrives - the fetch rejects the way a dropped
+  // connection would. Models a mutation that landed despite its transport
+  // failure, for the AmbiguousMutationError recovery paths
+  dropCallbackResponses = false
+
   // when set, every rotate request fails without touching state - models a
   // transient SERVICE hiccup to exercise the wallet's rotate-and-fall-back
   // path (see settleNote)
@@ -125,6 +134,13 @@ class MockMint {
 
   fetch = async (input: string | URL): Promise<Response> => {
     const url = new URL(input.toString())
+    if (this.dropCallbackResponses && url.pathname === '/w/cb') {
+      // process the request for real, then lose the response
+      this.dropCallbackResponses = false
+      await this.fetch(input)
+      this.dropCallbackResponses = true
+      throw new TypeError('fetch failed')
+    }
     const params = url.searchParams
 
     if (url.pathname === '/pay') {
@@ -546,5 +562,90 @@ describe('rotation-on-failure', () => {
     mint.rotateFails = false
     const rotated = await rotateNote(WITHDRAW_CALLBACK, k1)
     expect(mint.isOutstanding(rotated.k1)).toBe(true)
+  })
+})
+
+describe('ambiguous mutation failures', () => {
+  it('a dropped rotate response carries the fresh secret, and the burn landed', async () => {
+    const k1 = randomHex(32)
+    mint.seed(k1, 8000)
+    mint.dropCallbackResponses = true
+
+    const err = await rotateNote(WITHDRAW_CALLBACK, k1).catch(e => e)
+    expect(err).toBeInstanceOf(AmbiguousMutationError)
+    const [newK1] = (err as AmbiguousMutationError).newSecrets
+    expect(newK1).toMatch(/^[0-9a-f]{64}$/)
+
+    // the request was fully processed mint-side despite the lost response:
+    // the old secret is spent and the carried one is the live note
+    expect(mint.isOutstanding(k1)).toBe(false)
+    expect(mint.isOutstanding(newK1)).toBe(true)
+
+    // the recovery probe reads exactly that back
+    expect(await probeBurnedNote(buildNoteUrl(WITHDRAW_URL, k1, 8000))).toBe(
+      'gone'
+    )
+    expect(await probeBurnedNote(buildNoteUrl(WITHDRAW_URL, newK1, 8000))).toBe(
+      'live'
+    )
+  })
+
+  it('a dropped split response carries both output secrets', async () => {
+    const k1 = randomHex(32)
+    mint.seed(k1, 9000)
+    mint.dropCallbackResponses = true
+
+    const err = await splitNote(WITHDRAW_CALLBACK, [k1], 4000).catch(e => e)
+    expect(err).toBeInstanceOf(AmbiguousMutationError)
+    const [partK1, changeK1] = (err as AmbiguousMutationError).newSecrets
+    expect(mint.isOutstanding(k1)).toBe(false)
+    expect(mint.isOutstanding(partK1)).toBe(true)
+    expect(mint.isOutstanding(changeK1)).toBe(true)
+  })
+
+  it('a dropped merge response carries the merged secret', async () => {
+    const [a, b] = [randomHex(32), randomHex(32)]
+    mint.seed(a, 5000)
+    mint.seed(b, 7000)
+    mint.dropCallbackResponses = true
+
+    const err = await mergeNotes(WITHDRAW_CALLBACK, [a, b]).catch(e => e)
+    expect(err).toBeInstanceOf(AmbiguousMutationError)
+    expect(mint.isOutstanding(a)).toBe(false)
+    expect(mint.isOutstanding(b)).toBe(false)
+    expect(
+      mint.isOutstanding((err as AmbiguousMutationError).newSecrets[0])
+    ).toBe(true)
+  })
+
+  it('a definitive rejection is not ambiguous and carries no secrets', async () => {
+    const k1 = randomHex(32)
+    mint.seed(k1, 5000)
+    mint.rotateFails = true // a parsed status:ERROR, state untouched
+
+    const err = await rotateNote(WITHDRAW_CALLBACK, k1).catch(e => e)
+    expect(err).not.toBeInstanceOf(AmbiguousMintError)
+    expect(mint.isOutstanding(k1)).toBe(true)
+    expect(await probeBurnedNote(buildNoteUrl(WITHDRAW_URL, k1, 5000))).toBe(
+      'live'
+    )
+  })
+
+  it('an unreachable service leaves the probe unknown', async () => {
+    const k1 = randomHex(32)
+    mint.seed(k1, 5000)
+    mint.dropCallbackResponses = true
+
+    const err = await rotateNote(WITHDRAW_CALLBACK, k1).catch(e => e)
+    expect(err).toBeInstanceOf(AmbiguousMutationError)
+
+    // ...and then the whole service goes dark: the probe can't say either
+    // way, so nothing may be discarded
+    vi.stubGlobal('fetch', (() => {
+      throw new TypeError('network down')
+    }) as unknown as typeof fetch)
+    expect(await probeBurnedNote(buildNoteUrl(WITHDRAW_URL, k1, 5000))).toBe(
+      'unknown'
+    )
   })
 })

@@ -11,8 +11,10 @@ import {
   mergeNotes,
   splitNote,
   settleNote,
+  probeBurnedNote,
   toBech32Lnurl,
-  serverOf
+  serverOf,
+  AmbiguousMutationError
 } from '../lnurlcash'
 import {
   deviceMerge,
@@ -201,29 +203,82 @@ const SendDialog: Component<SendDialogProps> = props => {
       for (const bearer of picked) removeBearer(bearer.id)
       return added
     }
-    const merged = await mergeNotes(
-      base.callback,
-      picked.map(b => requireNoteK1(b.url))
-    )
-    const settled = await settleNote(
-      base.url,
-      merged.k1,
-      total,
-      merged.signature
-    )
+    const mergedK1s = picked.map(b => requireNoteK1(b.url))
+    let mergedK1: string
+    let mergedSignature: string | undefined
+    try {
+      const merged = await mergeNotes(base.callback, mergedK1s)
+      mergedK1 = merged.k1
+      mergedSignature = merged.signature
+    } catch (err) {
+      if (!(err instanceof AmbiguousMutationError)) throw err
+      // the merge request may have landed despite the failure - probe one
+      // input before deciding what the fresh secret it carried is worth
+      const outcome = await probeBurnedNote(base.url)
+      if (outcome === 'live') throw err // nothing burned - a plain failure
+      if (outcome === 'unknown') {
+        // can't tell: track the possible output without dropping the
+        // inputs, and stop here rather than hand over from a limbo state
+        await addBearer({
+          url: withNewK1(base.url, err.newSecrets[0], total),
+          callback: base.callback,
+          amount: total,
+          verified: false,
+          mintPubkey: base.mintPubkey
+        })
+        throw new Error(
+          'The merge may have gone through but could not be confirmed - the possible combined note is stored unverified alongside your originals. Refresh them to reconcile.'
+        )
+      }
+      // 'gone': the burn landed - the carried secret is the only money left
+      mergedK1 = err.newSecrets[0]
+    }
+    // the mint call above already burned every input server-side, so the
+    // merged output is the only money left - it is stored BEFORE any
+    // removeBearer of an input, then settled in place: a failed settle
+    // leaves an unverified note a refresh can repair, not a lost secret
+    const added = await addBearer({
+      url: withNewK1(base.url, mergedK1, total, mergedSignature),
+      callback: base.callback,
+      amount: total,
+      verified: false,
+      mintPubkey: base.mintPubkey
+    })
     for (const bearer of picked) removeBearer(bearer.id)
-    return addBearer({
-      url: withNewK1(
+    let current: Bearer = added
+    try {
+      const settled = await settleNote(
+        base.url,
+        mergedK1,
+        total,
+        mergedSignature
+      )
+      const settledUrl = withNewK1(
         base.url,
         settled.k1,
         settled.amountMsat,
         settled.signature
-      ),
-      callback: settled.callback,
-      amount: settled.amountMsat,
-      verified: true,
-      mintPubkey: base.mintPubkey
-    })
+      )
+      await updateBearer(added.id, {
+        url: settledUrl,
+        callback: settled.callback,
+        amount: settled.amountMsat,
+        verified: true
+      })
+      current = {
+        ...added,
+        url: settledUrl,
+        callback: settled.callback,
+        amount: settled.amountMsat,
+        verified: true
+      }
+    } catch (err) {
+      notify(
+        `Merged, but settling the new note didn't complete (${(err as Error).message}) - it's tracked unverified; refresh it to repair.`,
+        NotifyKind.ERROR
+      )
+    }
+    return current
   }
 
   // when the selection is worth more than target, splits off the exact
@@ -286,41 +341,100 @@ const SendDialog: Component<SendDialogProps> = props => {
         for (const bearer of picked) removeBearer(bearer.id)
       } else if (total > target) {
         const base = picked[0]
-        const parts = await splitNote(
-          base.callback,
-          picked.map(b => requireNoteK1(b.url)),
-          target
-        )
+        let partK1: string
+        let partSignature: string | undefined
+        let changeK1: string
+        let changeSignature: string | undefined
+        let partVerified = false
+        try {
+          const parts = await splitNote(
+            base.callback,
+            picked.map(b => requireNoteK1(b.url)),
+            target
+          )
+          partK1 = parts.k1
+          partSignature = parts.signature
+          changeK1 = parts.change
+          changeSignature = parts.changeSignature
+          partVerified = true
+        } catch (err) {
+          if (!(err instanceof AmbiguousMutationError)) throw err
+          // the split request may have landed despite the failure - probe
+          // one input before deciding what the carried secrets are worth
+          const outcome = await probeBurnedNote(base.url)
+          if (outcome === 'live') throw err // nothing burned - plain failure
+          if (outcome === 'unknown') {
+            // can't tell: track both possible outputs without dropping the
+            // inputs, and stop here rather than hand over from limbo
+            await addBearer({
+              url: withNewK1(base.url, err.newSecrets[0], target),
+              callback: base.callback,
+              amount: target,
+              verified: false,
+              mintPubkey: base.mintPubkey
+            })
+            await addBearer({
+              url: withNewK1(base.url, err.newSecrets[1], total - target),
+              callback: base.callback,
+              amount: total - target,
+              verified: false,
+              mintPubkey: base.mintPubkey
+            })
+            throw new Error(
+              'The split may have gone through but could not be confirmed - the possible outputs are stored unverified alongside your originals. Refresh them to reconcile.'
+            )
+          }
+          // 'gone': the burn landed - the carried secrets are the only money
+          partK1 = err.newSecrets[0]
+          changeK1 = err.newSecrets[1]
+        }
+        // the inputs are burned server-side from here on, so both outputs
+        // are stored BEFORE any removeBearer of an input; the change is
+        // then settled in place (a failed settle leaves an unverified note
+        // a refresh can repair, not a lost secret)
+        current = await addBearer({
+          url: withNewK1(base.url, partK1, target, partSignature),
+          callback: base.callback,
+          amount: target,
+          verified: partVerified,
+          mintPubkey: base.mintPubkey
+        })
+        const change = await addBearer({
+          url: withNewK1(base.url, changeK1, total - target, changeSignature),
+          callback: base.callback,
+          amount: total - target,
+          verified: false,
+          mintPubkey: base.mintPubkey
+        })
         for (const bearer of picked) removeBearer(bearer.id)
         // settleNote: the change may be worth less than total - target if
         // this mint charges fees (LUD-25 deducts them from change, never
-        // the prepared amount) - stored at its true value, not the naive
+        // the prepared amount) - updated to its true value, not the naive
         // pre-fee one, or its signature won't verify
-        const settledChange = await settleNote(
-          base.url,
-          parts.change,
-          total - target,
-          parts.changeSignature
-        )
-        await addBearer({
-          url: withNewK1(
+        try {
+          const settledChange = await settleNote(
             base.url,
-            settledChange.k1,
-            settledChange.amountMsat,
-            settledChange.signature
-          ),
-          callback: settledChange.callback,
-          amount: settledChange.amountMsat,
-          verified: true,
-          mintPubkey: base.mintPubkey
-        })
-        current = await addBearer({
-          url: withNewK1(base.url, parts.k1, target, parts.signature),
-          callback: base.callback,
-          amount: target,
-          verified: true,
-          mintPubkey: base.mintPubkey
-        })
+            changeK1,
+            total - target,
+            changeSignature
+          )
+          await updateBearer(change.id, {
+            url: withNewK1(
+              base.url,
+              settledChange.k1,
+              settledChange.amountMsat,
+              settledChange.signature
+            ),
+            callback: settledChange.callback,
+            amount: settledChange.amountMsat,
+            verified: true
+          })
+        } catch (err) {
+          notify(
+            `Split succeeded, but settling the change note didn't complete (${(err as Error).message}) - it's tracked unverified; refresh it to repair.`,
+            NotifyKind.ERROR
+          )
+        }
       } else {
         current = await mergeSelectionIfNeeded(picked)
       }

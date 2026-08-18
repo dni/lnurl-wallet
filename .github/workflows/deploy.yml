@@ -32,16 +32,16 @@ jobs:
       - run: npm run tsc
       - run: npm test
 
-  deploy:
+  # build runs the full dependency toolchain (npm ci, vite/esbuild/...), so
+  # it gets no token rights beyond reading the repo: a compromised build-time
+  # dependency can at worst poison the artifact, never touch the deployment
+  # APIs - and the deploy job below only publishes what CI's test job already
+  # validated
+  build:
     needs: test
     permissions:
       contents: read # actions/checkout
-      pages: write # publish to GitHub Pages
-      id-token: write # OIDC token for actions/deploy-pages
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -60,8 +60,6 @@ jobs:
         with:
           path: dist
           include-hidden-files: true
-      - id: deployment
-        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5
       # a second, plain copy of the same dist/ (the Pages artifact above is
       # packaged for actions/deploy-pages's own OIDC flow, not something a
       # later job can just untar) - lets `release` attach the exact bytes
@@ -71,6 +69,22 @@ jobs:
           name: dist
           path: dist
           include-hidden-files: true
+
+  # publishes the pre-built artifact only - no checkout, no npm, nothing
+  # executed here but the SHA-pinned deploy action, so the OIDC/pages-write
+  # rights this job needs are never in the same process as dependency code
+  deploy:
+    needs: build
+    permissions:
+      pages: write # publish to GitHub Pages
+      id-token: write # OIDC token for actions/deploy-pages
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5
 
   release:
     # only for an actual version-tag push - workflow_dispatch has no tag to

@@ -53,15 +53,11 @@ const Backup: Component = () => {
       const result = applyBackup(data)
       if (state() === 'unlocked') await reloadBearers()
       if (result.linkingKeyRestored) {
-        if (savedKeyIsEncrypted()) {
-          setKeyRestored(true)
-          refreshState()
-        } else {
-          // a plaintext-stored key has no password to ask for - activate
-          // it right away (buildBackup never exports one, but applyBackup
-          // accepts a well-formed one)
-          await unlock()
-        }
+        // never activated automatically, whatever its storage form: whoever
+        // wrote the file necessarily had the key (encrypted or not), so the
+        // restore pauses on the source-trust warning below instead
+        setKeyRestored(true)
+        refreshState()
       }
       if (result.linkingKeySkipped) setKeySkipped(true)
       notify(
@@ -71,13 +67,32 @@ const Backup: Component = () => {
             : '.') +
           (result.linkingKeySkipped
             ? ' This device already has a wallet - see the warning below.'
+            : '') +
+          (result.linkingKeyRestored
+            ? " The backup's linking key was installed - read the warning below before using it."
             : ''),
-        result.linkingKeySkipped ? NotifyKind.ERROR : NotifyKind.SUCCESS
+        result.linkingKeySkipped || result.linkingKeyRestored
+          ? NotifyKind.ERROR
+          : NotifyKind.SUCCESS
       )
     } catch (err) {
       notify((err as Error).message, NotifyKind.ERROR)
     } finally {
       setBusy(false)
+    }
+  }
+
+  // the user has acknowledged the source-trust warning for a
+  // plaintext-stored backup key - activate it (an encrypted one instead
+  // just gets pointed at the unlock screen, see below)
+  const activateRestoredKey = async () => {
+    try {
+      await unlock()
+      setKeyRestored(false)
+      notify('Restored wallet activated.', NotifyKind.SUCCESS)
+      navigate('/wallet')
+    } catch (err) {
+      notify((err as Error).message, NotifyKind.ERROR)
     }
   }
 
@@ -167,23 +182,32 @@ const Backup: Component = () => {
           </button>
         </div>
         <Show when={keyRestored()}>
+          <p class="warning">
+            The backup's linking key was installed on this device. Whoever wrote
+            that file may know this key - encrypted or not - so only keep using
+            this wallet if you trust the file's source completely; otherwise
+            forget it below and set up a fresh one from your own seed phrase.
+          </p>
           <Show
             when={savedKeyIsEncrypted()}
             fallback={
-              <p class="warning">
-                The backup's linking key was <strong>not</strong>{' '}
-                password-encrypted and is now stored in plaintext - anyone the
-                backup file came from could know it. Only keep using this wallet
-                if you trust the file's source completely; otherwise set up a
-                fresh wallet from your own seed phrase and rotate any notes you
-                receive into it.
-              </p>
+              <>
+                <p class="warning">
+                  The restored key was <strong>not</strong> password-encrypted
+                  and is now stored in plaintext. Activating it is withheld
+                  until you explicitly confirm:
+                </p>
+                <div class="btns">
+                  <button onClick={activateRestoredKey}>
+                    I trust this file - activate the restored wallet
+                  </button>
+                </div>
+              </>
             }
           >
             <p class="warning">
-              Linking key restored from the backup -{' '}
-              <A href="/wallet">unlock the wallet</A> with the password it was
-              encrypted with.
+              <A href="/wallet">Unlock the wallet</A> with the password the key
+              was encrypted with.
             </p>
           </Show>
         </Show>

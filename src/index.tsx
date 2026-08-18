@@ -1,4 +1,5 @@
 /* @refresh reload */
+import {ErrorBoundary} from 'solid-js'
 import {render} from 'solid-js/web'
 import {Route, HashRouter} from '@solidjs/router'
 import toast, {Toaster} from 'solid-toast'
@@ -46,7 +47,23 @@ const App = (props: any) => {
           containerStyle={{top: '64px'}}
         />
         <Nav />
-        {props.children}
+        {/* a render-time throw (e.g. one malformed stored record) must
+        never take down the whole app shell - show a recoverable error
+        instead of a permanently blank page */}
+        <ErrorBoundary
+          fallback={(err: Error) => (
+            <div class="page">
+              <h2>Something went wrong</h2>
+              <p>
+                The last view failed to render ({err.message}). Your notes are
+                still safe in storage - reload the page, and if this keeps
+                happening, use Backup to export them.
+              </p>
+            </div>
+          )}
+        >
+          {props.children}
+        </ErrorBoundary>
         <Footer />
       </DeviceProvider>
     </WalletProvider>

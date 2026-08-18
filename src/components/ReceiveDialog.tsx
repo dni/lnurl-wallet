@@ -15,7 +15,10 @@ import {
   isBolt11Invoice,
   requireNoteK1,
   serverOf,
-  PendingNoteError
+  withNewK1,
+  probeBurnedNote,
+  PendingNoteError,
+  AmbiguousMutationError
 } from '../lnurlcash'
 import {receiveNote, secureReceivedNote} from '../receive'
 import {deviceReceive} from '../deviceOrchestration'
@@ -96,6 +99,52 @@ const ReceiveDialog: Component<ReceiveDialogProps> = props => {
           NotifyKind.SUCCESS
         )
       } catch (err) {
+        if (err instanceof AmbiguousMutationError) {
+          // the rotate request may have landed despite the failure - the
+          // fresh secret it carried is then the only copy of this note
+          const outcome = await probeBurnedNote(received.url)
+          if (outcome === 'gone') {
+            // the burn landed - adopt the fresh secret as the note
+            const url = withNewK1(
+              received.url,
+              err.newSecrets[0],
+              received.amount
+            )
+            await updateBearer(bearer.id, {url})
+            logActivity(
+              'receive',
+              `Received ${msatToSats(received.amount)} sats from ${serverOf(received.url)} (rotated - confirmed on re-check after an uncertain response).`
+            )
+            notify(
+              `Received ${msatToSats(received.amount)} sats - secret rotated, previous copies are burned.`,
+              NotifyKind.SUCCESS
+            )
+            props.onClose()
+            return
+          }
+          if (outcome === 'unknown') {
+            // can't tell: keep the stored original AND track the possible
+            // rotated copy, rather than gamble either way
+            await addBearer({
+              url: withNewK1(received.url, err.newSecrets[0], received.amount),
+              callback: received.callback,
+              amount: received.amount,
+              verified: false,
+              mintPubkey: received.mintPubkey
+            })
+            logActivity(
+              'receive',
+              `Received ${msatToSats(received.amount)} sats from ${serverOf(received.url)} (rotation outcome uncertain - the possible rotated copy is stored unverified).`
+            )
+            notify(
+              `Received ${msatToSats(received.amount)} sats, but the rotation's outcome is uncertain - the possible new copy is stored unverified alongside the original; refresh both to reconcile.`,
+              NotifyKind.ERROR
+            )
+            props.onClose()
+            return
+          }
+          // 'live': the rotate never landed - the messages below fit as-is
+        }
         // a PendingNoteError here means this exact k1 has some other
         // operation in flight on the service right now (e.g. the sender's
         // own melt/rotate hasn't settled yet) - temporary, and the note

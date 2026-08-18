@@ -27,7 +27,8 @@ import {
   applyMintFee,
   grossUpForMintFee,
   mintAddressUrl,
-  lightningAddressUsername
+  lightningAddressUsername,
+  isAllowedServiceUrl
 } from './lnurlcash'
 
 const K1 = 'a'.repeat(64)
@@ -65,6 +66,23 @@ describe('LUD-17 schemes', () => {
   })
 })
 
+describe('service URL policy', () => {
+  it('admits https anywhere, http only for the insecure hosts', () => {
+    expect(isAllowedServiceUrl('https://mint.example.com/w')).toBe(true)
+    expect(isAllowedServiceUrl('http://localhost:8000/w')).toBe(true)
+    expect(isAllowedServiceUrl('http://127.0.0.1/w')).toBe(true)
+    expect(isAllowedServiceUrl('http://someservice.onion/w')).toBe(true)
+    expect(isAllowedServiceUrl('http://mint.example.com/w')).toBe(false)
+    // userinfo tricks: the hostname is what matters
+    expect(isAllowedServiceUrl('http://evil.com@localhost/w')).toBe(true)
+    expect(isAllowedServiceUrl('http://localhost@evil.com/w')).toBe(false)
+    expect(isAllowedServiceUrl('data:application/json,{}')).toBe(false)
+    expect(isAllowedServiceUrl('file:///etc/passwd')).toBe(false)
+    expect(isAllowedServiceUrl('javascript:alert(1)')).toBe(false)
+    expect(isAllowedServiceUrl('not a url')).toBe(false)
+  })
+})
+
 describe('input resolution', () => {
   it('resolves bech32, scheme, address and plain URLs', () => {
     expect(resolveLnurlInput(toBech32Lnurl(NOTE_URL))).toBe(NOTE_URL)
@@ -85,6 +103,56 @@ describe('input resolution', () => {
     expect(resolveNoteInput('https://mint.example.com/withdraw')).toBeNull()
     expect(isValidNoteInput(NOTE_URL)).toBe(true)
     expect(isValidNoteInput('you@example.com')).toBe(false)
+  })
+
+  it('only accepts a note when its k1 is well-formed 32-byte hex', () => {
+    // a non-hex k1 would crash sha256-based hashing later (offline signature
+    // verification during render), so it's rejected at the door
+    expect(
+      resolveNoteInput('https://mint.example.com/withdraw?k1=zz')
+    ).toBeNull()
+    expect(
+      resolveNoteInput(`https://mint.example.com/withdraw?k1=${'a'.repeat(63)}`)
+    ).toBeNull()
+    expect(
+      isValidNoteInput(
+        `https://mint.example.com/withdraw?k1=${K1.toUpperCase()}`
+      )
+    ).toBe(true)
+  })
+
+  it('rejects non-https URLs and clearnet http, even bech32-encoded', () => {
+    // a data: URL would otherwise answer its own informational GET - a
+    // self-contained fake "verified" note
+    const fake = `data:application/json,{"tag":"withdrawRequest"}?k1=${K1}`
+    expect(resolveLnurlInput(toBech32Lnurl(fake))).toBeNull()
+    expect(resolveNoteInput(toBech32Lnurl(fake))).toBeNull()
+    expect(resolveMintInput(toBech32Lnurl(fake))).toBeNull()
+    // cleartext http is for the deliberate insecure dev hosts only
+    expect(
+      resolveLnurlInput(`http://mint.example.com/withdraw?k1=${K1}`)
+    ).toBeNull()
+    expect(
+      resolveLnurlInput(
+        toBech32Lnurl(`http://mint.example.com/withdraw?k1=${K1}`)
+      )
+    ).toBeNull()
+    expect(resolveLnurlInput(`http://localhost:8000/withdraw?k1=${K1}`)).toBe(
+      `http://localhost:8000/withdraw?k1=${K1}`
+    )
+    expect(
+      resolveLnurlInput(
+        toBech32Lnurl(`http://localhost:8000/withdraw?k1=${K1}`)
+      )
+    ).toBe(`http://localhost:8000/withdraw?k1=${K1}`)
+    // a LUD-17 authority that only prefix-matches an insecure host must not
+    // downgrade: localhost:80@evil.com's real host is evil.com
+    expect(
+      resolveLnurlInput(`lnurlw://localhost:80@evil.com/withdraw?k1=${K1}`)
+    ).toBeNull()
+    expect(
+      resolveLnurlInput(toBech32Lnurl(`file:///etc/passwd?k1=${K1}`))
+    ).toBeNull()
   })
 
   it('mirrors a resolved payRequest URL onto its withdraw-side mint address', () => {
@@ -389,5 +457,17 @@ describe('offline signature verification', () => {
     expect(
       verifyNoteSignature(K1, 1000, 'ab'.repeat(10), 'ab'.repeat(33))
     ).toBe(false)
+  })
+
+  it('rejects a malformed k1 without throwing', () => {
+    // a stored note with a non-hex k1 must not crash the digest - "not
+    // signed", never an exception escaping into render
+    const priv = secp256k1.utils.randomSecretKey()
+    const pubHex = bytesToHex(secp256k1.getPublicKey(priv, true))
+    const sigHex = signAsMint(priv, K1, 1000)
+    expect(verifyNoteSignature('zz', 1000, sigHex, pubHex)).toBe(false)
+    expect(verifyNoteSignature('a'.repeat(63), 1000, sigHex, pubHex)).toBe(
+      false
+    )
   })
 })

@@ -359,6 +359,18 @@ const Mints: Component = () => {
                     </Show>
                     <p class="mint-pubkey">{mint.mintPubkey}</p>
                     <p class="mint-date">added {formatDate(mint.addedAt)}</p>
+                    {/* a pin that came from a backup or a stored note rather
+                    than a live response (see TrustedMint.unconfirmed) - said
+                    so plainly, since "signed" badges deliberately ignore it
+                    until the mint advertises the same key online */}
+                    <Show when={mint.unconfirmed}>
+                      <p class="warning">
+                        Restored from a backup or a stored note - not yet
+                        confirmed against this mint live, so signatures are not
+                        verified against it. Any refresh or mint lookup that
+                        advertises the same key confirms it.
+                      </p>
+                    </Show>
                     {/* a staged key rotation (see trustedMints.ts): the mint
                     advertised a different signing key than the pinned one.
                     The pinned key above keeps deciding the "signed" badge

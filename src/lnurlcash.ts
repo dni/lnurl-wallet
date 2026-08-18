@@ -68,6 +68,29 @@ const INSECURE_HOSTS = ['127.0.0.1', '0.0.0.0', 'localhost']
 const isInsecureHost = (host: string): boolean =>
   INSECURE_HOSTS.includes(host) || host.endsWith('.onion')
 
+// the one admission rule every URL this wallet fetches must pass, whether it
+// came from a scanned/pasted note string or from a service's own response
+// (callback, verify, payLink, ...): https anywhere, http only for the
+// deliberate insecure hosts above. Anything else - data:, file:, a bare
+// http:// clearnet host - is rejected, so a crafted note can't answer its
+// own informational GET (a data: URL carrying a withdrawRequest JSON would
+// otherwise mint a self-contained fake "verified" note), and a service
+// response can't redirect a k1-bearing callback onto cleartext or a scheme
+// fetch() would interpret in some other way. The production CSP already
+// blocks most of this in shipped builds - this is the code-level guarantee
+// that doesn't depend on the CSP meta surviving a self-hosted build or dev
+export const isAllowedServiceUrl = (value: string): boolean => {
+  let url: URL
+  try {
+    url = new URL(value)
+  } catch {
+    return false
+  }
+  if (url.protocol === 'https:') return true
+  if (url.protocol === 'http:') return isInsecureHost(url.hostname)
+  return false
+}
+
 export const fromLud17 = (url: string): string => {
   const match = url.match(/^(?:lnurlw|lnurlp|lnurlc|keyauth):\/\/([^/]+)/i)
   if (!match) return url
@@ -111,7 +134,10 @@ const bareMintDomainToUrl = (value: string): string =>
 export const resolveMintInput = (value: string): string | null => {
   const trimmed = value.trim()
   if (!trimmed) return null
-  if (isBech32Lnurl(trimmed)) return fromBech32Lnurl(trimmed)
+  if (isBech32Lnurl(trimmed)) {
+    const url = fromBech32Lnurl(trimmed)
+    return url && isAllowedServiceUrl(url) ? url : null
+  }
   if (isLightningAddress(trimmed)) return lnAddressToUrl(trimmed)
   if (isBareMintDomain(trimmed)) return bareMintDomainToUrl(trimmed)
   return null
@@ -160,16 +186,26 @@ export const lightningAddressUsername = (payUrl: string): string | null => {
 }
 
 // resolves arbitrary LNURL-ish input (bech32, LUD-17 scheme, Lightning
-// Address, plain http(s)) down to a fetchable URL
+// Address, plain http(s)) down to a fetchable URL. Every URL-producing
+// branch passes isAllowedServiceUrl, so a decoded or pasted URL can never
+// smuggle in a non-https scheme (data:, file:) or cleartext http to a
+// clearnet host - and the LUD-17 branch's result is re-validated with the
+// URL parser rather than trusted from fromLud17's regex host split
 export const resolveLnurlInput = (value: string): string | null => {
   const trimmed = value.trim()
   if (!trimmed) return null
-  if (isBech32Lnurl(trimmed)) return fromBech32Lnurl(trimmed)
+  if (isBech32Lnurl(trimmed)) {
+    const url = fromBech32Lnurl(trimmed)
+    return url && isAllowedServiceUrl(url) ? url : null
+  }
   if (/^(lnurlw|lnurlp|lnurlc|keyauth):\/\//i.test(trimmed)) {
-    return fromLud17(trimmed)
+    const url = fromLud17(trimmed)
+    return isAllowedServiceUrl(url) ? url : null
   }
   if (isLightningAddress(trimmed)) return lnAddressToUrl(trimmed)
-  if (/^https?:\/\//i.test(trimmed)) return trimmed
+  if (/^https?:\/\//i.test(trimmed)) {
+    return isAllowedServiceUrl(trimmed) ? trimmed : null
+  }
   return null
 }
 
@@ -222,10 +258,14 @@ export const noteSignature = (url: string): string | null => {
   }
 }
 
-// input only qualifies as a bearer note if it resolves to a URL carrying k1
+// input only qualifies as a bearer note if it resolves to a URL carrying a
+// well-formed k1 - 32 bytes hex, the same shape isPreimage enforces (a k1
+// that isn't hex would crash sha256-based hashing later, e.g. in offline
+// signature verification during render, so it's rejected at the door)
 export const resolveNoteInput = (value: string): string | null => {
   const url = resolveLnurlInput(value)
-  if (!url || !noteK1(url)) return null
+  const k1 = url ? noteK1(url) : null
+  if (!url || !k1 || !isPreimage(k1)) return null
   return url
 }
 
@@ -344,7 +384,14 @@ export const verifyNoteSignature = (
     return false
   }
   if (wireSig.length !== 65) return false
-  const digest = noteSignatureDigest(k1, amountMsat)
+  // a malformed stored k1 (non-hex) makes sha256 hashing throw - an
+  // unverifiable signature is a "no", never a crash
+  let digest: Uint8Array
+  try {
+    digest = noteSignatureDigest(k1, amountMsat)
+  } catch {
+    return false
+  }
   const target = mintPubkeyHex.toLowerCase()
   const trailing = new Uint8Array([wireSig[64], ...wireSig.subarray(0, 64)])
   const leading = wireSig
@@ -370,10 +417,38 @@ export const verifyNoteSignature = (
 
 // ---- protocol requests ----
 
+// a request whose outcome is unknown: the failure happened in a window
+// where it may already have reached and been processed by the service - a
+// timeout, a dropped connection, an unparseable response, or a 200 that
+// didn't carry the expected confirmation. Distinct from a parsed
+// {"status":"ERROR"} rejection (definitive: processed and refused) and from
+// failures before anything was sent (offline mode, a URL this wallet won't
+// fetch). For a mutating callback request the difference is fund-critical:
+// treating an ambiguous failure as "nothing happened" can discard the fresh
+// secrets of outputs the service in fact minted - see AmbiguousMutationError
+export class AmbiguousMintError extends Error {}
+
+// an AmbiguousMintError from rotate/split/merge, carrying the fresh
+// wallet-generated secrets whose hashes the uncertain request disclosed -
+// the only copies of the possibly-minted outputs. Order matches the
+// primitive's result shape: [rotated] / [split-off, change] / [merged]
+export class AmbiguousMutationError extends AmbiguousMintError {
+  readonly newSecrets: string[]
+  constructor(message: string, newSecrets: string[]) {
+    super(message)
+    this.newSecrets = newSecrets
+  }
+}
+
 const lnurlFetch = async (url: string | URL): Promise<any> => {
   if (offlineMode()) {
     throw new Error(
       'Offline mode is on - turn it off in the nav to reach a service.'
+    )
+  }
+  if (!isAllowedServiceUrl(url.toString())) {
+    throw new Error(
+      'The service provided a URL this wallet will not fetch (not an allowed https/http address).'
     )
   }
   let res: Response
@@ -382,15 +457,19 @@ const lnurlFetch = async (url: string | URL): Promise<any> => {
     // flow called this (lookup, refresh, melt) forever
     res = await fetch(url.toString(), {signal: AbortSignal.timeout(30_000)})
   } catch (err) {
+    // transport failures are ambiguous for a mutating request (see
+    // AmbiguousMintError) - the request may have arrived before the failure
     if ((err as Error).name === 'TimeoutError') {
-      throw new Error('The service took too long to respond - try again later.')
+      throw new AmbiguousMintError(
+        'The service took too long to respond - try again later.'
+      )
     }
-    throw new Error(
+    throw new AmbiguousMintError(
       'Failed to reach the service - it may be offline or not allow cross-origin requests.'
     )
   }
   const body = await res.json().catch(() => {
-    throw new Error('Service returned an invalid response.')
+    throw new AmbiguousMintError('Service returned an invalid response.')
   })
   if (body?.status === 'ERROR') {
     throw new Error(body.reason || 'Unknown service error.')
@@ -446,6 +525,27 @@ export const fetchNoteInfo = async (
     )
   }
   return body as WithdrawRequestInfo
+}
+
+// after an AmbiguousMutationError: did the burn the request asked for
+// actually happen? Probes one of the input k1s with an informational GET:
+// 'live' (still outstanding - the request never landed, so the fresh
+// secrets the error carries minted nothing and can be dropped safely),
+// 'gone' (the service reports it spent/unknown - the burn landed and the
+// carried secrets are the only money left), or 'unknown' (the probe itself
+// failed - no information either way, keep everything)
+export const probeBurnedNote = async (
+  url: string
+): Promise<'live' | 'gone' | 'unknown'> => {
+  try {
+    await fetchNoteInfo(url)
+    return 'live'
+  } catch (err) {
+    if (err instanceof NoteSpentError || err instanceof NoteUnknownError) {
+      return 'gone'
+    }
+    return 'unknown'
+  }
 }
 
 // LUD-25 mint address (see mintAddressUrl above): the withdraw-side
@@ -566,7 +666,12 @@ const callbackRequest = async (
   callback: string,
   params: [string, string][]
 ): Promise<WithdrawSuccessResponse> => {
-  const cbUrl = new URL(callback)
+  let cbUrl: URL
+  try {
+    cbUrl = new URL(callback)
+  } catch {
+    throw new Error('The service provided an invalid callback URL.')
+  }
   // append (not set): merge repeats the k1 param
   for (const [key, value] of params) cbUrl.searchParams.append(key, value)
   let body: any
@@ -578,10 +683,13 @@ const callbackRequest = async (
     if ((err as Error).message === 'pending') {
       throw new PendingNoteError()
     }
+    // a transport-level failure leaves the mutation's outcome unknown -
+    // it must reach callers typed, not reclassified from its message text
+    if (err instanceof AmbiguousMintError) throw err
     throw classifyNoteError((err as Error).message)
   }
   if (body?.status !== 'OK') {
-    throw new Error('Operation was not confirmed by the service.')
+    throw new AmbiguousMintError('Operation was not confirmed by the service.')
   }
   return body as WithdrawSuccessResponse
 }
@@ -685,8 +793,17 @@ export const rotateNote = async (
   k1: string
 ): Promise<RotateResult> => {
   const newK1 = generateNoteSecret()
-  const result = await rotateNoteWithHash(callback, k1, hashK1(newK1))
-  return {k1: newK1, signature: result.signature}
+  try {
+    const result = await rotateNoteWithHash(callback, k1, hashK1(newK1))
+    return {k1: newK1, signature: result.signature}
+  } catch (err) {
+    // the request may have landed - the fresh secret is then the only copy
+    // of the rotated note, so it rides the error rather than vanishing
+    if (err instanceof AmbiguousMintError) {
+      throw new AmbiguousMutationError((err as Error).message, [newK1])
+    }
+    throw err
+  }
 }
 
 export type SplitResult = {
@@ -708,18 +825,30 @@ export const splitNote = async (
 ): Promise<SplitResult> => {
   const newK1 = generateNoteSecret()
   const changeK1 = generateNoteSecret()
-  const result = await splitNoteWithHash(
-    callback,
-    k1s,
-    amountMsat,
-    hashK1(newK1),
-    hashK1(changeK1)
-  )
-  return {
-    k1: newK1,
-    signature: result.signature,
-    change: changeK1,
-    changeSignature: result.changeSignature
+  try {
+    const result = await splitNoteWithHash(
+      callback,
+      k1s,
+      amountMsat,
+      hashK1(newK1),
+      hashK1(changeK1)
+    )
+    return {
+      k1: newK1,
+      signature: result.signature,
+      change: changeK1,
+      changeSignature: result.changeSignature
+    }
+  } catch (err) {
+    // the request may have landed - the fresh secrets are then the only
+    // copies of both outputs, so they ride the error rather than vanishing
+    if (err instanceof AmbiguousMintError) {
+      throw new AmbiguousMutationError((err as Error).message, [
+        newK1,
+        changeK1
+      ])
+    }
+    throw err
   }
 }
 
@@ -730,8 +859,17 @@ export const mergeNotes = async (
   k1s: string[]
 ): Promise<RotateResult> => {
   const newK1 = generateNoteSecret()
-  const result = await mergeNotesWithHash(callback, k1s, hashK1(newK1))
-  return {k1: newK1, signature: result.signature}
+  try {
+    const result = await mergeNotesWithHash(callback, k1s, hashK1(newK1))
+    return {k1: newK1, signature: result.signature}
+  } catch (err) {
+    // the request may have landed - the fresh secret is then the only copy
+    // of the merged note, so it rides the error rather than vanishing
+    if (err instanceof AmbiguousMintError) {
+      throw new AmbiguousMutationError((err as Error).message, [newK1])
+    }
+    throw err
+  }
 }
 
 export type SettledNote = {

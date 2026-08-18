@@ -15,7 +15,6 @@ import {
 import type {Bearer} from '../storage'
 import {useWallet} from '../WalletContext'
 import {useDevice} from '../DeviceContext'
-import type {SplitResult} from '../lnurlcash'
 import {
   noteK1,
   noteSignature,
@@ -26,7 +25,9 @@ import {
   splitNote,
   rotateNote,
   settleNote,
-  NoteSpentError
+  probeBurnedNote,
+  NoteSpentError,
+  AmbiguousMutationError
 } from '../lnurlcash'
 import {
   deviceRefresh,
@@ -42,7 +43,11 @@ import {
   notify,
   NotifyKind
 } from '../helpers'
-import {getTrustedMintPubkey, getTrustedMintNodeColor} from '../trustedMints'
+import {
+  getTrustedMintPubkey,
+  getTrustedMintNodeColor,
+  isMintUnconfirmed
+} from '../trustedMints'
 import {offlineMode} from '../offlineMode'
 
 type Action = 'split' | null
@@ -104,12 +109,15 @@ const BearerCard: Component<BearerCardProps> = props => {
   // hold a newer key than this one bearer's own cached copy, e.g. if a
   // sibling bearer from the same server refreshed more recently); the
   // bearer's own field is only a fallback for the edge case of a restored
-  // record whose server isn't in the registry yet.
+  // record whose server isn't in the registry yet - and withheld entirely
+  // when the registry's pin is unconfirmed (file-sourced): then the
+  // bearer's cached claim is just as uncorroborated
   const offlineVerified = createMemo(() => {
     const sig = noteSignature(props.bearer.url)
+    const server = serverOf(props.bearer.url)
     const mintPubkey =
-      getTrustedMintPubkey(serverOf(props.bearer.url)) ??
-      props.bearer.mintPubkey
+      getTrustedMintPubkey(server) ??
+      (isMintUnconfirmed(server) ? null : props.bearer.mintPubkey)
     if (!sig || !mintPubkey) return false
     return verifyNoteSignature(k1(), props.bearer.amount, sig, mintPubkey)
   })
@@ -181,7 +189,38 @@ const BearerCard: Component<BearerCardProps> = props => {
           rotated.signature
         )
       } catch (err) {
-        rotationError = (err as Error).message
+        if (err instanceof AmbiguousMutationError) {
+          // the rotate request may have landed despite the failure - the
+          // fresh secret it carried is then the only copy of this note
+          const outcome = await probeBurnedNote(props.bearer.url)
+          if (outcome === 'gone') {
+            // the burn landed - adopt the fresh secret as the note
+            url = withNewK1(
+              props.bearer.url,
+              err.newSecrets[0],
+              info.maxWithdrawable
+            )
+          } else if (outcome === 'unknown') {
+            // can't tell: keep the old note AND track the possible new
+            // copy, rather than gamble either way
+            await addBearer({
+              url: withNewK1(
+                props.bearer.url,
+                err.newSecrets[0],
+                info.maxWithdrawable
+              ),
+              callback: info.callback,
+              amount: info.maxWithdrawable,
+              verified: false,
+              mintPubkey: info.mintPubkey ?? props.bearer.mintPubkey
+            })
+            rotationError = `${(err as Error).message} The rotation may still have gone through - the possible new copy is stored unverified alongside this one; refresh both to reconcile.`
+          } else {
+            rotationError = (err as Error).message
+          }
+        } else {
+          rotationError = (err as Error).message
+        }
       }
       await updateBearer(props.bearer.id, {
         url,
@@ -348,74 +387,149 @@ const BearerCard: Component<BearerCardProps> = props => {
           continue
         }
 
-        let result: SplitResult
+        let partK1 = ''
+        let partSignature: string | undefined
+        let changeK1 = ''
+        let changeSignature: string | undefined
+        let splitError: Error | null = null
         try {
-          result = await splitNote(currentCallback, [currentK1], msat)
+          const result = await splitNote(currentCallback, [currentK1], msat)
+          partK1 = result.k1
+          partSignature = result.signature
+          changeK1 = result.change
+          changeSignature = result.changeSignature
         } catch (err) {
+          splitError = err as Error
+        }
+        if (splitError) {
           // a single-k1 request, so a NoteSpentError here is unambiguous:
           // it's remainderId that's already gone, not some other selected
           // note - lock it the same way refresh() does, and skip the
           // rotate-in-place attempt below (there's nothing left to rotate)
-          if (err instanceof NoteSpentError) {
+          if (splitError instanceof NoteSpentError) {
             await updateBearer(remainderId, {spent: true})
             logActivity(
               'spent',
               `${serverOf(currentUrl)} reports ${msatToSats(currentAmount)} sats as already spent - marked spent locally.`
             )
-            throw err
+            throw splitError
           }
-          try {
-            const rotated = await rotateNote(currentCallback, currentK1)
-            await updateBearer(remainderId, {
-              url: withNewK1(
-                currentUrl,
-                rotated.k1,
-                currentAmount,
-                rotated.signature
+          if (splitError instanceof AmbiguousMutationError) {
+            // the split request may have landed despite the failure -
+            // probe the remainder's k1 before deciding what the secrets
+            // it carried are worth
+            const outcome = await probeBurnedNote(currentUrl)
+            if (outcome === 'gone') {
+              // the burn landed - the carried secrets are the only money
+              // left; fall through to record both outputs below
+              partK1 = splitError.newSecrets[0]
+              changeK1 = splitError.newSecrets[1]
+            } else if (outcome === 'unknown') {
+              // can't tell: track both possible outputs without dropping
+              // the remainder, and stop the chain here
+              await addBearer({
+                url: withNewK1(currentUrl, splitError.newSecrets[0], msat),
+                callback: currentCallback,
+                amount: msat,
+                verified: false,
+                mintPubkey: props.bearer.mintPubkey
+              })
+              await addBearer({
+                url: withNewK1(
+                  currentUrl,
+                  splitError.newSecrets[1],
+                  expectedChange
+                ),
+                callback: currentCallback,
+                amount: expectedChange,
+                verified: false,
+                mintPubkey: props.bearer.mintPubkey
+              })
+              throw new Error(
+                'The split may have gone through but could not be confirmed - the possible outputs are stored unverified alongside your original note; refresh them to reconcile.'
               )
-            })
-          } catch {
-            // rotation unsupported/unreachable too - the remainder stays
-            // recorded under its pre-attempt secret rather than vanish
+            }
+            // 'live': the request never landed - same as a definitive
+            // rejection, handled below
           }
-          throw err
+          if (!partK1) {
+            // a definitive rejection (or a probe showing nothing burned)
+            // still puts the remainder's k1 on the wire via the failed
+            // callback request, so it's rotated in place (best-effort)
+            // rather than left exposed - but always kept, never dropped,
+            // so a failed split costs nothing
+            try {
+              const rotated = await rotateNote(currentCallback, currentK1)
+              await updateBearer(remainderId, {
+                url: withNewK1(
+                  currentUrl,
+                  rotated.k1,
+                  currentAmount,
+                  rotated.signature
+                )
+              })
+            } catch {
+              // rotation unsupported/unreachable too - the remainder stays
+              // recorded under its pre-attempt secret rather than vanish
+            }
+            throw splitError
+          }
         }
-        removeBearer(remainderId)
+        // the split burned the remainder server-side from here on, so both
+        // outputs are recorded BEFORE its record is removed; the change is
+        // then settled in place - a failed settle leaves it as an
+        // unverified note a refresh can repair, not a lost secret
         await addBearer({
-          url: withNewK1(currentUrl, result.k1, msat, result.signature),
+          url: withNewK1(currentUrl, partK1, msat, partSignature),
           callback: currentCallback,
           amount: msat,
           verified: true,
           mintPubkey: props.bearer.mintPubkey
         })
+        const remainder = await addBearer({
+          url: withNewK1(currentUrl, changeK1, expectedChange, changeSignature),
+          callback: currentCallback,
+          amount: expectedChange,
+          verified: false,
+          mintPubkey: props.bearer.mintPubkey
+        })
+        removeBearer(remainderId)
+        remainderId = remainder.id
         // settleNote learns the change's true value (a mint MAY have
         // deducted a fee - LUD-25) and rotates it, since the GET that
         // learns it necessarily puts k1 on the wire
-        const settled = await settleNote(
-          currentUrl,
-          result.change,
-          expectedChange,
-          result.changeSignature
-        )
-        perSplitFeeMsat = expectedChange - settled.amountMsat
-        totalFeeMsat += perSplitFeeMsat
-        currentAmount = settled.amountMsat
-        currentK1 = settled.k1
-        currentUrl = withNewK1(
-          currentUrl,
-          settled.k1,
-          settled.amountMsat,
-          settled.signature
-        )
-        currentCallback = settled.callback
-        const remainder = await addBearer({
-          url: currentUrl,
-          callback: settled.callback,
-          amount: settled.amountMsat,
-          verified: true,
-          mintPubkey: props.bearer.mintPubkey
-        })
-        remainderId = remainder.id
+        try {
+          const settled = await settleNote(
+            currentUrl,
+            changeK1,
+            expectedChange,
+            changeSignature
+          )
+          perSplitFeeMsat = expectedChange - settled.amountMsat
+          totalFeeMsat += perSplitFeeMsat
+          currentAmount = settled.amountMsat
+          currentK1 = settled.k1
+          currentUrl = withNewK1(
+            currentUrl,
+            settled.k1,
+            settled.amountMsat,
+            settled.signature
+          )
+          currentCallback = settled.callback
+          await updateBearer(remainderId, {
+            url: currentUrl,
+            callback: currentCallback,
+            amount: currentAmount,
+            verified: true
+          })
+        } catch (err) {
+          // the change is already recorded above - stop the chain with it
+          // kept as an unverified note rather than risk splitting further
+          // from a value this wallet hasn't confirmed
+          throw new Error(
+            `Settling the change note didn't complete (${(err as Error).message}) - it's kept as an unverified note; refresh it to repair.`
+          )
+        }
       }
       const feeNote =
         totalFeeMsat > 0

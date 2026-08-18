@@ -48,6 +48,11 @@ type MintNote = {amountMsat: number; pending: boolean}
 class MockMint {
   private notes = new Map<string, MintNote>()
   rejectNextCallback = false
+  // when true, the next /w/cb request is fully processed (state mutated)
+  // but its response never arrives - the fetch rejects the way a dropped
+  // connection would. Models a mutation that landed despite its transport
+  // failure, for the staged-secret recovery paths
+  dropNextCallback = false
 
   seed(k1: string, amountMsat: number): void {
     this.notes.set(hashK1(k1), {amountMsat, pending: false})
@@ -63,6 +68,11 @@ class MockMint {
 
   fetch = async (input: string | URL): Promise<Response> => {
     const url = new URL(input.toString())
+    if (this.dropNextCallback && url.pathname === '/w/cb') {
+      this.dropNextCallback = false
+      await this.fetch(input) // process the mutation for real...
+      throw new TypeError('fetch failed') // ...but lose the response
+    }
     const params = url.searchParams
 
     if (url.pathname === '/w') {
@@ -361,6 +371,127 @@ describe('deviceRotate / migrateNoteToDevice', () => {
       // nothing to burn on-device - the note never lived there
       expect(firmware.get(result.deviceId)?.parent_ids).toEqual([])
     })
+  })
+})
+
+describe('ambiguous mint-call failures', () => {
+  it('a dropped rotate response commits the staged secret rather than discarding it', async () => {
+    const mint = new MockMint()
+    const firmware = new MockDeviceFirmware()
+    const client = new DeviceClient(firmware)
+    const k1 = randomHex(32)
+    mint.seed(k1, 21000)
+
+    await withMint(mint, async () => {
+      const importedId = await client.importSecret(k1, HOST, 21000)
+      mint.dropNextCallback = true
+      const result = await deviceRotate(client, {
+        deviceId: importedId,
+        url: noteTemplateUrl(k1, 21000),
+        callback: WITHDRAW_CALLBACK,
+        amount: 21000
+      })
+      // the probe shows the old k1 gone, so the rotate landed mint-side
+      // despite the lost response - the staged secret is the only copy of
+      // the money and must be committed, never discarded
+      expect(firmware.get(result.deviceId)?.state).toBe('confirmed')
+      expect(firmware.get(importedId)?.state).toBe('spent')
+      const newK1 = await client.exportSecret(result.deviceId)
+      expect(mint.isOutstanding(newK1)).toBe(true)
+      expect(mint.isOutstanding(k1)).toBe(false)
+      expect(result.signature).toBeUndefined()
+    })
+  })
+
+  it('a dropped split response commits both staged outputs', async () => {
+    const mint = new MockMint()
+    const firmware = new MockDeviceFirmware()
+    const client = new DeviceClient(firmware)
+    const k1 = randomHex(32)
+    mint.seed(k1, 21000)
+
+    await withMint(mint, async () => {
+      const importedId = await client.importSecret(k1, HOST, 21000)
+      mint.dropNextCallback = true
+      const parts = await deviceSplit(
+        client,
+        [{deviceId: importedId, url: noteTemplateUrl(k1, 21000)}],
+        WITHDRAW_CALLBACK,
+        6000,
+        21000
+      )
+      expect(firmware.get(importedId)?.state).toBe('spent')
+      expect(firmware.get(parts.target.deviceId)?.state).toBe('confirmed')
+      expect(firmware.get(parts.change.deviceId)?.state).toBe('confirmed')
+      const targetK1 = await client.exportSecret(parts.target.deviceId)
+      const changeK1 = await client.exportSecret(parts.change.deviceId)
+      expect(mint.isOutstanding(targetK1)).toBe(true)
+      expect(mint.isOutstanding(changeK1)).toBe(true)
+    })
+  })
+
+  it('a definitive rejection still discards the staged secret', async () => {
+    const mint = new MockMint()
+    const firmware = new MockDeviceFirmware()
+    const client = new DeviceClient(firmware)
+    const k1 = randomHex(32)
+    mint.seed(k1, 21000)
+
+    await withMint(mint, async () => {
+      const importedId = await client.importSecret(k1, HOST, 21000)
+      mint.rejectNextCallback = true
+      await expect(
+        deviceRotate(client, {
+          deviceId: importedId,
+          url: noteTemplateUrl(k1, 21000),
+          callback: WITHDRAW_CALLBACK,
+          amount: 21000
+        })
+      ).rejects.toThrow('rejected')
+      // nothing burned, so the staged secret is clutter: discarded - only
+      // the imported note remains, still confirmed, still outstanding
+      expect((await client.listAllNotes()).map(n => n.id)).toEqual([importedId])
+      expect(firmware.get(importedId)?.state).toBe('confirmed')
+      expect(mint.isOutstanding(k1)).toBe(true)
+    })
+  })
+
+  it('keeps the staged secret when the outcome cannot be determined', async () => {
+    const mint = new MockMint()
+    const firmware = new MockDeviceFirmware()
+    const client = new DeviceClient(firmware)
+    const k1 = randomHex(32)
+    mint.seed(k1, 21000)
+
+    // the mutation's response is lost AND the recovery probe can't get
+    // through either (/w unreachable) - neither discard nor commit is safe
+    vi.stubGlobal('fetch', (async (input: string | URL) => {
+      const url = new URL(input.toString())
+      if (url.pathname === '/w') throw new TypeError('network down')
+      return mint.fetch(input)
+    }) as typeof fetch)
+    try {
+      const importedId = await client.importSecret(k1, HOST, 21000)
+      mint.dropNextCallback = true
+      await expect(
+        deviceRotate(client, {
+          deviceId: importedId,
+          url: noteTemplateUrl(k1, 21000),
+          callback: WITHDRAW_CALLBACK,
+          amount: 21000
+        })
+      ).rejects.toThrow(/kept on the vault/)
+      // the staged secret lingers pending on the device rather than being
+      // discarded (the rotate DID land mint-side here - the money is in
+      // it), and the old note is untouched on-device
+      const staged = (await client.listAllNotes()).find(
+        n => n.id !== importedId
+      )
+      expect(staged?.state).toBe('pending')
+      expect(firmware.get(importedId)?.state).toBe('confirmed')
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 })
 

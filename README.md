@@ -158,9 +158,13 @@ already present. Ciphertexts become readable once the same seed (hence the
 same linking key) is active - restore the seed first or the file first,
 either order works. Everything in the file is validated before anything is
 installed: a malformed linking-key record is skipped rather than planted,
-a restored **plaintext** linking key gets a loud warning (whoever wrote the
-file may know that key), and trusted mints come across unlocked - a file
-can neither pin a key change nor plant an irremovable entry.
+and a restored linking key - encrypted or not - is never activated
+automatically, since whoever wrote the file may know that key; the restore
+pauses on an explicit source-trust warning first. Trusted mints come
+across unlocked and **unconfirmed**: a file can neither pin a key change
+nor plant an irremovable entry, and a file-sourced pin stays out of
+"signed"-badge verification until a live response from that mint advertises
+the same key (any refresh or lookup confirms it).
 
 A backup protects against a lost device, not against theft of the note
 itself: the service settles for whoever presents a `k1` first. Rotation
