@@ -104,17 +104,19 @@ const Nav = () => {
             <IoBookSharp />
             <span class="nav-label">&nbsp;Docs</span>
           </A>
-          <Show when={state() === 'unlocked'}>
-            <A href="/backup" title="Backup &amp; restore">
-              <IoSaveSharp />
-              <span class="nav-label">&nbsp;Backup</span>
-            </A>
-            <Show when={encrypted()}>
-              <a href="#lock" title="Lock wallet" onClick={lock_action}>
-                <IoLockClosedSharp />
-                <span class="nav-label">&nbsp;Lock</span>
-              </a>
-            </Show>
+          {/* not gated on state() === 'unlocked' - restoring a backup is
+          exactly what a device with no wallet yet (state() === 'none') needs
+          this link for, and hiding it there was the whole bug: after
+          "Forget this wallet" there was no way back to /backup at all */}
+          <A href="/backup" title="Backup &amp; restore">
+            <IoSaveSharp />
+            <span class="nav-label">&nbsp;Backup</span>
+          </A>
+          <Show when={state() === 'unlocked' && encrypted()}>
+            <a href="#lock" title="Lock wallet" onClick={lock_action}>
+              <IoLockClosedSharp />
+              <span class="nav-label">&nbsp;Lock</span>
+            </a>
           </Show>
         </div>
       </div>

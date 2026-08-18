@@ -51,7 +51,7 @@ export const DeviceProvider = (props: {children: JSX.Element}) => {
     if (!current) return
     const [deviceInfo, deviceNotes] = await Promise.all([
       current.getInfo(),
-      current.listNotes()
+      current.listAllNotes()
     ])
     setInfo(deviceInfo)
     setNotes(deviceNotes)

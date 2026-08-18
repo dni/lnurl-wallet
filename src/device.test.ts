@@ -90,6 +90,18 @@ class FakeTransport implements DeviceTransport {
 }
 
 describe('DeviceClient', () => {
+  // a list_notes entry valid enough to survive device.ts's response validation
+  const wireNote = (id: string) => ({
+    id,
+    state: 'confirmed',
+    amount_msat: 1000,
+    label: '',
+    host: 'mock-mint.test',
+    parent_ids: [],
+    created_at: 0,
+    updated_at: 0
+  })
+
   it('resolves a command with the device response', async () => {
     const transport = new FakeTransport()
     const client = new DeviceClient(transport)
@@ -106,6 +118,88 @@ describe('DeviceClient', () => {
       note_count: 2,
       pending_count: 1
     })
+  })
+
+  it('includes board/storage in getInfo only when the device sends them', async () => {
+    const transport = new FakeTransport()
+    const client = new DeviceClient(transport)
+    const promise = client.getInfo()
+    await vi.waitFor(() => expect(transport.sent.length).toBe(1))
+    transport.respond({
+      ok: true,
+      fw_version: '0.1.0',
+      note_count: 2,
+      pending_count: 1,
+      board: 't-display-s3',
+      storage: 'index_unreadable'
+    })
+    await expect(promise).resolves.toEqual({
+      fw_version: '0.1.0',
+      note_count: 2,
+      pending_count: 1,
+      board: 't-display-s3',
+      storage: 'index_unreadable'
+    })
+  })
+
+  it('passes offset/limit through to list_notes, and reports next_offset', async () => {
+    const transport = new FakeTransport()
+    const client = new DeviceClient(transport)
+    const promise = client.listNotes(10, 5)
+    await vi.waitFor(() =>
+      expect(transport.sent).toEqual([
+        {cmd: 'list_notes', offset: 10, limit: 5}
+      ])
+    )
+    transport.respond({
+      ok: true,
+      total: 40,
+      offset: 10,
+      notes: [wireNote('aa'.repeat(32))],
+      next_offset: 15
+    })
+    await expect(promise).resolves.toEqual({
+      total: 40,
+      offset: 10,
+      notes: [wireNote('aa'.repeat(32))],
+      nextOffset: 15
+    })
+  })
+
+  it('listAllNotes pages through every note by feeding next_offset back', async () => {
+    const transport = new FakeTransport()
+    const client = new DeviceClient(transport)
+    const promise = client.listAllNotes()
+
+    await vi.waitFor(() =>
+      expect(transport.sent).toEqual([{cmd: 'list_notes'}])
+    )
+    transport.respond({
+      ok: true,
+      total: 3,
+      offset: 0,
+      notes: [wireNote('aa'.repeat(32)), wireNote('bb'.repeat(32))],
+      next_offset: 2
+    })
+
+    await vi.waitFor(() =>
+      expect(transport.sent).toEqual([
+        {cmd: 'list_notes'},
+        {cmd: 'list_notes', offset: 2}
+      ])
+    )
+    transport.respond({
+      ok: true,
+      total: 3,
+      offset: 2,
+      notes: [wireNote('cc'.repeat(32))]
+    })
+
+    await expect(promise).resolves.toEqual([
+      wireNote('aa'.repeat(32)),
+      wireNote('bb'.repeat(32)),
+      wireNote('cc'.repeat(32))
+    ])
   })
 
   it('rejects with a typed DeviceError on a wire error response', async () => {
@@ -143,8 +237,13 @@ describe('DeviceClient', () => {
     await vi.waitFor(() => expect(transport.sent.length).toBe(2))
     expect(transport.sent).toEqual([{cmd: 'get_info'}, {cmd: 'list_notes'}])
 
-    transport.respond({ok: true, notes: []})
-    await expect(second).resolves.toEqual([])
+    transport.respond({ok: true, total: 0, offset: 0, notes: []})
+    await expect(second).resolves.toEqual({
+      total: 0,
+      offset: 0,
+      notes: [],
+      nextOffset: null
+    })
   })
 
   it('rejects the pending command if the transport disconnects', async () => {
@@ -233,11 +332,43 @@ describe('DeviceClient', () => {
       await vi.advanceTimersByTimeAsync(0)
       await vi.waitFor(() => expect(transport.sent.length).toBe(2))
       transport.respond({ok: true, notes: []})
-      await expect(second).resolves.toEqual([])
+      await expect(second).resolves.toEqual({
+        total: undefined,
+        offset: undefined,
+        notes: [],
+        nextOffset: null
+      })
     } finally {
       vi.useRealTimers()
     }
   })
+
+  // discard/mark_spent/rename/delete are gated by the same on-device
+  // physical confirm as export_secret (docs/PROTOCOL.md's "unsupported"
+  // paragraph) - each needs the same longer timeout, or a normal
+  // button-hold confirm races the client's own default 10s and tears down
+  // the whole session over what should have been a successful command
+  it.each([
+    ['discard', (c: DeviceClient) => c.discard('abc'), {ok: true}],
+    ['markSpent', (c: DeviceClient) => c.markSpent('abc'), {ok: true}],
+    ['rename', (c: DeviceClient) => c.rename('abc', 'label'), {ok: true}],
+    ['delete', (c: DeviceClient) => c.delete('abc'), {ok: true}]
+  ] as const)(
+    'gives %s longer than a normal command before timing out',
+    async (_name, call, response) => {
+      vi.useFakeTimers()
+      try {
+        const transport = new FakeTransport()
+        const client = new DeviceClient(transport)
+        const promise = call(client)
+        await vi.advanceTimersByTimeAsync(10_000)
+        transport.respond(response)
+        await expect(promise).resolves.toBeUndefined()
+      } finally {
+        vi.useRealTimers()
+      }
+    }
+  )
 })
 
 describe('DeviceClient response validation', () => {
@@ -299,7 +430,12 @@ describe('DeviceClient response validation', () => {
       ok: true,
       notes: [good, null, {...good, id: 'nope'}, {state: 'pending'}, alsoGood]
     })
-    await expect(promise).resolves.toEqual([good, alsoGood])
+    await expect(promise).resolves.toEqual({
+      total: undefined,
+      offset: undefined,
+      notes: [good, alsoGood],
+      nextOffset: null
+    })
   })
 })
 

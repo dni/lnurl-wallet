@@ -21,6 +21,7 @@ const Backup: Component = () => {
   let fileRef: HTMLInputElement | undefined
   const [busy, setBusy] = createSignal(false)
   const [keyRestored, setKeyRestored] = createSignal(false)
+  const [keySkipped, setKeySkipped] = createSignal(false)
   const [confirmForget, setConfirmForget] = createSignal(false)
 
   const download = () => {
@@ -45,6 +46,7 @@ const Backup: Component = () => {
     input.value = ''
     if (!file) return
     setBusy(true)
+    setKeySkipped(false)
     try {
       const data = JSON.parse(await file.text())
       const result = applyBackup(data)
@@ -53,12 +55,16 @@ const Backup: Component = () => {
         setKeyRestored(true)
         refreshState()
       }
+      if (result.linkingKeySkipped) setKeySkipped(true)
       notify(
         `Restored ${result.added} bearer(s), skipped ${result.skipped}` +
           (result.trustedMintsAdded > 0
             ? `, added ${result.trustedMintsAdded} trusted mint(s).`
-            : '.'),
-        NotifyKind.SUCCESS
+            : '.') +
+          (result.linkingKeySkipped
+            ? ' This device already has a wallet - see the warning below.'
+            : ''),
+        result.linkingKeySkipped ? NotifyKind.ERROR : NotifyKind.SUCCESS
       )
     } catch (err) {
       notify((err as Error).message, NotifyKind.ERROR)
@@ -119,10 +125,16 @@ const Backup: Component = () => {
         <h4>Restore backup</h4>
         <p>
           Bearers from the file are merged into this wallet (already-present
-          ones are skipped). They only decrypt with the same seed-derived key
-          they were encrypted with - a backup made from a different seed stays
-          unreadable until that seed is restored (see{' '}
-          <A href="/setup">Restore from seed</A>).
+          ones are skipped) - but they only decrypt under the exact seed-derived
+          key they were encrypted with, and this device's existing wallet, if it
+          has one, is never replaced by a backup file. So{' '}
+          <strong>order matters</strong>: do this <strong>before</strong>{' '}
+          creating or restoring any wallet here - either restore your seed
+          phrase first (see <A href="/setup">Restore from seed</A>), or, if the
+          backup's own password-encrypted key is included, just select the file
+          while this device has no wallet yet. Setting up a wallet here first
+          and importing afterward merges the notes into storage, but they stay
+          invisible - wrong key, nothing to decrypt them with.
         </p>
         <Show when={state() === 'none'}>
           <p>
@@ -166,6 +178,17 @@ const Backup: Component = () => {
               encrypted with.
             </p>
           </Show>
+        </Show>
+        <Show when={keySkipped()}>
+          <p class="warning">
+            This device already has a wallet, so the backup's own saved key was{' '}
+            <strong>not</strong> applied, and any of its notes encrypted under a
+            different key won't show up here. If the wallet already on this
+            device isn't the one this backup belongs to, forget it below - free
+            if it's new/empty - then select this backup file again: restoring
+            straight onto a wallet-less device is what actually installs the
+            backup's own key.
+          </p>
         </Show>
       </figure>
       <Show when={state() !== 'none'}>

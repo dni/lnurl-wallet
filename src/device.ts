@@ -16,12 +16,13 @@
 // verified against a board" caveat lnurl-vault's own README attaches to its
 // NimBLE glue (src/transport/ble_gatt.c).
 //
-// This is the transport + command layer only. Wiring device-backed secrets
-// into this wallet's existing rotate/split/merge/melt flows (Mint.tsx,
-// Melt.tsx, SendDialog.tsx, BearerCard.tsx today generate/hold secrets
-// in-browser via lnurlcash.ts's generateNoteSecret) is a deliberate,
-// separate follow-up - see DeviceContext.tsx / pages/Vault.tsx for what's
-// wired up so far: pairing, device info, and the device's own note list.
+// This is the transport + command layer, plus deviceOrchestration.ts, which
+// composes these commands with mint HTTP calls to actually route this
+// wallet's rotate/split/merge/melt/mint/receive flows through a paired
+// device instead of generating secrets in-browser - see its own header
+// comment for the full command-by-command mapping (docs/PROTOCOL.md's
+// "Orchestration"). DeviceContext.tsx / pages/Vault.tsx cover pairing,
+// device info, and the device's own note list on top of that.
 
 // ---- wire types (docs/PROTOCOL.md "Commands") ----
 
@@ -40,10 +41,36 @@ export type DeviceNote = {
   sig?: string
 }
 
+// get_info's `storage` field (docs/PROTOCOL.md's "get_info") - only 'ok'
+// means the device can actually read its own notes. Every other value
+// means note_count is how many notes the device could load, not how many
+// exist; a client that skips this and just checks note_count === 0 can
+// mistake a vault it can't currently read for one that's genuinely empty.
+export type DeviceStorageState =
+  'ok' | 'full' | 'version_unsupported' | 'unavailable' | 'index_unreadable'
+
 export type DeviceInfo = {
   fw_version: string
   note_count: number
   pending_count: number
+  // identifies the hardware/pin map - absent on a build with no board
+  // identifier compiled in
+  board?: string
+  // absent entirely on a build with no persistent storage at all - distinct
+  // from 'unavailable', which means storage exists but couldn't come up
+  // this boot (see DeviceStorageState)
+  storage?: DeviceStorageState
+}
+
+// one page of list_notes (docs/PROTOCOL.md's "list_notes") - `total` is how
+// many notes the device holds in total, never just `notes.length`; a client
+// must not treat the length of `notes` as the number of notes that exist.
+// `nextOffset` is null once there's no more to page through.
+export type DeviceNotePage = {
+  total: number
+  offset: number
+  notes: DeviceNote[]
+  nextOffset: number | null
 }
 
 export type DeviceErrorCode =
@@ -53,6 +80,26 @@ export type DeviceErrorCode =
   | 'timeout'
   | 'storage_full'
   | 'bad_request'
+  // the device could not ask its owner at all (no display, or it never
+  // came up) - distinct from 'user_declined' on purpose (docs/PROTOCOL.md):
+  // nobody refused, there was nothing to show. A generic "declined" message
+  // for this sends the holder hunting for a confirm prompt that never
+  // existed - callers that show different guidance per code should treat
+  // this one separately.
+  | 'display_unavailable'
+  // list_notes: the reply didn't fit the transport's buffer at the
+  // requested (or, unrequested, the largest attempted) page size
+  | 'response_too_large'
+  // no on-device confirmation is wired on this build at all - every
+  // physically-gated command (export_secret/discard/mark_spent/rename/
+  // delete/wipe) answers this instead of proceeding ungated
+  | 'unsupported'
+  // wipe only: the erase, or the verify-empty pass after it, failed -
+  // treat as "this device still holds secrets", not as "nothing happened"
+  | 'wipe_failed'
+  // ota_begin/ota_finish only
+  | 'bad_signature'
+  | 'ota_failed'
   // not a wire code - raised locally when the transport drops mid-command
   | 'disconnected'
 
@@ -388,11 +435,15 @@ export class BleTransport implements DeviceTransport {
 
 // ---- command layer ----
 
-// export_secret blocks on a physical button press with a 30s on-device
-// timeout (docs/PROTOCOL.md) - this client waits a little longer so the
-// device's own timeout gets the chance to fire and answer first, rather
-// than racing it.
-const EXPORT_TIMEOUT_MS = 35_000
+// Every physically-gated command - export_secret, discard, mark_spent,
+// rename, delete, wipe (docs/PROTOCOL.md's "unsupported" paragraph lists
+// them) - blocks on a physical button press with a 30s on-device timeout.
+// This client waits a little longer than that so the device's own timeout
+// gets the chance to fire and answer first, rather than racing it: a
+// client-side timeout shorter than the on-device one would time out (and,
+// per sendOne below, tear down the whole session) while the owner is still
+// mid button-hold on a perfectly normal confirm.
+const PHYSICAL_CONFIRM_TIMEOUT_MS = 35_000
 const DEFAULT_TIMEOUT_MS = 10_000
 
 type PendingCommand = {
@@ -591,16 +642,51 @@ export class DeviceClient {
 
   async getInfo(): Promise<DeviceInfo> {
     const res = await this.send({cmd: 'get_info'})
-    return {
+    const info: DeviceInfo = {
       fw_version: res.fw_version,
       note_count: res.note_count,
       pending_count: res.pending_count
     }
+    if (typeof res.board === 'string') info.board = res.board
+    if (typeof res.storage === 'string') {
+      info.storage = res.storage as DeviceStorageState
+    }
+    return info
   }
 
-  async listNotes(): Promise<DeviceNote[]> {
-    const res = await this.send({cmd: 'list_notes'})
-    return Array.isArray(res.notes) ? res.notes : []
+  // one page - `offset`/`limit` both optional, matching the wire command
+  // exactly (docs/PROTOCOL.md's "list_notes"). See listAllNotes() below for
+  // a caller that just wants everything, not manual paging.
+  async listNotes(offset?: number, limit?: number): Promise<DeviceNotePage> {
+    const cmd: Record<string, unknown> = {cmd: 'list_notes'}
+    if (offset !== undefined) cmd.offset = offset
+    if (limit !== undefined) cmd.limit = limit
+    const res = await this.send(cmd)
+    return {
+      total: res.total,
+      offset: res.offset,
+      notes: Array.isArray(res.notes) ? res.notes : [],
+      nextOffset: typeof res.next_offset === 'number' ? res.next_offset : null
+    }
+  }
+
+  // pages through every note the device holds, feeding next_offset back as
+  // offset until it stops appearing (docs/PROTOCOL.md's "list_notes": "Page
+  // by feeding next_offset back as offset until it stops appearing") - for
+  // a caller (DeviceContext.tsx) that wants the full list, not one page.
+  // Omitting `limit` throughout means each page is "as many as fit", so
+  // this never risks a 'response_too_large' the way an explicit limit
+  // chosen too large would.
+  async listAllNotes(): Promise<DeviceNote[]> {
+    const notes: DeviceNote[] = []
+    let offset: number | undefined
+    for (;;) {
+      const page = await this.listNotes(offset)
+      notes.push(...page.notes)
+      if (page.nextOffset === null) break
+      offset = page.nextOffset
+    }
+    return notes
   }
 
   // rotate (parentIds=[old]) / merge (parentIds=many inputs) - see
@@ -640,15 +726,22 @@ export class DeviceClient {
     await this.send(cmd)
   }
 
+  // gated on-device by a physical confirm/cancel button press (see
+  // PHYSICAL_CONFIRM_TIMEOUT_MS) - a discard drops a note the mint already
+  // rejected, but the device can't tell that apart from any other command
+  // that touches a held note, so it asks the same as the rest
   async discard(id: string): Promise<void> {
-    await this.send({cmd: 'discard', id})
+    await this.send({cmd: 'discard', id}, PHYSICAL_CONFIRM_TIMEOUT_MS)
   }
 
   // gated on-device by a physical confirm/cancel button press - see
-  // EXPORT_TIMEOUT_MS. Rejects with DeviceError code 'user_declined' or
-  // 'timeout' if the holder doesn't confirm.
+  // PHYSICAL_CONFIRM_TIMEOUT_MS. Rejects with DeviceError code
+  // 'user_declined' or 'timeout' if the holder doesn't confirm.
   async exportSecret(id: string): Promise<string> {
-    const res = await this.send({cmd: 'export_secret', id}, EXPORT_TIMEOUT_MS)
+    const res = await this.send(
+      {cmd: 'export_secret', id},
+      PHYSICAL_CONFIRM_TIMEOUT_MS
+    )
     return res.k1
   }
 
@@ -669,16 +762,25 @@ export class DeviceClient {
     return res.id
   }
 
+  // gated on-device by a physical confirm/cancel button press - see
+  // PHYSICAL_CONFIRM_TIMEOUT_MS. This is the burn step of every rotate/
+  // split/merge/melt on a device-backed note (see deviceOrchestration.ts),
+  // so this fires on ordinary, successful operations constantly - not an
+  // edge case worth a shorter timeout.
   async markSpent(id: string): Promise<void> {
-    await this.send({cmd: 'mark_spent', id})
+    await this.send({cmd: 'mark_spent', id}, PHYSICAL_CONFIRM_TIMEOUT_MS)
   }
 
+  // gated on-device by a physical confirm/cancel button press - see
+  // PHYSICAL_CONFIRM_TIMEOUT_MS
   async rename(id: string, label: string): Promise<void> {
-    await this.send({cmd: 'rename', id, label})
+    await this.send({cmd: 'rename', id, label}, PHYSICAL_CONFIRM_TIMEOUT_MS)
   }
 
+  // gated on-device by a physical confirm/cancel button press - see
+  // PHYSICAL_CONFIRM_TIMEOUT_MS
   async delete(id: string): Promise<void> {
-    await this.send({cmd: 'delete', id})
+    await this.send({cmd: 'delete', id}, PHYSICAL_CONFIRM_TIMEOUT_MS)
   }
 
   async disconnect(): Promise<void> {
