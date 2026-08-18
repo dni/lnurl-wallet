@@ -241,12 +241,26 @@ export type RestoreResult = {
   added: number
   skipped: number
   linkingKeyRestored: boolean
+  // true when the backup carried a linking key but this device already had
+  // one, so it was deliberately NOT installed (see below) - distinct from
+  // "no key in this backup at all". The bearer records above still merged
+  // in regardless, but they were encrypted under the backup's own seed, not
+  // whatever wallet is active on this device - unless that's the exact same
+  // seed, they won't decrypt here, and the caller (Backup.tsx) should say so
+  // rather than let that read as a silent no-op.
+  linkingKeySkipped: boolean
   trustedMintsAdded: number
 }
 
 // merges a backup into localStorage: bearer records are added by id (already
 // present ids are left as-is), the backup's linking key is only installed
-// when this device has none yet - never overwriting an existing wallet
+// when this device has none yet - never overwriting an existing wallet.
+// That guard is deliberate (a stale/wrong backup must never clobber a
+// wallet already holding funds), but it means restore order matters: a
+// device that already has ANY wallet - even one just freshly created,
+// unrelated to this backup - silently keeps its own key, and this backup's
+// bearers merge into storage without ever becoming visible, since they
+// don't decrypt under a different key. See linkingKeySkipped above.
 export const applyBackup = (data: unknown): RestoreResult => {
   const backup = data as BackupFile
   if (
@@ -280,14 +294,25 @@ export const applyBackup = (data: unknown): RestoreResult => {
   writeEncryptedBearers(existing)
 
   let linkingKeyRestored = false
-  if (backup.linkingKey && !savedKeyExists()) {
-    restoreLinkingKeyStored(backup.linkingKey)
-    linkingKeyRestored = true
+  let linkingKeySkipped = false
+  if (backup.linkingKey) {
+    if (savedKeyExists()) {
+      linkingKeySkipped = true
+    } else {
+      restoreLinkingKeyStored(backup.linkingKey)
+      linkingKeyRestored = true
+    }
   }
 
   const trustedMintsAdded = Array.isArray(backup.trustedMints)
     ? mergeTrustedMints(backup.trustedMints)
     : 0
 
-  return {added, skipped, linkingKeyRestored, trustedMintsAdded}
+  return {
+    added,
+    skipped,
+    linkingKeyRestored,
+    linkingKeySkipped,
+    trustedMintsAdded
+  }
 }

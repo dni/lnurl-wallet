@@ -1,7 +1,7 @@
 # LNURLwallet
 
 A wallet for **LNURLcash** bearer notes
-([LUD-XX draft](https://github.com/lnurl/luds/blob/663264923edf3e8e8fc22835a68ef98238b8d692/XX.md)). It is a
+([LUD-25 draft](https://github.com/lnurl/luds/blob/luds/25.md)). It is a
 single static page - no backend, no database, no accounts - deployed
 straight to GitHub Pages. Everything it holds lives **encrypted** in your
 browser's local storage, and every network request goes directly from your
@@ -13,7 +13,7 @@ SolidJS, TypeScript, sass, `@scure`/`@noble` crypto, `solid-qr-code`,
 `solid-toast`, `solid-icons`. Works against any spec-compliant service,
 e.g. [lnurl-mint](https://github.com/dni/lnurl-mint).
 
-## LNURLcash (LUD-XX)
+## LNURLcash (LUD-25)
 
 A bearer note is an ordinary [LUD-03](https://github.com/lnurl/luds/blob/luds/03.md)
 withdrawRequest link whose `k1` **is** the asset:
