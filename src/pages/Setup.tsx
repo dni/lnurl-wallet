@@ -4,7 +4,11 @@ import {A, useNavigate, useSearchParams} from '@solidjs/router'
 import {IoRefreshSharp} from 'solid-icons/io'
 
 import {useWallet} from '../WalletContext'
-import {generateSeedPhrase, isValidSeedPhrase} from '../keys'
+import {
+  generateSeedPhrase,
+  isValidSeedPhrase,
+  savedKeyIsEncrypted
+} from '../keys'
 import {applyBackup} from '../storage'
 import {notify, NotifyKind} from '../helpers'
 
@@ -17,7 +21,7 @@ type Tab = 'create' | 'restore' | 'backup'
 const MIN_PASSWORD_LENGTH = 8
 
 const Setup: Component = () => {
-  const {setup, state, refreshState} = useWallet()
+  const {setup, state, refreshState, unlock} = useWallet()
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const [tab, setTab] = createSignal<Tab>(
@@ -98,11 +102,22 @@ const Setup: Component = () => {
       const data = JSON.parse(await file.text())
       const result = applyBackup(data)
       if (result.linkingKeyRestored) {
-        refreshState()
-        notify(
-          `Wallet restored from backup (${result.added} bearer(s) merged) - unlock it with the password it was encrypted with.`,
-          NotifyKind.SUCCESS
-        )
+        if (savedKeyIsEncrypted()) {
+          refreshState()
+          notify(
+            `Wallet restored from backup (${result.added} bearer(s) merged) - unlock it with the password it was encrypted with.`,
+            NotifyKind.SUCCESS
+          )
+        } else {
+          // a plaintext-stored key has no password to ask for - activate
+          // it right away (buildBackup never exports one, but applyBackup
+          // accepts a well-formed one)
+          await unlock()
+          notify(
+            `Wallet restored from backup (${result.added} bearer(s) merged).`,
+            NotifyKind.SUCCESS
+          )
+        }
         navigate('/wallet')
         return
       }

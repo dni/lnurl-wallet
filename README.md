@@ -1,7 +1,7 @@
 # LNURLwallet
 
 A wallet for **LNURLcash** bearer notes
-([LUD-25 draft](https://github.com/lnurl/luds/blob/luds/25.md)). It is a
+([LUD-25 draft](https://github.com/lnurl/luds/blob/lnurlcash/25.md)). It is a
 single static page - no backend, no database, no accounts - deployed
 straight to GitHub Pages. Everything it holds lives **encrypted** in your
 browser's local storage, and every network request goes directly from your

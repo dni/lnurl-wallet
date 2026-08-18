@@ -86,6 +86,7 @@ export const PUBLIC_MINTS = [
   '@mint.600.wtf',
   '@lnurl.21mint.me',
   '@mint.forgesworn.dev',
+  '@lnurl.21linz.at',
   '@minty.exe.xyz'
 ]
 

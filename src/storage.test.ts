@@ -85,6 +85,7 @@ describe('applyBackup linking key handling', () => {
       validBackup({linkingKey: {enc: false, value: LINKING_HEX_A}})
     )
     expect(result.linkingKeyRestored).toBe(true)
+    expect(result.linkingKeySkipped).toBe(false)
     expect(keys.savedKeyExists()).toBe(true)
     expect(keys.savedKeyIsEncrypted()).toBe(false)
   })
@@ -101,6 +102,7 @@ describe('applyBackup linking key handling', () => {
       })
     )
     expect(result.linkingKeyRestored).toBe(true)
+    expect(result.linkingKeySkipped).toBe(false)
     expect(keys.savedKeyIsEncrypted()).toBe(true)
   })
 
@@ -121,7 +123,9 @@ describe('applyBackup linking key handling', () => {
       'lnurlwallet_linking_key'
     ]) {
       const result = storage.applyBackup(validBackup({linkingKey}))
+      // reported like "no key in this backup", never as skipped
       expect(result.linkingKeyRestored).toBe(false)
+      expect(result.linkingKeySkipped).toBe(false)
       expect(keys.savedKeyExists()).toBe(false)
     }
   })
@@ -132,7 +136,14 @@ describe('applyBackup linking key handling', () => {
       validBackup({linkingKey: {enc: false, value: LINKING_HEX_B}})
     )
     expect(result.linkingKeyRestored).toBe(false)
+    expect(result.linkingKeySkipped).toBe(true)
     expect(keys.getPlainLinkingKey()).toEqual(new Uint8Array(32).fill(1))
+  })
+
+  it('reports neither restored nor skipped for a backup without a key', () => {
+    const result = storage.applyBackup(validBackup())
+    expect(result.linkingKeyRestored).toBe(false)
+    expect(result.linkingKeySkipped).toBe(false)
   })
 })
 
