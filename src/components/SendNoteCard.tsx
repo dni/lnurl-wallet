@@ -13,7 +13,10 @@ import type {Bearer} from '../storage'
 import {useWallet} from '../WalletContext'
 import {useDevice} from '../DeviceContext'
 import {toBech32Lnurl, serverOf} from '../lnurlcash'
-import {deviceExportForHandoff, deviceMarkSpent} from '../deviceOrchestration'
+import {
+  deviceExportForHandoff,
+  markDeviceNoteSpent
+} from '../deviceOrchestration'
 import {copyToClipboard, msatToSats, notify, NotifyKind} from '../helpers'
 import Qr from './Qr'
 
@@ -106,13 +109,13 @@ const SendNoteCard: Component<SendNoteCardProps> = props => {
   // that's the moment this note is most likely about to leave the wallet -
   // marking it spent then drops it out of this same unspent-only list. For
   // a device-backed note this is also the point the device's own copy is
-  // retired (deviceMarkSpent) - not on export/reveal, which by itself
+  // retired (markDeviceNoteSpent - queued for the next connect if the vault
+  // isn't attached right now) - not on export/reveal, which by itself
   // doesn't mean the note actually left this wallet yet.
   const markSpent = async () => {
     updateBearer(props.bearer.id, {spent: true})
     const deviceId = props.bearer.deviceId
-    const client = deviceClient()
-    if (deviceId && client) await deviceMarkSpent(client, deviceId)
+    if (deviceId) await markDeviceNoteSpent(deviceClient(), deviceId)
     logActivity(
       'spent',
       `Marked ${msatToSats(props.bearer.amount)} sats from ${serverOf(props.bearer.url)} as spent.`

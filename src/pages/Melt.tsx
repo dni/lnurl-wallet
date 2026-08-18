@@ -1,6 +1,6 @@
 import type {Component} from 'solid-js'
 import {Show, For, createSignal, createMemo, onMount, onCleanup} from 'solid-js'
-import {useNavigate, useSearchParams} from '@solidjs/router'
+import {useNavigate} from '@solidjs/router'
 import {
   IoClipboardSharp,
   IoCloseSharp,
@@ -35,7 +35,7 @@ import {
   deviceSplit,
   deviceSettle,
   deviceMeltRequest,
-  deviceMarkSpent,
+  markDeviceNoteSpent,
   requireDeviceClient
 } from '../deviceOrchestration'
 import {
@@ -47,6 +47,7 @@ import {
 } from '../helpers'
 import {offlineMode} from '../offlineMode'
 import {getTrustedMintNodeColor} from '../trustedMints'
+import {takeMeltInvoice} from '../meltHandoff'
 import {
   storeableMeltAddresses,
   addStoreableMeltAddress,
@@ -66,7 +67,6 @@ const Melt: Component = () => {
     useWallet()
   const {client: deviceClient} = useDevice()
   const navigate = useNavigate()
-  const [searchParams] = useSearchParams()
   let pasteRef: HTMLInputElement | null = null
 
   const [value, setValue] = createSignal('')
@@ -76,6 +76,11 @@ const Melt: Component = () => {
   const [pastedInvoice, setPastedInvoice] = createSignal<string | null>(null)
   const [selectedIds, setSelectedIds] = createSignal<Set<string>>(new Set())
   const [paying, setPaying] = createSignal(false)
+  // which burn is awaiting its explicit confirm click, if any - a melt
+  // locks the note as spent the moment the request lands (and burns it
+  // server-side once the payment settles), so neither fires on a single
+  // stray click. Same posture as TransferDialog's own confirm step
+  const [confirming, setConfirming] = createSignal<'pay' | 'split' | null>(null)
 
   // a Lightning Address has no invoice of its own yet - resolving one just
   // gets its payRequest, then an amount is needed before an actual invoice
@@ -126,8 +131,7 @@ const Melt: Component = () => {
       // this is the settlement-confirmed moment, not optimistic - mirrors
       // exactly when the local spent-flag above already landed
       if (note.deviceId) {
-        const client = deviceClient()
-        if (client) await deviceMarkSpent(client, note.deviceId)
+        await markDeviceNoteSpent(deviceClient(), note.deviceId)
       }
       logActivity(
         'melt',
@@ -174,12 +178,13 @@ const Melt: Component = () => {
 
   onCleanup(stopPolling)
 
-  // arriving from Paste.tsx's own bolt11 detection, invoice carried as a
-  // query param rather than duplicating this whole dialog there
+  // arriving from ReceiveDialog's own bolt11 detection, invoice carried by
+  // the in-memory handoff (meltHandoff.ts) rather than duplicating this
+  // whole dialog there - one-shot, so a later plain visit starts empty
   onMount(() => {
-    const pr = searchParams.pr
-    if (typeof pr === 'string' && isBolt11Invoice(pr)) {
-      setPastedInvoice(pr.trim())
+    const pr = takeMeltInvoice()
+    if (pr && isBolt11Invoice(pr)) {
+      setPastedInvoice(pr)
     }
   })
 
@@ -324,6 +329,25 @@ const Melt: Component = () => {
     return amount !== null && selectedTotal() > amount
   })
 
+  // the sentence the confirm step restates before anything irreversible
+  // fires - what exactly gets burned, for how much, and where the change
+  // goes on a split
+  const confirmText = createMemo(() => {
+    const action = confirming()
+    if (!action) return ''
+    const total = selectedTotal()
+    const amount = invoiceAmountMsat()
+    const count = selectedBearers().length
+    const notes = `${count} note${count === 1 ? '' : 's'}`
+    if (action === 'split' && amount !== null) {
+      return `Split off ${msatToSats(amount)} sats - keeping the ${msatToSats(total - amount)} sats change as a fresh note - and melt it to pay this invoice?`
+    }
+    if (amount !== null) {
+      return `Melt ${notes} worth ${msatToSats(total)} sats to pay this invoice?`
+    }
+    return `Melt ${notes} to pay this invoice? Its amount couldn't be read - the service checks the exact match.`
+  })
+
   const toggleSelect = (id: string, isSelected: boolean) => {
     setSelectedIds(prev => {
       const next = new Set(prev)
@@ -339,6 +363,7 @@ const Melt: Component = () => {
     setMeltVerifyUrl(null)
     setPastedInvoice(null)
     setSelectedIds(new Set<string>())
+    setConfirming(null)
   }
 
   // merges the selection into one note worth their sum - a no-op returning
@@ -427,7 +452,7 @@ const Melt: Component = () => {
   // to poll, so this treats the request as done right away: the note was
   // already locked as spent, and BearerCard's "Unspend anyway" remains the
   // way back if it later turns out the payment actually failed
-  const finishMelt = (note: Bearer, result: {verify?: string}) => {
+  const finishMelt = async (note: Bearer, result: {verify?: string}) => {
     if (result.verify) {
       notify(
         'Payment requested and the note is locked as spent - confirming...',
@@ -435,6 +460,12 @@ const Melt: Component = () => {
       )
       startPolling(note, result.verify)
       return
+    }
+    // no melt proof to poll, so the note locking as spent locally is all
+    // the confirmation there is - retire the device copy at the same moment
+    // (queued for the next connect if the vault isn't attached right now)
+    if (note.deviceId) {
+      await markDeviceNoteSpent(deviceClient(), note.deviceId)
     }
     logActivity(
       'melt',
@@ -456,6 +487,7 @@ const Melt: Component = () => {
     const invoice = pastedInvoice()
     const picked = selectedBearers()
     if (!invoice || !selectionPayable() || picked.length === 0) return
+    setConfirming(null)
     setPaying(true)
     try {
       const current = await mergeSelectionIfNeeded(picked)
@@ -488,7 +520,7 @@ const Melt: Component = () => {
       }
       await updateBearer(current.id, {spent: true})
       setSelectedIds(new Set<string>())
-      finishMelt(current, result)
+      await finishMelt(current, result)
     } catch (err) {
       notify((err as Error).message, NotifyKind.ERROR)
     } finally {
@@ -509,6 +541,7 @@ const Melt: Component = () => {
     const target = invoiceAmountMsat()
     if (!invoice || !selectionNeedsSplit() || target === null) return
     if (picked.length === 0) return
+    setConfirming(null)
     setPaying(true)
     try {
       const base = picked[0]
@@ -576,7 +609,7 @@ const Melt: Component = () => {
         }
         await updateBearer(spend.id, {spent: true})
         setSelectedIds(new Set<string>())
-        finishMelt(spend, result)
+        await finishMelt(spend, result)
         return
       }
       const parts = await splitNote(
@@ -633,7 +666,7 @@ const Melt: Component = () => {
       }
       await updateBearer(spend.id, {spent: true})
       setSelectedIds(new Set<string>())
-      finishMelt(spend, result)
+      await finishMelt(spend, result)
     } catch (err) {
       notify((err as Error).message, NotifyKind.ERROR)
     } finally {
@@ -901,37 +934,59 @@ const Melt: Component = () => {
                   </Show>
                 </p>
               </Show>
-              <div class="btns">
-                <Show
-                  when={selectionNeedsSplit()}
-                  fallback={
-                    <button
-                      disabled={
-                        paying() || !selectionPayable() || offlineMode()
+              <Show
+                when={confirming()}
+                fallback={
+                  <div class="btns">
+                    <Show
+                      when={selectionNeedsSplit()}
+                      fallback={
+                        <button
+                          disabled={
+                            paying() || !selectionPayable() || offlineMode()
+                          }
+                          onClick={() => setConfirming('pay')}
+                        >
+                          Pay invoice
+                        </button>
                       }
-                      onClick={payInvoice}
                     >
-                      <Show when={paying()}>
-                        <IoRefreshSharp class="spin" />
-                        &nbsp;
-                      </Show>
-                      Pay invoice
-                    </button>
-                  }
-                >
+                      <button
+                        disabled={paying() || offlineMode()}
+                        onClick={() => setConfirming('split')}
+                      >
+                        Split and pay
+                      </button>
+                    </Show>
+                    <button onClick={clearInvoice}>Clear</button>
+                  </div>
+                }
+              >
+                {/* the burn restated in plain terms before it fires - a melt
+                locks the note the moment the request lands, so this is the
+                last chance to catch a misclick or a wrong invoice */}
+                <p class="warning">{confirmText()} This can't be undone.</p>
+                <div class="btns">
                   <button
                     disabled={paying() || offlineMode()}
-                    onClick={splitAndPay}
+                    onClick={() =>
+                      confirming() === 'split' ? splitAndPay() : payInvoice()
+                    }
                   >
                     <Show when={paying()}>
                       <IoRefreshSharp class="spin" />
                       &nbsp;
                     </Show>
-                    Split and pay
+                    Yes, pay it
                   </button>
-                </Show>
-                <button onClick={clearInvoice}>Clear</button>
-              </div>
+                  <button
+                    disabled={paying()}
+                    onClick={() => setConfirming(null)}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </Show>
             </figure>
           </Show>
         </Show>

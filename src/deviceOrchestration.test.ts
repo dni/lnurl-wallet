@@ -13,9 +13,14 @@ import {
   deviceMint,
   deviceMeltRequest,
   deviceMarkSpent,
+  markDeviceNoteSpent,
   DeviceImportLeftBehindError
 } from './deviceOrchestration'
-import {readPendingDeviceOps, drainPendingDeviceOps} from './deviceQueue'
+import {
+  readPendingDeviceOps,
+  drainPendingDeviceOps,
+  dequeuePendingDeviceOp
+} from './deviceQueue'
 import {buildNoteUrl} from './lnurlcash'
 
 // Combines mockMint.test.ts's mock-mint pattern (a fake fetch) with
@@ -637,5 +642,87 @@ describe('recovery queue', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+})
+
+describe('markDeviceNoteSpent', () => {
+  it('marks the note spent right away when a client is connected', async () => {
+    const mint = new MockMint()
+    const firmware = new MockDeviceFirmware()
+    const client = new DeviceClient(firmware)
+    const k1 = randomHex(32)
+    mint.seed(k1, 3000)
+
+    await withMint(mint, async () => {
+      const importedId = await client.importSecret(k1, HOST, 3000)
+      await markDeviceNoteSpent(client, importedId)
+      expect(firmware.get(importedId)?.state).toBe('spent')
+      // the queued op drained immediately - nothing left for a reconnect
+      expect(readPendingDeviceOps().length).toBe(0)
+    })
+  })
+
+  it('queues the mark when no vault is connected, and the next connect completes it', async () => {
+    const mint = new MockMint()
+    const firmware = new MockDeviceFirmware()
+    const client = new DeviceClient(firmware)
+    const k1 = randomHex(32)
+    mint.seed(k1, 3000)
+
+    await withMint(mint, async () => {
+      const importedId = await client.importSecret(k1, HOST, 3000)
+
+      // settlement confirmed with the device unplugged - the mark is owed,
+      // not lost
+      await markDeviceNoteSpent(null, importedId)
+      expect(firmware.get(importedId)?.state).toBe('confirmed')
+      expect(readPendingDeviceOps().length).toBe(1)
+
+      // reconnect - a fresh client, same persistent device state - and
+      // drain, exactly what DeviceContext's connect path does
+      const reconnectedClient = new DeviceClient(firmware)
+      await drainPendingDeviceOps(reconnectedClient)
+      expect(firmware.get(importedId)?.state).toBe('spent')
+      expect(readPendingDeviceOps().length).toBe(0)
+    })
+  })
+
+  it('treats an already-spent device note as done, not failure', async () => {
+    const mint = new MockMint()
+    const firmware = new MockDeviceFirmware()
+    const client = new DeviceClient(firmware)
+    const k1 = randomHex(32)
+    mint.seed(k1, 3000)
+
+    await withMint(mint, async () => {
+      const importedId = await client.importSecret(k1, HOST, 3000)
+      await markDeviceNoteSpent(client, importedId)
+      expect(firmware.get(importedId)?.state).toBe('spent')
+
+      // the same mark queued again (e.g. an op persisted from a session
+      // that dropped after the device had already applied it) - the
+      // drain's 'invalid_state' idempotency clears it instead of retrying
+      // forever
+      await markDeviceNoteSpent(null, importedId)
+      expect(readPendingDeviceOps().length).toBe(1)
+      await drainPendingDeviceOps(new DeviceClient(firmware))
+      expect(readPendingDeviceOps().length).toBe(0)
+    })
+  })
+
+  it('leaves a mark for a note the device does not know queued for retry', async () => {
+    const firmware = new MockDeviceFirmware()
+    // no mint involvement at all - the mark never leaves the queue layer
+    await markDeviceNoteSpent(null, 'ff'.repeat(32))
+    expect(readPendingDeviceOps().length).toBe(1)
+    // 'not_found' is deliberately NOT idempotent success (the note may
+    // simply not have been written to this device yet) - the op stays
+    // queued so a later drain retries it
+    await drainPendingDeviceOps(new DeviceClient(firmware))
+    expect(readPendingDeviceOps().length).toBe(1)
+    // test-local cleanup: the queue's in-memory fallback is shared across
+    // this file, so the undrainable op must not leak into other tests
+    dequeuePendingDeviceOp(readPendingDeviceOps()[0].id)
+    expect(readPendingDeviceOps().length).toBe(0)
   })
 })

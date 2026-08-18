@@ -19,7 +19,7 @@ import {
   deviceSplit,
   deviceSettle,
   deviceExportForHandoff,
-  deviceMarkSpent,
+  markDeviceNoteSpent,
   requireDeviceClient
 } from '../deviceOrchestration'
 import {
@@ -54,6 +54,10 @@ const SendDialog: Component<SendDialogProps> = props => {
   // only ever held here in memory.
   const [revealedUrl, setRevealedUrl] = createSignal<string | null>(null)
   const [revealing, setRevealing] = createSignal(false)
+  // tap-to-reveal on the QR itself, same shoulder-surfing guard
+  // SendNoteCard applies to the same secret - a prepared note's QR never
+  // sits bare on screen just because the dialog is open
+  const [qrRevealed, setQrRevealed] = createSignal(false)
 
   // stages a note as "ready to hand over" - browser-only notes reveal
   // immediately (their url already carries the real secret); device-backed
@@ -61,6 +65,7 @@ const SendDialog: Component<SendDialogProps> = props => {
   const stagePrepared = (bearer: Bearer) => {
     setPreparedBearer(bearer)
     setRevealedUrl(bearer.deviceId ? null : bearer.url)
+    setQrRevealed(false)
   }
 
   const revealPrepared = async () => {
@@ -440,7 +445,18 @@ const SendDialog: Component<SendDialogProps> = props => {
           >
             {url => (
               <>
-                <Qr value={toBech32Lnurl(url())} />
+                <div class="qr-wrapper">
+                  <Qr value={toBech32Lnurl(url())} />
+                  <Show when={!qrRevealed()}>
+                    <button
+                      class="qr-overlay"
+                      title="Show QR code - it IS the bearer note, anyone who scans it can spend it"
+                      onClick={() => setQrRevealed(true)}
+                    >
+                      <IoEyeSharp />
+                    </button>
+                  </Show>
+                </div>
                 <div class="btns">
                   <button onClick={() => copyToClipboard(toBech32Lnurl(url()))}>
                     <IoCopySharp />
@@ -451,13 +467,14 @@ const SendDialog: Component<SendDialogProps> = props => {
                       const handedOver = preparedBearer()!
                       updateBearer(handedOver.id, {spent: true})
                       if (handedOver.deviceId) {
-                        const client = deviceClient()
-                        if (client) {
-                          await deviceMarkSpent(client, handedOver.deviceId)
-                        }
+                        await markDeviceNoteSpent(
+                          deviceClient(),
+                          handedOver.deviceId
+                        )
                       }
                       setPreparedBearer(null)
                       setRevealedUrl(null)
+                      setQrRevealed(false)
                       logActivity(
                         'transfer',
                         `Handed over ${msatToSats(handedOver.amount)} sats from ${serverOf(handedOver.url)}.`

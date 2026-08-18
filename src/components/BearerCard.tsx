@@ -32,7 +32,8 @@ import {
   deviceRefresh,
   migrateNoteToDevice,
   deviceSplit,
-  deviceSettle
+  deviceSettle,
+  markDeviceNoteSpent
 } from '../deviceOrchestration'
 import {
   msatToSats,
@@ -439,9 +440,15 @@ const BearerCard: Component<BearerCardProps> = props => {
   }
 
   // a local-only lock (see storage.ts's Bearer.spent) - no network call,
-  // just stops this wallet from acting on a note it considers given away
-  const markSpent = () => {
+  // just stops this wallet from acting on a note it considers given away.
+  // A device-backed note's on-device copy is retired alongside (queued for
+  // the next connect if the vault isn't attached right now), so the vault
+  // doesn't keep listing as spendable a note this wallet considers gone
+  const markSpent = async () => {
     updateBearer(props.bearer.id, {spent: true})
+    if (props.bearer.deviceId) {
+      await markDeviceNoteSpent(deviceClient(), props.bearer.deviceId)
+    }
     logActivity(
       'spent',
       `Marked ${msatToSats(props.bearer.amount)} sats from ${serverOf(props.bearer.url)} as spent.`

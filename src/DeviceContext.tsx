@@ -59,6 +59,20 @@ export const DeviceProvider = (props: {children: JSX.Element}) => {
 
   // shared by connectSerial/connectBle - only the transport's own
   // requestAndConnect() differs between them
+  //
+  // NOTE on device identity: the vault protocol (docs/PROTOCOL.md in
+  // ../../lnurl-vault) exposes NO stable per-device identity to pin to.
+  // get_info reports fw_version and board - self-reported software/
+  // hardware CLASS identifiers every unit of a build shares - plus
+  // volatile diagnostics (boot_count, free_heap), and no other command
+  // carries a device key or serial either. Trust-on-first-use pinning is
+  // therefore deliberately NOT implemented here: a physically swapped (or
+  // hostile) vault answering the same protocol is indistinguishable from
+  // the previously paired one, and no pseudo-identity derived from
+  // fw_version/board would change that. The mitigations that do exist
+  // live elsewhere: every plaintext export is gated by a physical button
+  // press on the device itself, and pending-op recovery (deviceQueue.ts)
+  // only ever pushes confirm/mark_spent at note ids this wallet staged.
   const connectWith = async (
     requestAndConnect: () => Promise<SerialTransport | BleTransport>
   ) => {

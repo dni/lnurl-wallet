@@ -430,7 +430,7 @@ export const deviceReceive = async (
 
 // melt only ever burns - no new secret, so no queue entry either. Export
 // happens up front (button press); the mint call is the existing meltNote,
-// unchanged. mark_spent is a separate, later step (see deviceMeltMarkSpent)
+// unchanged. mark_spent is a separate, later step (see deviceMarkSpent)
 // since a melt settles asynchronously, same as the browser-only path.
 export const deviceMeltRequest = async (
   client: DeviceClient,
@@ -454,6 +454,34 @@ export const deviceMarkSpent = (
   client: DeviceClient,
   deviceId: string
 ): Promise<void> => commitToDevice(client, [], [deviceId])
+
+// deviceMarkSpent for callers that can't assume a vault is connected at
+// the settlement-confirmed moment (a melt with no verify URL to poll, a
+// transfer marked done after the device was unplugged): with a client this
+// IS deviceMarkSpent (which already queues first and only then drains, so
+// even a mid-call disconnect loses nothing); with none, the mark-spent op
+// is just queued for the next connect's drainPendingDeviceOps. The queued
+// op is the same shape deviceMarkSpent writes - empty outputs, one burn
+// id - so it inherits the drain's semantics unchanged: 'invalid_state'
+// (already spent) is idempotent success, 'not_found' leaves it queued for
+// the next reconnect. Never throws - a failed or deferred mark must not
+// fail the melt/transfer it trails, the money already moved
+export const markDeviceNoteSpent = async (
+  client: DeviceClient | null,
+  deviceId: string
+): Promise<void> => {
+  try {
+    if (client) {
+      await deviceMarkSpent(client, deviceId)
+    } else {
+      enqueuePendingDeviceOp({outputs: [], burnDeviceIds: [deviceId]})
+    }
+  } catch {
+    // unreachable by design (enqueue falls back to memory, drain never
+    // throws) - the no-throw guarantee is explicit so callers can safely
+    // fire-and-forget
+  }
+}
 
 // reveals a device-backed note's real secret for handing it over (QR/copy)
 // - deliberately no side effects on the device. Callers must hold the
