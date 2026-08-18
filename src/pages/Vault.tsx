@@ -3,15 +3,37 @@ import {For, Show, createSignal} from 'solid-js'
 import {IoBanSharp, IoPencilSharp, IoTrashSharp} from 'solid-icons/io'
 
 import {useDevice} from '../DeviceContext'
-import type {DeviceNote} from '../device'
+import type {DeviceNote, DeviceStorageState} from '../device'
 import {msatToSats, notify, NotifyKind} from '../helpers'
+
+// get_info's `storage` (docs/PROTOCOL.md) - only 'ok' (or absent, meaning
+// this build has no persistent storage to worry about) means note_count
+// can be trusted. Anything else means the device couldn't fully read its
+// own notes this boot, and note_count === 0 must not be read as "empty".
+const storageWarning = (
+  storage: DeviceStorageState | undefined
+): string | null => {
+  switch (storage) {
+    case 'index_unreadable':
+      return "This device's note index couldn't be read this boot - its notes are still on flash, but hidden until you reboot the device. Do not wipe it: that would destroy exactly what this state exists to protect."
+    case 'full':
+      return "This device is out of storage - it can't create or update notes until you free some room (spend or delete existing ones)."
+    case 'version_unsupported':
+      return "This device's storage was written by newer firmware than it's currently running - update its firmware to read it again."
+    case 'unavailable':
+      return "This device's storage could not be brought up at all - its note count and note list below may be wrong or empty."
+    default:
+      return null
+  }
+}
 
 // Pairing + read-only visibility for an LNURLvault hardware device (see
 // ../../lnurl-vault) - connect over USB or Bluetooth, see its firmware
-// version and the notes it holds. What's NOT here yet: routing this
-// wallet's own rotate/split/merge/melt through the device instead of
-// generating secrets in-browser - see device.ts's header comment for why
-// that's a deliberate later step, not part of this page.
+// version and the notes it holds. Routing this wallet's own rotate/split/
+// merge/melt through the device instead of generating secrets in-browser
+// lives in deviceOrchestration.ts, driven from Mint.tsx/BearerCard.tsx/
+// MintGroupCard.tsx/SendDialog.tsx/Melt.tsx - this page itself stays scoped
+// to pairing and read-only visibility, not those flows.
 const Vault: Component = () => {
   const {
     connectionState,
@@ -99,14 +121,21 @@ const Vault: Component = () => {
       >
         <figure class="setup-card">
           <figcaption>
-            {info() ? `Vault firmware ${info()!.fw_version}` : 'Connected'}
+            {info()
+              ? `Vault firmware ${info()!.fw_version}${info()!.board ? ` (${info()!.board})` : ''}`
+              : 'Connected'}
           </figcaption>
           <Show when={info()}>
             {i => (
-              <p class="bearer-hint">
-                {i().note_count} note{i().note_count === 1 ? '' : 's'} on
-                device, {i().pending_count} pending.
-              </p>
+              <>
+                <Show when={storageWarning(i().storage)}>
+                  {message => <p class="warning">{message()}</p>}
+                </Show>
+                <p class="bearer-hint">
+                  {i().note_count} note{i().note_count === 1 ? '' : 's'} on
+                  device, {i().pending_count} pending.
+                </p>
+              </>
             )}
           </Show>
           <div class="btns">
@@ -120,7 +149,13 @@ const Vault: Component = () => {
         </figure>
         <Show
           when={notes().length > 0}
-          fallback={<p>No notes on this device yet.</p>}
+          fallback={
+            <p>
+              {storageWarning(info()?.storage)
+                ? "Can't reliably read this device's notes right now - see the warning above."
+                : 'No notes on this device yet.'}
+            </p>
+          }
         >
           <div class="bearer-list">
             <For each={notes()}>
