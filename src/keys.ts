@@ -68,11 +68,40 @@ export type StoredSecret =
   | {enc: false; value: string}
   | {enc: true; salt: string; iv: string; ciphertext: string}
 
+// strict shape check on a StoredSecret - a plaintext form must be exactly a
+// 32-byte hex key, an encrypted form must carry hex salt/iv/ciphertext of
+// the sizes encryptSecretParts produces. Guards the backup-restore path
+// (storage.ts's applyBackup), where a crafted file would otherwise get an
+// arbitrary "linking key" installed verbatim.
+export const isValidStoredSecret = (
+  stored: unknown
+): stored is StoredSecret => {
+  if (typeof stored !== 'object' || stored === null) return false
+  const s = stored as Record<string, unknown>
+  if (s.enc === false) {
+    return typeof s.value === 'string' && /^[0-9a-f]{64}$/i.test(s.value)
+  }
+  if (s.enc === true) {
+    return (
+      typeof s.salt === 'string' &&
+      /^[0-9a-f]{32}$/i.test(s.salt) &&
+      typeof s.iv === 'string' &&
+      /^[0-9a-f]{24}$/i.test(s.iv) &&
+      typeof s.ciphertext === 'string' &&
+      s.ciphertext.length > 0 &&
+      s.ciphertext.length % 2 === 0 &&
+      /^[0-9a-f]+$/i.test(s.ciphertext)
+    )
+  }
+  return false
+}
+
 const readSecret = (storageKey: string): StoredSecret | null => {
   const raw = localStorage.getItem(storageKey)
   if (!raw) return null
   try {
-    return JSON.parse(raw) as StoredSecret
+    const parsed: unknown = JSON.parse(raw)
+    return isValidStoredSecret(parsed) ? parsed : null
   } catch {
     return null
   }

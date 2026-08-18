@@ -147,11 +147,25 @@ const Backup: Component = () => {
           </button>
         </div>
         <Show when={keyRestored()}>
-          <p class="warning">
-            Linking key restored from the backup -{' '}
-            <A href="/wallet">unlock the wallet</A> with the password it was
-            encrypted with.
-          </p>
+          <Show
+            when={savedKeyIsEncrypted()}
+            fallback={
+              <p class="warning">
+                The backup's linking key was <strong>not</strong>{' '}
+                password-encrypted and is now stored in plaintext - anyone the
+                backup file came from could know it. Only keep using this wallet
+                if you trust the file's source completely; otherwise set up a
+                fresh wallet from your own seed phrase and rotate any notes you
+                receive into it.
+              </p>
+            }
+          >
+            <p class="warning">
+              Linking key restored from the backup -{' '}
+              <A href="/wallet">unlock the wallet</A> with the password it was
+              encrypted with.
+            </p>
+          </Show>
         </Show>
       </figure>
       <Show when={state() !== 'none'}>

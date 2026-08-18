@@ -12,7 +12,8 @@ import {
   deviceSettle,
   deviceMint,
   deviceMeltRequest,
-  deviceMarkSpent
+  deviceMarkSpent,
+  DeviceImportLeftBehindError
 } from './deviceOrchestration'
 import {readPendingDeviceOps, drainPendingDeviceOps} from './deviceQueue'
 import {buildNoteUrl} from './lnurlcash'
@@ -148,6 +149,9 @@ class MockDeviceFirmware implements DeviceTransport {
   // test hook: the next command matching this name gets no response at all
   // (simulates the device dropping mid-command)
   dropOnce: string | null = null
+  // test hook: the next command matching this name gets an error response
+  // instead of the normal one (simulates e.g. a declined button press)
+  rejectOnce: {cmd: string; error: string} | null = null
 
   onMessage(handler: (message: unknown) => void): void {
     this.messageHandler = handler
@@ -157,8 +161,10 @@ class MockDeviceFirmware implements DeviceTransport {
     this.disconnectHandler = handler
   }
 
+  // note ids are 64-char hex on the wire (device.ts validates them as
+  // such), so the mock's sequential ids are padded into that shape
   private newId(): string {
-    return `d${(this.idCounter++).toString().padStart(4, '0')}`
+    return (this.idCounter++).toString(16).padStart(64, '0')
   }
 
   async send(message: unknown): Promise<void> {
@@ -167,7 +173,13 @@ class MockDeviceFirmware implements DeviceTransport {
       this.dropOnce = null
       return
     }
-    const response = this.handle(cmd)
+    let response: any
+    if (this.rejectOnce?.cmd === cmd.cmd) {
+      response = {ok: false, error: this.rejectOnce.error}
+      this.rejectOnce = null
+    } else {
+      response = this.handle(cmd)
+    }
     Promise.resolve().then(() => this.messageHandler?.(response))
   }
 
@@ -497,6 +509,78 @@ describe('deviceMint', () => {
       const newK1 = await client.exportSecret(result.deviceId)
       expect(mint.isOutstanding(newK1)).toBe(true)
       expect(result.url).not.toContain('k1=')
+    })
+  })
+
+  it('rejects with a DeviceImportLeftBehindError when the rotate fails after the import landed', async () => {
+    const mint = new MockMint()
+    const firmware = new MockDeviceFirmware()
+    const client = new DeviceClient(firmware)
+    const preimage = randomHex(32)
+    mint.seed(preimage, 21000)
+
+    await withMint(mint, async () => {
+      // the rotate's mint callback rejects AFTER import_secret already
+      // succeeded - this is the failure Mint.tsx's claim must still track
+      mint.rejectNextCallback = true
+      const err = await deviceMint(
+        client,
+        WITHDRAW_URL,
+        WITHDRAW_CALLBACK,
+        HOST,
+        preimage,
+        21000
+      ).catch(e => e)
+      expect(err).toBeInstanceOf(DeviceImportLeftBehindError)
+      const left = (err as DeviceImportLeftBehindError).imported
+      // the carried mirror is the imported note itself: CONFIRMED on the
+      // device, still outstanding mint-side (the rejected callback burned
+      // nothing), k1-less url at the expected amount
+      expect(firmware.get(left.deviceId)?.state).toBe('confirmed')
+      expect(mint.isOutstanding(preimage)).toBe(true)
+      expect(left.amountMsat).toBe(21000)
+      expect(left.url).not.toContain('k1=')
+      // the rotate's staged secret was still discarded, same unwind a
+      // failed mint call always does - nothing left dangling PENDING
+      expect((await client.getInfo()).pending_count).toBe(0)
+    })
+  })
+})
+
+describe('deviceSettle failure leaves the raw output intact', () => {
+  // the call sites' settle-failure handling (SendDialog/Melt/BearerCard
+  // track parts.change as an unverified mirror) relies on exactly this:
+  // after a failed settle, the raw output is still a whole, valid note
+  it('keeps the unsettled change note confirmed on the device and outstanding mint-side', async () => {
+    const mint = new MockMint()
+    const firmware = new MockDeviceFirmware()
+    const client = new DeviceClient(firmware)
+    const k1 = randomHex(32)
+    mint.seed(k1, 21000)
+
+    await withMint(mint, async () => {
+      const importedId = await client.importSecret(k1, HOST, 21000)
+      const parts = await deviceSplit(
+        client,
+        [{deviceId: importedId, url: noteTemplateUrl(k1, 21000)}],
+        WITHDRAW_CALLBACK,
+        6000,
+        21000
+      )
+      // the settle's export is declined - as if the holder rejected the
+      // device's button press
+      firmware.rejectOnce = {cmd: 'export_secret', error: 'user_declined'}
+      await expect(deviceSettle(client, parts.change)).rejects.toMatchObject({
+        code: 'user_declined'
+      })
+      // ...but the note it would have settled is untouched: still
+      // CONFIRMED on the device, still outstanding mint-side, at the
+      // expected pre-fee amount the mirror gets tracked with
+      expect(firmware.get(parts.change.deviceId)?.state).toBe('confirmed')
+      expect(parts.change.amountMsat).toBe(15000)
+      expect(parts.change.url).not.toContain('k1=')
+      const changeK1 = await client.exportSecret(parts.change.deviceId)
+      expect(mint.isOutstanding(changeK1)).toBe(true)
     })
   })
 })

@@ -167,16 +167,34 @@ const SendDialog: Component<SendDialogProps> = props => {
         base.callback,
         total
       )
-      const settled = await deviceSettle(client, merged)
-      for (const bearer of picked) removeBearer(bearer.id)
-      return addBearer({
+      // the mint call inside deviceMerge already burned every input
+      // server-side, so the merged output is the only money left - it must
+      // end up tracked no matter what fails from here on. Settle first
+      // (best-effort), then addBearer BEFORE any removeBearer of an input;
+      // a failed settle still tracks a mirror of the raw output
+      // (unverified, at its expected pre-fee amount), which the next device
+      // refresh can repair
+      let settled = merged
+      let verified = false
+      try {
+        settled = await deviceSettle(client, merged)
+        verified = true
+      } catch (err) {
+        notify(
+          `Merged, but settling the new note didn't complete (${(err as Error).message}) - it's tracked unverified; refresh it with the vault connected to repair.`,
+          NotifyKind.ERROR
+        )
+      }
+      const added = await addBearer({
         url: settled.url,
         callback: settled.callback,
         amount: settled.amountMsat,
-        verified: true,
+        verified,
         mintPubkey: base.mintPubkey,
         deviceId: settled.deviceId
       })
+      for (const bearer of picked) removeBearer(bearer.id)
+      return added
     }
     const merged = await mergeNotes(
       base.callback,
@@ -227,16 +245,23 @@ const SendDialog: Component<SendDialogProps> = props => {
           target,
           total
         )
-        for (const bearer of picked) removeBearer(bearer.id)
-        const settledChange = await deviceSettle(client, parts.change)
-        await addBearer({
-          url: settledChange.url,
-          callback: settledChange.callback,
-          amount: settledChange.amountMsat,
-          verified: true,
-          mintPubkey: base.mintPubkey,
-          deviceId: settledChange.deviceId
-        })
+        // the mint call inside deviceSplit already burned every input
+        // server-side - both outputs are the only money left, so both
+        // addBearers happen BEFORE any removeBearer of an input, and a
+        // failed settle of the change leg still tracks a mirror of the raw
+        // output (unverified, at its expected pre-fee amount). The next
+        // device refresh repairs the mirror
+        let settledChange = parts.change
+        let changeVerified = false
+        try {
+          settledChange = await deviceSettle(client, parts.change)
+          changeVerified = true
+        } catch (err) {
+          notify(
+            `Split succeeded, but settling the change note didn't complete (${(err as Error).message}) - it's tracked unverified; refresh it with the vault connected to repair.`,
+            NotifyKind.ERROR
+          )
+        }
         current = await addBearer({
           url: parts.target.url,
           callback: parts.target.callback,
@@ -245,6 +270,15 @@ const SendDialog: Component<SendDialogProps> = props => {
           mintPubkey: base.mintPubkey,
           deviceId: parts.target.deviceId
         })
+        await addBearer({
+          url: settledChange.url,
+          callback: settledChange.callback,
+          amount: settledChange.amountMsat,
+          verified: changeVerified,
+          mintPubkey: base.mintPubkey,
+          deviceId: settledChange.deviceId
+        })
+        for (const bearer of picked) removeBearer(bearer.id)
       } else if (total > target) {
         const base = picked[0]
         const parts = await splitNote(

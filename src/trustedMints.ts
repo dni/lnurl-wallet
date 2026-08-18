@@ -14,6 +14,13 @@ export type TrustedMint = {
   // holding funds there, not a standalone opinion, so it can't be revoked
   // by deleting it here (see removeTrustedMint)
   locked: boolean
+  // a DIFFERENT signing key this mint has since advertised (via a note
+  // refresh, a lookup, etc) - staged for explicit holder review, never
+  // auto-applied. The pinned mintPubkey above stays authoritative until
+  // confirmTrustedMintRekey promotes this one; a key that silently rotated
+  // would defeat the entire pinning model (a compromised mint could sign
+  // unbacked notes that then show the "signed" badge).
+  pendingMintPubkey?: string
   // best-effort node identity/capacity, cached from the mint-address
   // discovery endpoint (see lnurlcash.ts's fetchMintAddress) purely for
   // display (Mints.tsx) - absent for a mint that doesn't support it, or one
@@ -129,29 +136,51 @@ export const getTrustedMintAddress = (server: string): string | null => {
   return username ? `${username}@${server}` : null
 }
 
+// what a lock/add attempt did with the advertised key - 'rekey-pending' is
+// the security-relevant one: the mint advertised a DIFFERENT key than the
+// pinned one, which was staged for review (pendingMintPubkey) instead of
+// silently replacing it. Callers should surface that loudly (see
+// WalletContext and Mints.tsx).
+export type TrustKeyResult = 'added' | 'unchanged' | 'rekey-pending'
+
 // Called whenever this wallet ends up holding (or already holds) a bearer
 // from `server` - minting, receiving, splitting, merging, refreshing all
 // route through WalletContext's addBearer/updateBearer, which is where
 // this gets called from. Per "a mint you have a bearer from is trusted by
 // default", this never asks and can't be refused - it silently trusts (or
 // upgrades an already-trusted-but-unlocked entry) and locks it against
-// removal.
-export const lockTrustedMint = (server: string, mintPubkey: string): void => {
+// removal. The one thing it never does silently is CHANGE the pinned key:
+// a differing advertised key is staged as pendingMintPubkey for the holder
+// to confirm or dismiss on the Mints page (see confirmTrustedMintRekey).
+export const lockTrustedMint = (
+  server: string,
+  mintPubkey: string
+): TrustKeyResult => {
   const key = mintPubkey.trim().toLowerCase()
-  if (!server || !PUBKEY_PATTERN.test(key)) return
+  if (!server || !PUBKEY_PATTERN.test(key)) return 'unchanged'
   const current = trustedMints()
   const existing = current.find(m => m.server === server)
-  if (existing?.mintPubkey === key && existing.locked) return
-  persist(
-    existing
-      ? current.map(m =>
-          m.server === server ? {...m, mintPubkey: key, locked: true} : m
-        )
-      : [
-          ...current,
-          {server, mintPubkey: key, addedAt: Date.now(), locked: true}
-        ]
-  )
+  if (existing) {
+    if (existing.mintPubkey === key) {
+      if (existing.locked) return 'unchanged'
+      persist(
+        current.map(m => (m.server === server ? {...m, locked: true} : m))
+      )
+      return 'unchanged'
+    }
+    if (existing.pendingMintPubkey === key) return 'rekey-pending'
+    persist(
+      current.map(m =>
+        m.server === server ? {...m, pendingMintPubkey: key} : m
+      )
+    )
+    return 'rekey-pending'
+  }
+  persist([
+    ...current,
+    {server, mintPubkey: key, addedAt: Date.now(), locked: true}
+  ])
+  return 'added'
 }
 
 // Manual add from the Mints page, or a user-confirmed first encounter (see
@@ -160,11 +189,14 @@ export const lockTrustedMint = (server: string, mintPubkey: string): void => {
 // waiting on the result either way. `nodeInfo` is whatever the mint-address
 // lookup (if any) turned up alongside this pubkey - optional, since a
 // manual add (Mints.tsx) or a mint without that endpoint has none to give.
+// Same rule as lockTrustedMint for a server already pinned with a DIFFERENT
+// key: staged for review (nodeInfo still refreshes - it's display-only),
+// never overwritten in place.
 export const addTrustedMint = (
   server: string,
   mintPubkey: string,
   nodeInfo?: TrustedMintNodeInfo
-): void => {
+): TrustKeyResult => {
   const trimmedServer = server.trim()
   const key = mintPubkey.trim().toLowerCase()
   if (!trimmedServer) {
@@ -177,21 +209,65 @@ export const addTrustedMint = (
   }
   const current = trustedMints()
   const existing = current.find(m => m.server === trimmedServer)
+  if (existing) {
+    if (existing.mintPubkey === key) {
+      persist(
+        current.map(m => (m.server === trimmedServer ? {...m, ...nodeInfo} : m))
+      )
+      return 'unchanged'
+    }
+    persist(
+      current.map(m =>
+        m.server === trimmedServer
+          ? {...m, pendingMintPubkey: key, ...nodeInfo}
+          : m
+      )
+    )
+    return 'rekey-pending'
+  }
+  persist([
+    ...current,
+    {
+      server: trimmedServer,
+      mintPubkey: key,
+      addedAt: Date.now(),
+      locked: false,
+      ...nodeInfo
+    }
+  ])
+  return 'added'
+}
+
+// the holder confirms a mint's advertised new signing key (Mints page) -
+// the pending key becomes the pinned one. Legitimate rotations (a mint
+// moving to a new node) go through here; nothing else ever replaces a pin.
+export const confirmTrustedMintRekey = (server: string): void => {
+  const current = trustedMints()
+  const existing = current.find(m => m.server === server)
+  if (!existing?.pendingMintPubkey) return
   persist(
-    existing
-      ? current.map(m =>
-          m.server === trimmedServer ? {...m, mintPubkey: key, ...nodeInfo} : m
-        )
-      : [
-          ...current,
-          {
-            server: trimmedServer,
-            mintPubkey: key,
-            addedAt: Date.now(),
-            locked: false,
-            ...nodeInfo
+    current.map(m =>
+      m.server === server
+        ? {
+            ...m,
+            mintPubkey: existing.pendingMintPubkey!,
+            pendingMintPubkey: undefined
           }
-        ]
+        : m
+    )
+  )
+}
+
+// the holder rejects the advertised new key - the staged candidate is
+// dropped, the original pin stays. Worth doing only when the change is
+// unexpected; the old key stays authoritative either way until confirmed.
+export const dismissTrustedMintRekey = (server: string): void => {
+  const current = trustedMints()
+  if (!current.some(m => m.server === server)) return
+  persist(
+    current.map(m =>
+      m.server === server ? {...m, pendingMintPubkey: undefined} : m
+    )
   )
 }
 
@@ -224,7 +300,11 @@ export const removeTrustedMint = (server: string): void => {
 
 // merges a backup's trusted mints in by server - a server already known on
 // this device keeps its own current entry rather than being overwritten by
-// the backup's (possibly stale) copy
+// the backup's (possibly stale) copy. Two fields never come across from a
+// file: `locked` (a crafted backup could otherwise plant irremovable junk
+// entries - real locks re-establish themselves from held bearers on the
+// next unlock anyway) and `pendingMintPubkey` (a key rotation must be
+// re-detected from the mint's own live responses, never staged by a file).
 export const mergeTrustedMints = (incoming: TrustedMint[]): number => {
   const current = trustedMints()
   const knownServers = new Set(current.map(m => m.server))
@@ -244,7 +324,7 @@ export const mergeTrustedMints = (incoming: TrustedMint[]): number => {
       server: mint.server,
       mintPubkey: mint.mintPubkey.toLowerCase(),
       addedAt: mint.addedAt,
-      locked: !!mint.locked,
+      locked: false,
       nodeAlias:
         typeof mint.nodeAlias === 'string' ? mint.nodeAlias : undefined,
       nodeColor:

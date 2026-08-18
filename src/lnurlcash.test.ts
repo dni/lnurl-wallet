@@ -284,6 +284,23 @@ describe('LUD-25 mint fees', () => {
     // the no-fee case specifically shouldn't inflate the amount at all
     expect(grossUpForMintFee(21_000, {baseFeeMsat: 0, feePpm: 0})).toBe(21_000)
   })
+
+  it('rejects a >= 100% fee outright instead of hanging the gross-up walk', () => {
+    // applyMintFee floors at 0 for these, so grossUpForMintFee's walk would
+    // never reach a positive target - a hostile mint could freeze the page
+    expect(
+      parseMintFee(JSON.stringify([['text/plain', 'Mint fees: 0,1000000']]))
+    ).toBeNull()
+    expect(
+      parseMintFee(JSON.stringify([['text/plain', 'Mint fees: 0,10000000']]))
+    ).toBeNull()
+    // just under the boundary still parses and grosses up fine
+    const fee = {baseFeeMsat: 0, feePpm: 999_999}
+    expect(
+      parseMintFee(JSON.stringify([['text/plain', 'Mint fees: 0,999999']]))
+    ).toEqual(fee)
+    expect(applyMintFee(grossUpForMintFee(1000, fee), fee)).toBe(1000)
+  })
 })
 
 describe('offline signature verification', () => {

@@ -23,6 +23,7 @@ const Docs: Component = () => {
           <a
             href="https://github.com/lnurl/luds/blob/lnurlcash/25.md"
             target="_blank"
+            rel="noreferrer"
           >
             LUD-25 draft
           </a>
@@ -33,6 +34,7 @@ const Docs: Component = () => {
           <a
             href="https://github.com/lnurl/luds/blob/luds/03.md"
             target="_blank"
+            rel="noreferrer"
           >
             LUD-03
           </a>{' '}
@@ -101,6 +103,7 @@ callback?k1=X&k1=Y&h=<sha256(Z)>         merge: all burned, one note keyed by h 
             <a
               href="https://github.com/lnurl/luds/blob/luds/06.md"
               target="_blank"
+              rel="noreferrer"
             >
               LUD-06
             </a>{' '}
@@ -115,6 +118,7 @@ callback?k1=X&k1=Y&h=<sha256(Z)>         merge: all burned, one note keyed by h 
             <a
               href="https://github.com/lnurl/luds/blob/luds/21.md"
               target="_blank"
+              rel="noreferrer"
             >
               LUD-21
             </a>{' '}
@@ -170,6 +174,7 @@ callback?k1=X&k1=Y&h=<sha256(Z)>         merge: all burned, one note keyed by h 
           <a
             href="https://github.com/lnurl/luds/blob/luds/13.md"
             target="_blank"
+            rel="noreferrer"
           >
             LUD-13
           </a>{' '}

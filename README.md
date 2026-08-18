@@ -105,7 +105,12 @@ already knows a note's service pubkey and shows a "signed" badge on a
 match - tolerating both the spec text's `r ‖ s ‖ recovery-id` (trailing)
 wire layout and the recovery-id-leading layout at least one real
 implementation has sent in the past, trying both rather than hard-failing
-real notes over a byte-order mismatch.
+real notes over a byte-order mismatch. The pinned key a badge is checked
+against never rotates silently: if a mint ever advertises a **different**
+signing key than the one remembered, the new key is staged for review on
+the Mints page and the remembered key keeps deciding the badge until you
+explicitly confirm the change (a mint moving nodes announces it; an
+unannounced change is what a compromised mint looks like).
 
 The wallet follows the spec's security guidance:
 
@@ -133,10 +138,10 @@ The wallet follows the spec's security guidance:
   the linking key before it is written to local storage. Plaintext secrets
   never touch disk.
 - The **linking key itself is stored encrypted as well**: during setup you
-  are asked for a password and the key is saved as AES-GCM ciphertext under
-  a PBKDF2 (210k iterations, SHA-256) stretch of that password. Unlocking
-  decrypts it into memory only. Opting out is possible but leaves the key
-  readable to anyone using the browser profile.
+  are asked for a password (8 characters minimum) and the key is saved as
+  AES-GCM ciphertext under a PBKDF2 (210k iterations, SHA-256) stretch of
+  that password. Unlocking decrypts it into memory only. Opting out is
+  possible but leaves the key readable to anyone using the browser profile.
 - The wallet sends nothing anywhere except the note operations you
   trigger, straight to the issuing service.
 
@@ -151,7 +156,11 @@ phrase is its recovery path.
 **Restore** merges a backup file's notes into local storage, skipping ones
 already present. Ciphertexts become readable once the same seed (hence the
 same linking key) is active - restore the seed first or the file first,
-either order works.
+either order works. Everything in the file is validated before anything is
+installed: a malformed linking-key record is skipped rather than planted,
+a restored **plaintext** linking key gets a loud warning (whoever wrote the
+file may know that key), and trusted mints come across unlocked - a file
+can neither pin a key change nor plant an irremovable entry.
 
 A backup protects against a lost device, not against theft of the note
 itself: the service settles for whoever presents a `k1` first. Rotation

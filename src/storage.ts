@@ -5,7 +5,8 @@ import {
   getSavedLinkingKeyStored,
   savedKeyExists,
   savedKeyIsEncrypted,
-  restoreLinkingKeyStored
+  restoreLinkingKeyStored,
+  isValidStoredSecret
 } from './keys'
 import type {TrustedMint} from './trustedMints'
 import {trustedMints, mergeTrustedMints} from './trustedMints'
@@ -280,7 +281,11 @@ export const applyBackup = (data: unknown): RestoreResult => {
   writeEncryptedBearers(existing)
 
   let linkingKeyRestored = false
-  if (backup.linkingKey && !savedKeyExists()) {
+  // shape-validated before anything is installed: a crafted backup could
+  // otherwise plant an arbitrary linking key on a fresh device (e.g. one
+  // the file's author knows), turning every later backup the victim makes
+  // into readable plaintext for them. An invalid one is simply skipped.
+  if (!savedKeyExists() && isValidStoredSecret(backup.linkingKey)) {
     restoreLinkingKeyStored(backup.linkingKey)
     linkingKeyRestored = true
   }

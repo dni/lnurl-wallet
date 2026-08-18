@@ -9,10 +9,8 @@ on:
     tags: ['v*.*.*']
   workflow_dispatch:
 
-permissions:
-  contents: read
-  pages: write
-  id-token: write
+# no baseline token rights - each job below declares exactly what it needs
+permissions: {}
 
 concurrency:
   group: pages
@@ -20,10 +18,12 @@ concurrency:
 
 jobs:
   test:
+    permissions:
+      contents: read # actions/checkout
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: 22
           cache: npm
@@ -34,35 +34,39 @@ jobs:
 
   deploy:
     needs: test
+    permissions:
+      contents: read # actions/checkout
+      pages: write # publish to GitHub Pages
+      id-token: write # OIDC token for actions/deploy-pages
     runs-on: ubuntu-latest
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           # full history + tags, so `git describe` (scripts/git-version.mjs)
           # can find the nearest release tag - default checkout is shallow
           # and tag-less
           fetch-depth: 0
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: 22
           cache: npm
       - run: npm ci
       - run: npm run build
-      - uses: actions/configure-pages@v6
-      - uses: actions/upload-pages-artifact@v5
+      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
         with:
           path: dist
           include-hidden-files: true
       - id: deployment
-        uses: actions/deploy-pages@v5
+        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5
       # a second, plain copy of the same dist/ (the Pages artifact above is
       # packaged for actions/deploy-pages's own OIDC flow, not something a
       # later job can just untar) - lets `release` attach the exact bytes
       # that got published, rather than rebuilding and risking drift
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: dist
           path: dist
@@ -79,7 +83,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: dist
           path: dist

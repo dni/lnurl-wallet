@@ -73,7 +73,10 @@ export interface DeviceTransport {
   readonly kind: 'serial' | 'ble'
   send(message: unknown): Promise<void>
   onMessage(handler: (message: unknown) => void): void
-  onDisconnect(handler: () => void): void
+  // `reason` is only set when the transport itself tore the session down
+  // for a specific cause (see SerialTransport's receive-buffer cap) - an
+  // ordinary drop (cable pulled, GATT lost) carries none
+  onDisconnect(handler: (reason?: string) => void): void
   disconnect(): Promise<void>
 }
 
@@ -93,12 +96,21 @@ export const splitLines = (buffer: string): {lines: string[]; rest: string} => {
   return {lines, rest}
 }
 
+// a response is a single JSON line, a few KB at most - and the receive
+// buffer only ever shrinks at a '\n', so a malfunctioning/compromised
+// device streaming newline-free data would otherwise grow it until the tab
+// runs out of memory. Cap it far above any legitimate response and treat
+// hitting the cap as fatal (see startReading). The BLE path needs no
+// equivalent - its length-prefix framing bounds a message by the firmware's
+// own declared length
+const SERIAL_BUFFER_MAX_CHARS = 1_048_576 // 1 MB
+
 export class SerialTransport implements DeviceTransport {
   readonly kind = 'serial' as const
   private port: SerialPort
   private reader: ReadableStreamDefaultReader<Uint8Array> | null = null
   private messageHandler: ((message: unknown) => void) | null = null
-  private disconnectHandler: (() => void) | null = null
+  private disconnectHandler: ((reason?: string) => void) | null = null
   private buffer = ''
   private closed = false
 
@@ -125,7 +137,7 @@ export class SerialTransport implements DeviceTransport {
     this.messageHandler = handler
   }
 
-  onDisconnect(handler: () => void): void {
+  onDisconnect(handler: (reason?: string) => void): void {
     this.disconnectHandler = handler
   }
 
@@ -151,6 +163,17 @@ export class SerialTransport implements DeviceTransport {
         const {value, done} = await reader.read()
         if (done) break
         this.buffer += decoder.decode(value, {stream: true})
+        if (this.buffer.length > SERIAL_BUFFER_MAX_CHARS) {
+          // no legitimate response comes anywhere near this large without a
+          // newline - the peer is streaming garbage. Tear the whole session
+          // down (rejecting any pending command with the actual cause, via
+          // the disconnect handler's reason) instead of accumulating until
+          // the tab runs out of memory
+          await this.closeSession(
+            `Device sent over ${SERIAL_BUFFER_MAX_CHARS} bytes without a newline - disconnected.`
+          )
+          return
+        }
         const {lines, rest} = splitLines(this.buffer)
         this.buffer = rest
         for (const line of lines) {
@@ -176,7 +199,14 @@ export class SerialTransport implements DeviceTransport {
     }
   }
 
-  async disconnect(): Promise<void> {
+  // the single teardown path - sets `closed`, cancels the reader, closes
+  // the port. `reason` is passed only for a transport-initiated teardown
+  // (the buffer cap in startReading) and is forwarded to the disconnect
+  // handler so DeviceClient can reject a pending command with the real
+  // cause; a plain disconnect() (user-initiated, or a command timeout)
+  // fires no handler, since the read loop's own finally below treats an
+  // already-closed session the same way
+  private async closeSession(reason?: string): Promise<void> {
     if (this.closed) return
     this.closed = true
     try {
@@ -189,6 +219,11 @@ export class SerialTransport implements DeviceTransport {
     } catch {
       // already gone - nothing left to close
     }
+    if (reason !== undefined) this.disconnectHandler?.(reason)
+  }
+
+  async disconnect(): Promise<void> {
+    await this.closeSession()
   }
 }
 
@@ -365,15 +400,76 @@ type PendingCommand = {
   reject: (err: Error) => void
 }
 
+// ---- response validation ----
+//
+// everything below is the one place wire data is trusted: a response is
+// validated/normalized in handleMessage before it ever settles a command,
+// so a buggy (or hostile) device can't smuggle malformed values into the
+// accessors - which would otherwise adopt them blindly. Deliberately a
+// handful of checks, not a schema framework.
+
+// every k1/h/id the protocol carries is a 32-byte value hex-encoded (a note
+// secret, its SHA-256 hash, or a note id) - anything else on the wire is a
+// malformed response, never valid data
+const isHex64 = (value: unknown): value is string =>
+  typeof value === 'string' && /^[0-9a-f]{64}$/i.test(value)
+
+// response fields that must hold such a value when present at all
+const HEX_RESPONSE_FIELDS = ['id', 'id2', 'h', 'h2', 'k1'] as const
+
+// 'disconnected' is deliberately absent - it's raised locally (see
+// handleDisconnect), never adopted from the wire
+const WIRE_ERROR_CODES: readonly DeviceErrorCode[] = [
+  'not_found',
+  'invalid_state',
+  'user_declined',
+  'timeout',
+  'storage_full',
+  'bad_request'
+]
+
+// an error code off the wire is trusted only if it's one of the known codes
+// - anything else collapses to a generic error rather than letting
+// arbitrary firmware strings into DeviceError.code, which
+// deviceQueue.ts's idempotency recovery pattern-matches against
+const normalizeErrorCode = (code: unknown): DeviceErrorCode =>
+  WIRE_ERROR_CODES.includes(code as DeviceErrorCode)
+    ? (code as DeviceErrorCode)
+    : 'bad_request'
+
+// the per-entry shape a list_notes note must have - anything else (a null
+// entry, a missing/wrong-typed field) is dropped, not trusted, so a single
+// bad entry can neither fail the whole list nor crash a renderer on it
+// (Vault.tsx maps over these with no error boundary)
+const isDeviceNote = (value: any): value is DeviceNote =>
+  value !== null &&
+  typeof value === 'object' &&
+  isHex64(value.id) &&
+  (value.state === 'pending' ||
+    value.state === 'confirmed' ||
+    value.state === 'spent') &&
+  typeof value.amount_msat === 'number' &&
+  typeof value.label === 'string' &&
+  typeof value.host === 'string' &&
+  Array.isArray(value.parent_ids) &&
+  value.parent_ids.every((id: unknown) => typeof id === 'string') &&
+  typeof value.created_at === 'number' &&
+  typeof value.updated_at === 'number' &&
+  (value.sig === undefined || typeof value.sig === 'string')
+
 // Drives a DeviceTransport through the command set in docs/PROTOCOL.md.
 // The wire protocol carries no request id ("every command gets exactly one
 // response") - commands are therefore strictly serialized, one in flight at
 // a time, and whatever message arrives next is always the pending command's
 // response. A command that never gets one (device wedged, cable pulled
 // mid-response) can't be safely told apart from a slow one without an id,
-// so a client-side timeout treats it as fatal and tears down the session
-// rather than risk misattributing a late reply to the next command queued
-// behind it.
+// so a client-side timeout treats it as fatal: it tears the session down
+// and only lets the queue advance once that teardown has settled, rather
+// than risk misattributing a late reply to the next command queued behind
+// it. Responses are validated/normalized at this same boundary before a
+// command ever settles with them (see handleMessage) - a malformed
+// k1/h/id, an unknown error code, or a misshapen note-list entry from
+// buggy or hostile firmware never reaches an accessor.
 export class DeviceClient {
   private transport: DeviceTransport
   private pending: PendingCommand | null = null
@@ -383,7 +479,7 @@ export class DeviceClient {
   constructor(transport: DeviceTransport) {
     this.transport = transport
     this.transport.onMessage(message => this.handleMessage(message))
-    this.transport.onDisconnect(() => this.handleDisconnect())
+    this.transport.onDisconnect(reason => this.handleDisconnect(reason))
   }
 
   onDisconnect(handler: () => void): void {
@@ -395,18 +491,40 @@ export class DeviceClient {
     if (!pending) return // nothing awaiting this - stray/duplicate, dropped
     this.pending = null
     if (message?.ok === true) {
+      // validate before resolving - a response is only trusted once the
+      // fields the command's accessor is about to read actually check out;
+      // a malformed one fails the command with a clear error instead
+      for (const field of HEX_RESPONSE_FIELDS) {
+        if (field in message && !isHex64(message[field])) {
+          pending.reject(
+            new DeviceError(
+              'bad_request',
+              `Device sent a malformed response (${field} must be 64 hex characters).`
+            )
+          )
+          return
+        }
+      }
+      if (Array.isArray(message.notes)) {
+        // one malformed entry (a null, a wrong-typed field) is dropped
+        // rather than failing the whole list
+        message.notes = message.notes.filter(isDeviceNote)
+      }
       pending.resolve(message)
     } else {
       pending.reject(
-        new DeviceError(message?.error ?? 'bad_request', message?.message)
+        new DeviceError(
+          normalizeErrorCode(message?.error),
+          typeof message?.message === 'string' ? message.message : undefined
+        )
       )
     }
   }
 
-  private handleDisconnect(): void {
+  private handleDisconnect(reason?: string): void {
     if (this.pending) {
       this.pending.reject(
-        new DeviceError('disconnected', 'Device disconnected.')
+        new DeviceError('disconnected', reason ?? 'Device disconnected.')
       )
       this.pending = null
     }
@@ -430,8 +548,20 @@ export class DeviceClient {
         if (settled) return
         settled = true
         this.pending = null
-        this.transport.disconnect().catch(() => {})
-        reject(new DeviceError('timeout', 'Device did not respond in time.'))
+        // a late response to this command may still be on its way in -
+        // reject only once the teardown has actually settled, since
+        // rejecting is what lets the queue start the next command (see
+        // send): without the wait, the straggler could arrive after the
+        // next command's own pending is installed and be misattributed as
+        // its response
+        this.transport
+          .disconnect()
+          .catch(() => {})
+          .then(() =>
+            reject(
+              new DeviceError('timeout', 'Device did not respond in time.')
+            )
+          )
       }, timeoutMs)
 
       this.pending = {

@@ -36,6 +36,19 @@ import {
 import {serverOf} from './lnurlcash'
 import {lockTrustedMint} from './trustedMints'
 
+// the one lockTrustedMint outcome a holder must hear about: the mint is
+// advertising a DIFFERENT signing key than the one pinned - the new key was
+// staged for review on the Mints page, not applied (see trustedMints.ts).
+// Everything else (first trust, re-lock, unchanged) is silent by design.
+const notifyIfRekeyPending = (server: string, mintPubkey: string): void => {
+  if (lockTrustedMint(server, mintPubkey) === 'rekey-pending') {
+    notify(
+      `${server} now advertises a different signing key than the one pinned - review it on the Mints page before trusting "signed" notes from it.`,
+      NotifyKind.ERROR
+    )
+  }
+}
+
 // 'none': no wallet on this device yet -> setup
 // 'locked': linking key present but password-encrypted -> unlock
 // 'unlocked': linking key (and thus the bearer AES key) in memory
@@ -144,7 +157,7 @@ export const WalletProvider = (props: {children: JSX.Element}) => {
     // list existed to ask about it
     for (const bearer of loaded) {
       if (bearer.mintPubkey) {
-        lockTrustedMint(serverOf(bearer.url), bearer.mintPubkey)
+        notifyIfRekeyPending(serverOf(bearer.url), bearer.mintPubkey)
       }
     }
     setState('unlocked')
@@ -211,7 +224,7 @@ export const WalletProvider = (props: {children: JSX.Element}) => {
     // already trusted (from a lookup, a manual add, or another bearer) or
     // not - this is the one path that never asks (see trustedMints.ts)
     if (bearer.mintPubkey) {
-      lockTrustedMint(serverOf(bearer.url), bearer.mintPubkey)
+      notifyIfRekeyPending(serverOf(bearer.url), bearer.mintPubkey)
     }
     return bearer
   }
@@ -226,7 +239,7 @@ export const WalletProvider = (props: {children: JSX.Element}) => {
     await persistBearer(requireKey(), updated)
     setBearers(prev => prev.map(b => (b.id === id ? updated : b)))
     if (updated.mintPubkey) {
-      lockTrustedMint(serverOf(updated.url), updated.mintPubkey)
+      notifyIfRekeyPending(serverOf(updated.url), updated.mintPubkey)
     }
   }
 

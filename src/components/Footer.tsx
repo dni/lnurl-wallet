@@ -39,6 +39,7 @@ const Footer = () => {
         class="footer-item"
         href="https://github.com/dni/lnurl-wallet"
         target="_blank"
+        rel="noreferrer"
       >
         <AiFillGithub />
         &nbsp;Github
@@ -55,6 +56,7 @@ const Footer = () => {
               <a
                 href={`https://github.com/lnurl/luds/blob/luds/${lud}.md`}
                 target="_blank"
+                rel="noreferrer"
                 title={LUD_TITLES[lud]}
               >
                 {lud}

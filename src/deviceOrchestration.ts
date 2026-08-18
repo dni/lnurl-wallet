@@ -27,7 +27,10 @@ import {enqueuePendingDeviceOp, drainPendingDeviceOps} from './deviceQueue'
 // receive.ts: pure functions, callers own addBearer/updateBearer/
 // removeBearer - never touches WalletContext/storage.ts directly. Errors
 // (DeviceError, PendingNoteError, plain Error) propagate unwrapped so
-// existing instanceof checks at call sites keep working unmodified.
+// existing instanceof checks at call sites keep working unmodified - the
+// one exception is importAndRotate's DeviceImportLeftBehindError (see
+// below), which wraps precisely to carry the already-imported note a
+// caller would otherwise lose track of.
 
 export type DeviceMutationResult = {
   deviceId: string
@@ -307,13 +310,35 @@ export const deviceSplit = async (
   }
 }
 
+// importAndRotate's unique failure mode: the import_secret already landed
+// on the device (the k1 sits there CONFIRMED) but the follow-up rotate
+// didn't finish - e.g. its mint call rejected, which also means nothing
+// was burned mint-side. The imported note is still real, spendable money
+// on the device, so this error carries a ready-to-track mirror of it
+// (deviceId, k1-less url, expected amount) rather than letting it vanish
+// from local state. Mint.tsx's claim stores that mirror as an unverified
+// bearer; deviceReceive unwraps and rethrows the cause instead, since its
+// own browser-held copy is already tracked
+export class DeviceImportLeftBehindError extends Error {
+  cause: unknown
+  imported: DeviceMutationResult
+  constructor(cause: unknown, imported: DeviceMutationResult) {
+    super(cause instanceof Error ? cause.message : String(cause))
+    this.name = 'DeviceImportLeftBehindError'
+    this.cause = cause
+    this.imported = imported
+  }
+}
+
 // shared core of mint/receive: a k1 already known (a payment preimage, or a
 // received note's own secret) is imported onto the device, then
 // immediately rotated (per LUD-25's security considerations - the mint, or
 // the previous holder, already saw this exact k1 once). `noteUrlTemplate`
 // must already be a real, fetchable https(s) URL - withoutK1 strips any k1
 // it happens to carry (a received note's own url always does) before it
-// ever becomes the blank mirror.
+// ever becomes the blank mirror. A failure after the import landed rejects
+// with DeviceImportLeftBehindError, never the bare cause - the imported
+// note exists on the device by then and must not silently disappear
 const importAndRotate = async (
   client: DeviceClient,
   noteUrlTemplate: string,
@@ -324,19 +349,30 @@ const importAndRotate = async (
   label?: string
 ): Promise<DeviceMutationResult> => {
   const importedId = await client.importSecret(k1, host, amountMsat, label)
-  return rotateK1OnDevice(
-    client,
-    {url: withoutK1(noteUrlTemplate, amountMsat), callback},
-    importedId,
-    k1,
-    amountMsat
-  )
+  try {
+    return await rotateK1OnDevice(
+      client,
+      {url: withoutK1(noteUrlTemplate, amountMsat), callback},
+      importedId,
+      k1,
+      amountMsat
+    )
+  } catch (err) {
+    throw new DeviceImportLeftBehindError(err, {
+      deviceId: importedId,
+      amountMsat,
+      url: withoutK1(noteUrlTemplate, amountMsat),
+      callback
+    })
+  }
 }
 
 // minting a brand new note: pay the invoice off-device (unchanged), then
 // bring the resulting preimage under device custody. `withdrawLink` is the
 // raw LUD-17 URL a payRequest advertises - never normalized yet, unlike a
-// bearer's own stored url.
+// bearer's own stored url. Rejects with DeviceImportLeftBehindError when
+// the import landed but the rotate didn't - Mint.tsx's claim tracks the
+// carried mirror rather than stranding the note on the device
 export const deviceMint = (
   client: DeviceClient,
   withdrawLink: string,
@@ -360,7 +396,7 @@ export const deviceMint = (
 // `noteUrl` is the received note's own url (already normalized by
 // receive.ts/resolveLnurlInput, still carrying its real, about-to-be-
 // stripped k1) rather than a bare payRequest withdrawLink
-export const deviceReceive = (
+export const deviceReceive = async (
   client: DeviceClient,
   noteUrl: string,
   callback: string,
@@ -368,8 +404,29 @@ export const deviceReceive = (
   k1: string,
   amountMsat: number,
   label?: string
-): Promise<DeviceMutationResult> =>
-  importAndRotate(client, noteUrl, callback, host, k1, amountMsat, label)
+): Promise<DeviceMutationResult> => {
+  try {
+    return await importAndRotate(
+      client,
+      noteUrl,
+      callback,
+      host,
+      k1,
+      amountMsat,
+      label
+    )
+  } catch (err) {
+    // ReceiveDialog has already stored the note browser-side (its own
+    // addBearer) before this ever runs, so a left-behind device import
+    // strands nothing there - keep the original error's identity
+    // (ReceiveDialog pattern-matches PendingNoteError) instead of the
+    // wrapper
+    if (err instanceof DeviceImportLeftBehindError) {
+      throw err.cause instanceof Error ? err.cause : err
+    }
+    throw err
+  }
+}
 
 // melt only ever burns - no new secret, so no queue entry either. Export
 // happens up front (button press); the mint call is the existing meltNote,

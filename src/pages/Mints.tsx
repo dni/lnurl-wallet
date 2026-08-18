@@ -12,7 +12,7 @@ import {
   IoOpenSharp
 } from 'solid-icons/io'
 
-import type {TrustedMint} from '../trustedMints'
+import type {TrustedMint, TrustedMintNodeInfo} from '../trustedMints'
 import {
   trustedMints,
   addTrustedMint,
@@ -20,6 +20,8 @@ import {
   isMintTrusted,
   mintAddressCacheInfo,
   getTrustedMintAddress,
+  confirmTrustedMintRekey,
+  dismissTrustedMintRekey,
   PUBLIC_MINTS
 } from '../trustedMints'
 import {
@@ -54,6 +56,15 @@ const Mints: Component = () => {
   // from elsewhere (its own site, a friend, etc).
   const [addressInput, setAddressInput] = createSignal('')
   const [addressBusy, setAddressBusy] = createSignal(false)
+  // a looked-up mint this wallet has no entry for yet, awaiting an explicit
+  // "trust this key" click before anything is pinned - the same posture as
+  // Mint.tsx's own pendingTrust card: one scanned QR or typosquatted
+  // address shouldn't silently pin a signing key the holder never saw
+  const [pendingTrust, setPendingTrust] = createSignal<{
+    server: string
+    pubkey: string
+    nodeInfo?: TrustedMintNodeInfo
+  } | null>(null)
   // which trusted mint's own refresh button is currently in flight - only
   // used to put a spinner on the one card that was actually clicked;
   // addressBusy() above still gates every button on the page against a
@@ -92,18 +103,77 @@ const Mints: Component = () => {
         return
       }
       const mintServer = serverOf(url)
-      addTrustedMint(
-        mintServer,
-        info.nodePubkey,
-        mintAddressCacheInfo(info, lightningAddressUsername(url))
-      )
+      const nodeInfo = mintAddressCacheInfo(info, lightningAddressUsername(url))
+      // a mint with no entry yet gets an explicit confirmation showing the
+      // key before anything is pinned - already-trusted mints (including
+      // every Refresh button below) skip straight to the upsert
+      if (!isMintTrusted(mintServer)) {
+        setPendingTrust({server: mintServer, pubkey: info.nodePubkey, nodeInfo})
+        return
+      }
+      const result = addTrustedMint(mintServer, info.nodePubkey, nodeInfo)
       setAddressInput('')
-      notify(`${mintServer} added to your trusted list.`, NotifyKind.SUCCESS)
+      if (result === 'rekey-pending') {
+        notify(
+          `${mintServer} now advertises a different signing key than the one pinned - review it below before trusting "signed" notes from it.`,
+          NotifyKind.ERROR
+        )
+      } else {
+        notify(`${mintServer}'s cached info refreshed.`, NotifyKind.SUCCESS)
+      }
     } catch (err) {
       notify((err as Error).message, NotifyKind.ERROR)
     } finally {
       setAddressBusy(false)
     }
+  }
+
+  const confirmTrust = () => {
+    const pending = pendingTrust()
+    if (!pending) return
+    try {
+      const result = addTrustedMint(
+        pending.server,
+        pending.pubkey,
+        pending.nodeInfo
+      )
+      setPendingTrust(null)
+      setAddressInput('')
+      if (result === 'rekey-pending') {
+        notify(
+          `${pending.server} already has a different key pinned - the new one was staged for review below.`,
+          NotifyKind.ERROR
+        )
+      } else {
+        notify(
+          `${pending.server} added to your trusted list.`,
+          NotifyKind.SUCCESS
+        )
+      }
+    } catch (err) {
+      notify((err as Error).message, NotifyKind.ERROR)
+    }
+  }
+
+  const cancelTrust = () => {
+    setPendingTrust(null)
+    notify('Mint not trusted - lookup cancelled.', NotifyKind.ERROR)
+  }
+
+  // the holder reviewed a mint's advertised new signing key (shown on its
+  // card below) - these two are the ONLY paths that ever change a pinned
+  // key or drop a staged candidate
+  const rekey = (mintServer: string) => {
+    confirmTrustedMintRekey(mintServer)
+    notify(`${mintServer}'s new signing key is now pinned.`, NotifyKind.SUCCESS)
+  }
+
+  const dismissRekey = (mintServer: string) => {
+    dismissTrustedMintRekey(mintServer)
+    notify(
+      `Keeping the original signing key for ${mintServer}.`,
+      NotifyKind.SUCCESS
+    )
   }
 
   const pasteAddress = async () => {
@@ -114,9 +184,10 @@ const Mints: Component = () => {
   // re-runs the same mint-address lookup addByAddress does, against
   // whichever address this mint was last actually reached at (its cached
   // username, same convention Mint.tsx's own mintAddressFor uses) or the
-  // "mint" username default if none was ever cached - addTrustedMint
-  // upserts, so this both refreshes an already-trusted entry's alias/color/
-  // capacity/channels/peers and re-confirms its pubkey hasn't changed.
+  // "mint" username default if none was ever cached - the upsert refreshes
+  // an already-trusted entry's alias/color/capacity/channels/peers, and if
+  // the mint now advertises a DIFFERENT pubkey it gets staged for review on
+  // its card below rather than replacing the pinned one
   const refreshMint = async (mint: TrustedMint) => {
     const address = getTrustedMintAddress(mint.server) || `mint@${mint.server}`
     setRefreshingServer(mint.server)
@@ -129,7 +200,15 @@ const Mints: Component = () => {
 
   const add = () => {
     try {
-      addTrustedMint(server(), pubkey())
+      const name = server().trim()
+      const result = addTrustedMint(name, pubkey())
+      if (result === 'rekey-pending') {
+        notify(
+          `${name} already has a different key pinned - the new one was staged for review below.`,
+          NotifyKind.ERROR
+        )
+        return
+      }
       setServer('')
       setPubkey('')
       notify('Mint added to your trusted list.', NotifyKind.SUCCESS)
@@ -156,7 +235,10 @@ const Mints: Component = () => {
         minting, refreshing or receiving a note - it's remembered here. This is
         what a note's "signed" badge is checked against. A mint you already hold
         a bearer note from is trusted automatically and can't be removed;
-        anything else here you added yourself, and can remove again.
+        anything else here you added yourself, and can remove again. If a mint
+        ever advertises a different key than the remembered one, the change is
+        staged for your review - the remembered key keeps deciding the badge
+        until you confirm the new one.
       </p>
       <div class="two-columns">
         <div class="two-col">
@@ -277,6 +359,30 @@ const Mints: Component = () => {
                     </Show>
                     <p class="mint-pubkey">{mint.mintPubkey}</p>
                     <p class="mint-date">added {formatDate(mint.addedAt)}</p>
+                    {/* a staged key rotation (see trustedMints.ts): the mint
+                    advertised a different signing key than the pinned one.
+                    The pinned key above keeps deciding the "signed" badge
+                    until the holder explicitly promotes the candidate here -
+                    a silent swap would let a compromised mint sign unbacked
+                    notes that still show as verified */}
+                    <Show when={mint.pendingMintPubkey}>
+                      <p class="warning">
+                        This mint now advertises a different signing key - fine
+                        if it announced a move to a new node, an attack
+                        otherwise. Its new signatures currently do{' '}
+                        <strong>not</strong> show as verified. Only trust the
+                        new key if the mint itself announced the change:
+                      </p>
+                      <p class="mint-pubkey">{mint.pendingMintPubkey}</p>
+                      <div class="btns">
+                        <button onClick={() => rekey(mint.server)}>
+                          Trust new key
+                        </button>
+                        <button onClick={() => dismissRekey(mint.server)}>
+                          Keep current key
+                        </button>
+                      </div>
+                    </Show>
                     <div class="btns">
                       <button
                         disabled={addressBusy() || offlineMode()}
@@ -354,14 +460,32 @@ const Mints: Component = () => {
           </Show>
         </div>
         <div class="two-col">
+          <Show when={pendingTrust()}>
+            {pending => (
+              <figure class="setup-card">
+                <h4>Trust this mint?</h4>
+                <p>
+                  {pending().server} advertises the signing key below. It will
+                  decide whether notes from this mint show the "signed" badge -
+                  only trust it if you reached this address from the mint itself
+                  (its own site, not a forwarded link).
+                </p>
+                <p class="mint-pubkey">{pending().pubkey}</p>
+                <div class="btns">
+                  <button onClick={confirmTrust}>Trust this key</button>
+                  <button onClick={cancelTrust}>Cancel</button>
+                </div>
+              </figure>
+            )}
+          </Show>
           <figure class="paste-widget">
             <h4>Add a mint by address</h4>
             <p>
               Looks up a mint's LNURL, Lightning Address, or bare domain (e.g.
               "mint@host" or just "@host") via its mint-address discovery
-              endpoint, and trusts whatever signing key it advertises there -
-              experimental, so most mints won't have it yet. Falls back to the
-              manual form below if it doesn't.
+              endpoint, and asks you to confirm the signing key it advertises
+              before trusting it - experimental, so most mints won't have it
+              yet. Falls back to the manual form below if it doesn't.
             </p>
             <div class="paste-input-row">
               <ScanToggle
