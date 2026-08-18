@@ -31,6 +31,11 @@ const luds = Object.keys(LUD_TITLES).sort((a, b) => {
   return na - nb
 })
 
+// LUD-25 is still a draft living on the lnurlcash branch of the luds repo
+// (lnurl/luds#301) - it has no file on the merged luds branch yet
+const ludHref = (lud: string) =>
+  `https://github.com/lnurl/luds/blob/${lud === '25' ? 'lnurlcash' : 'luds'}/${lud}.md`
+
 const Footer = () => {
   return (
     <footer class="footer">
@@ -52,11 +57,7 @@ const Footer = () => {
         <For each={luds}>
           {lud => (
             <>
-              <a
-                href={`https://github.com/lnurl/luds/blob/luds/${lud}.md`}
-                target="_blank"
-                title={LUD_TITLES[lud]}
-              >
+              <a href={ludHref(lud)} target="_blank" title={LUD_TITLES[lud]}>
                 {lud}
               </a>
               &nbsp;
