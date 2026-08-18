@@ -40,16 +40,27 @@ export const deriveLud05LinkingKey = (
   const hashingKeyNode = master.derive("m/138'/0")
   if (!hashingKeyNode.privateKey)
     throw new Error('Could not derive hashing key')
-  const material = hmac(sha256, hashingKeyNode.privateKey, utf8ToBytes(domain))
+  const suffix = lud05PathSuffix(hashingKeyNode.privateKey, domain)
 
   // path suffix longs are raw BIP32 child indices: whether each level ends up
   // hardened depends solely on its own magnitude (>= 2^31), never forced
   let node = master.deriveChild(138 + HARDENED_OFFSET)
-  for (let i = 0; i < 16; i += 4) {
-    node = node.deriveChild(readUint32BE(material, i))
+  for (const index of suffix) {
+    node = node.deriveChild(index)
   }
   if (!node.privateKey) throw new Error('Could not derive linking key')
   return node.privateKey
+}
+
+// the HMAC half of the derivation, split out so the LUD-05 test vector
+// (which starts from a fixed hashingPrivKey, not a seed phrase) can pin it
+// directly - see keys.test.ts
+export const lud05PathSuffix = (
+  hashingKey: Uint8Array,
+  domain: string
+): number[] => {
+  const material = hmac(sha256, hashingKey, utf8ToBytes(domain))
+  return [0, 4, 8, 12].map(i => readUint32BE(material, i))
 }
 
 export const deriveWalletLinkingKey = (seedPhrase: string): Uint8Array =>

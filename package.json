@@ -1,5 +1,7 @@
 {
   "name": "lnurl-wallet",
+  "private": true,
+  "packageManager": "npm@11.11.0",
   "description": "LNURLwallet - wallet for LNURLcash bearer tokens",
   "author": "dni",
   "license": "MIT",

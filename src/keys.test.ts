@@ -1,11 +1,12 @@
 import {describe, expect, it} from 'vitest'
-import {bytesToHex} from '@noble/hashes/utils.js'
+import {bytesToHex, hexToBytes} from '@noble/hashes/utils.js'
 
 import {
   generateSeedPhrase,
   isValidSeedPhrase,
   deriveWalletLinkingKey,
   deriveLud05LinkingKey,
+  lud05PathSuffix,
   linkingPubKeyHex,
   encryptSecretParts,
   decryptSecretParts,
@@ -45,6 +46,18 @@ describe('linking key derivation', () => {
     expect(bytesToHex(deriveWalletLinkingKey(SEED))).toBe(
       bytesToHex(deriveLud05LinkingKey(SEED, WALLET_DOMAIN))
     )
+  })
+
+  it('matches the LUD-05 spec test vector', () => {
+    // from the spec (luds/05.md): domain site.com, fixed hashingPrivKey ->
+    // this exact path suffix - pins the HMAC + big-endian uint32 reading
+    // against the spec's own reference, not just self-consistency
+    const hashingKey = hexToBytes(
+      '7d417a6a5e9a6a4a879aeaba11a11838764c8fa2b959c242d43dea682b3e409b'
+    )
+    expect(lud05PathSuffix(hashingKey, 'site.com')).toEqual([
+      1588488367, 2659270754, 38110259, 4136336762
+    ])
   })
 
   it('differs per domain (unlinkability)', () => {

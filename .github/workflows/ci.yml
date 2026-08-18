@@ -31,3 +31,7 @@ jobs:
       - run: npm run tsc
       - run: npm test
       - run: npm run build
+      # informational only - surfaces newly disclosed advisories without
+      # failing an otherwise-green build over an unmaintained transitive dep
+      - run: npm audit --audit-level=high
+        continue-on-error: true

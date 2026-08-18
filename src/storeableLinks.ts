@@ -24,7 +24,12 @@ const readStored = (key: string): StoreableLink[] => {
   if (!raw) return []
   try {
     const parsed = JSON.parse(raw)
-    return Array.isArray(parsed) ? parsed : []
+    if (!Array.isArray(parsed)) return []
+    // shape-check every entry - a tampered/corrupt record must not plant
+    // junk entries into the registry
+    return parsed.filter(
+      l => typeof l?.address === 'string' && typeof l?.addedAt === 'number'
+    )
   } catch {
     return []
   }
@@ -52,7 +57,12 @@ const makeRegistry = (storageKey: string) => {
     persist(links().filter(l => l.address !== address))
   }
 
-  return {links, add, remove}
+  const clear = (): void => {
+    localStorage.removeItem(storageKey)
+    setLinksSignal([])
+  }
+
+  return {links, add, remove, clear}
 }
 
 const mintRegistry = makeRegistry('lnurlcash_storeable_mints')
@@ -65,3 +75,10 @@ export const removeStoreableMint = mintRegistry.remove
 export const storeableMeltAddresses = meltRegistry.links
 export const addStoreableMeltAddress = meltRegistry.add
 export const removeStoreableMeltAddress = meltRegistry.remove
+
+// wipes both registries - part of forgetting a wallet (WalletContext's
+// forgetWallet): nothing about a wallet's mints should linger after it
+export const clearStoreableLinks = (): void => {
+  mintRegistry.clear()
+  meltRegistry.clear()
+}

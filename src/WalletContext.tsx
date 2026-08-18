@@ -35,7 +35,13 @@ import {
 } from './storage'
 import {serverOf} from './lnurlcash'
 import type {TrustKeyResult} from './trustedMints'
-import {lockTrustedMint, grandfatherTrustedMint} from './trustedMints'
+import {
+  lockTrustedMint,
+  grandfatherTrustedMint,
+  clearTrustedMints
+} from './trustedMints'
+import {clearStoreableLinks} from './storeableLinks'
+import {clearPendingDeviceOps} from './deviceQueue'
 
 // the one lockTrustedMint outcome a holder must hear about: the mint is
 // advertising a DIFFERENT signing key than the one pinned - the new key was
@@ -201,14 +207,19 @@ export const WalletProvider = (props: {children: JSX.Element}) => {
   }
 
   // wipes this wallet from the device entirely - the linking key, every
-  // bearer record, and the activity log. Not recoverable by restoring the
-  // same seed afterward (the ciphertexts themselves are gone); only a
-  // backup downloaded before this runs can bring the notes back - the UI
-  // should prompt for one
+  // bearer record, the activity log, and the non-secret registries that
+  // would otherwise linger as a fingerprint of it (trusted mints incl.
+  // otherwise-irremovable locked pins, storeable links, pending device
+  // ops). Not recoverable by restoring the same seed afterward (the
+  // ciphertexts themselves are gone); only a backup downloaded before this
+  // runs can bring the notes back - the UI should prompt for one
   const forgetWallet = () => {
     clearSavedLinkingKey()
     clearAllBearers()
     clearAllActivity()
+    clearTrustedMints()
+    clearStoreableLinks()
+    clearPendingDeviceOps()
     aesKey = null
     setPubkey(null)
     setBearers([])
@@ -255,8 +266,11 @@ export const WalletProvider = (props: {children: JSX.Element}) => {
   }
 
   const removeBearer = (id: string) => {
-    deleteBearerRecord(id)
     setBearers(prev => prev.filter(b => b.id !== id))
+    // the storage delete runs under the cross-tab lock and so returns a
+    // promise now - fire-and-forget: the in-memory state is already
+    // correct, and a failed delete only leaves a stale ciphertext record
+    deleteBearerRecord(id).catch(() => {})
   }
 
   const reloadBearers = async () => {

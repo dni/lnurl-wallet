@@ -4,6 +4,10 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#002222" />
+    <!-- this wallet fetches arbitrary mint URLs cross-origin; don't leak
+    the hosting origin to every one of them via Referer (the Origin header
+    on CORS requests is unaffected by this and can't be removed here) -->
+    <meta name="referrer" content="same-origin" />
     <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
     <!-- vite-plugin-pwa injects the manifest link and SW registration -
     iOS ignores both, so its install/standalone-mode tags are set by hand -->

@@ -23,6 +23,7 @@ import {
   applyMintFee,
   describeMintFee,
   probeBurnedNote,
+  sameInvoice,
   PendingNoteError,
   AmbiguousMutationError
 } from '../lnurlcash'
@@ -361,6 +362,21 @@ const TransferDialog: Component<TransferDialogProps> = props => {
         if (url) {
           try {
             const result = await fetchInvoiceVerification(url)
+            // a settled report only proves THIS transfer's funding if it's
+            // for the invoice this wallet actually requested
+            const requested = invoice()
+            if (
+              result.settled &&
+              requested &&
+              !sameInvoice(result.pr, requested)
+            ) {
+              stopPolling()
+              notify(
+                "The destination mint's verify response is for a different invoice than requested - this transfer's state is uncertain; check both notes before retrying.",
+                NotifyKind.ERROR
+              )
+              return
+            }
             if (
               result.settled &&
               result.preimage &&

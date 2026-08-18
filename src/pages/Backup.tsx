@@ -9,7 +9,7 @@ import {
 } from 'solid-icons/io'
 
 import {useWallet} from '../WalletContext'
-import {buildBackup, applyBackup} from '../storage'
+import {buildBackup, applyBackup, MAX_BACKUP_FILE_BYTES} from '../storage'
 import {savedKeyIsEncrypted} from '../keys'
 import {trustedMints} from '../trustedMints'
 import {notify, NotifyKind} from '../helpers'
@@ -49,6 +49,9 @@ const Backup: Component = () => {
     setKeySkipped(false)
     setKeyRestored(false)
     try {
+      if (file.size > MAX_BACKUP_FILE_BYTES) {
+        throw new Error('That file is far too large to be a wallet backup.')
+      }
       const data = JSON.parse(await file.text())
       const result = applyBackup(data)
       if (state() === 'unlocked') await reloadBearers()
@@ -228,10 +231,10 @@ const Backup: Component = () => {
           <h4>Forget this wallet</h4>
           <p class="warning">
             This removes <strong>everything</strong> from this device - the
-            linking key and every bearer note. Unlike locking, restoring the
-            same seed phrase afterward will not bring the notes back: their
-            ciphertext is gone too, not just re-locked. A backup downloaded
-            beforehand is the only way back.
+            linking key, every bearer note, trusted mints, and saved links.
+            Unlike locking, restoring the same seed phrase afterward will not
+            bring the notes back: their ciphertext is gone too, not just
+            re-locked. A backup downloaded beforehand is the only way back.
           </p>
           <div class="btns">
             <button onClick={download}>

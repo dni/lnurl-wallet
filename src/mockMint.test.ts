@@ -543,6 +543,59 @@ describe('receiveNote surfaces a definitive spent/unknown report', () => {
   })
 })
 
+describe('service-response sanity checks', () => {
+  it('requestInvoice rejects an invoice for a different amount than requested', async () => {
+    // the mock's own invoices are amountless (lnbcmockN), which pass
+    // through unchecked - this needs one with a decodable, wrong amount
+    vi.stubGlobal('fetch', (async (input: string | URL) => {
+      const url = new URL(input.toString())
+      if (url.pathname === '/pay/cb') {
+        return {
+          json: async () => ({pr: 'lnbc21n1mockinvoice'})
+        } as unknown as Response
+      }
+      return mint.fetch(input)
+    }) as typeof fetch)
+    // requested 100_000 msat; lnbc21n1... decodes to 210 * 100 = 2100
+    await expect(requestInvoice(PAY_CALLBACK, 100_000)).rejects.toThrow(
+      /not the 100000 requested/
+    )
+  })
+
+  it('requestInvoice accepts the invoice when its amount matches', async () => {
+    vi.stubGlobal('fetch', (async (input: string | URL) => {
+      const url = new URL(input.toString())
+      if (url.pathname === '/pay/cb') {
+        // lnbc1000n1... decodes to 1000 * 100 = 100_000 msat
+        return {
+          json: async () => ({pr: 'lnbc1000n1mockinvoice'})
+        } as unknown as Response
+      }
+      return mint.fetch(input)
+    }) as typeof fetch)
+    const result = await requestInvoice(PAY_CALLBACK, 100_000)
+    expect(result.pr).toBe('lnbc1000n1mockinvoice')
+  })
+
+  it('fetchNoteInfo rejects nonsensical amounts', async () => {
+    const k1 = randomHex(32)
+    vi.stubGlobal('fetch', (async () => {
+      return {
+        json: async () => ({
+          tag: 'withdrawRequest',
+          callback: WITHDRAW_CALLBACK,
+          k1,
+          minWithdrawable: 1000,
+          maxWithdrawable: -5
+        })
+      } as unknown as Response
+    }) as typeof fetch)
+    await expect(
+      fetchNoteInfo(buildNoteUrl(WITHDRAW_URL, k1, 1000))
+    ).rejects.toThrow(/unexpected response/i)
+  })
+})
+
 describe('rotation-on-failure', () => {
   it('settleNote falls back to the pre-rotation note when rotate fails', async () => {
     const k1 = randomHex(32)
