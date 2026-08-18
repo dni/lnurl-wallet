@@ -22,7 +22,9 @@ import {
   isPreimage,
   applyMintFee,
   describeMintFee,
-  PendingNoteError
+  probeBurnedNote,
+  PendingNoteError,
+  AmbiguousMutationError
 } from '../lnurlcash'
 import {
   deviceMeltRequest,
@@ -271,7 +273,38 @@ const TransferDialog: Component<TransferDialogProps> = props => {
           rotated.signature
         )
       } catch (err) {
-        rotationError = (err as Error).message
+        if (err instanceof AmbiguousMutationError) {
+          // the rotate request may have landed despite the failure - the
+          // fresh secret it carried is then the only copy of this note
+          const outcome = await probeBurnedNote(url)
+          if (outcome === 'gone') {
+            // the burn landed - adopt the fresh secret as the note
+            url = withNewK1(
+              declaredUrl,
+              err.newSecrets[0],
+              noteInfo.maxWithdrawable
+            )
+          } else if (outcome === 'unknown') {
+            // can't tell: the preimage note is stored below either way -
+            // track the possible rotated copy alongside it
+            await addBearer({
+              url: withNewK1(
+                declaredUrl,
+                err.newSecrets[0],
+                noteInfo.maxWithdrawable
+              ),
+              callback: noteInfo.callback,
+              amount: noteInfo.maxWithdrawable,
+              verified: false,
+              mintPubkey
+            })
+            rotationError = `${(err as Error).message} The rotation may still have gone through - the possible rotated copy is stored unverified alongside this one; refresh both to reconcile.`
+          } else {
+            rotationError = (err as Error).message
+          }
+        } else {
+          rotationError = (err as Error).message
+        }
       }
       await addBearer({
         url,
@@ -376,7 +409,33 @@ const TransferDialog: Component<TransferDialogProps> = props => {
           props.onClose()
           return
         } catch (err) {
-          if (!(err instanceof PendingNoteError)) setSourceConfirmed(true)
+          if (err instanceof AmbiguousMutationError) {
+            // the rotate may have landed despite the failure - the carried
+            // secret is then the only copy of the still-unmelted source.
+            // Track it unverified and stop probing the source: retrying
+            // would gamble (and have to store) another fresh secret every
+            // tick, and between this copy and the unchanged source record
+            // the sats are accounted for either way - a refresh reconciles
+            // which one is real once the service is reachable again
+            await addBearer({
+              url: withNewK1(
+                props.sourceBearer.url,
+                err.newSecrets[0],
+                props.sourceBearer.amount
+              ),
+              callback: props.sourceBearer.callback,
+              amount: props.sourceBearer.amount,
+              verified: false,
+              mintPubkey: props.sourceBearer.mintPubkey
+            })
+            setSourceConfirmed(true)
+            notify(
+              "The source note's state is uncertain - a possible rotated copy is stored unverified; refresh your notes to reconcile.",
+              NotifyKind.ERROR
+            )
+          } else if (!(err instanceof PendingNoteError)) {
+            setSourceConfirmed(true)
+          }
         }
       }
     } finally {

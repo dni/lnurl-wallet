@@ -153,9 +153,11 @@ describe('mergeTrustedMints (backup restore)', () => {
     expect(added).toBe(1)
     const entry = mod.trustedMints().find(m => m.server === 'mint.example')
     // a crafted backup must not be able to plant an irremovable entry or a
-    // pre-staged "key change" - locks re-establish from held bearers
+    // pre-staged "key change" - locks re-establish from held bearers - and
+    // the pin sits out of signature verification until corroborated live
     expect(entry?.locked).toBe(false)
     expect(entry?.pendingMintPubkey).toBeUndefined()
+    expect(entry?.unconfirmed).toBe(true)
   })
 
   it('skips invalid entries and never overwrites a known server', () => {
@@ -168,7 +170,71 @@ describe('mergeTrustedMints (backup restore)', () => {
     expect(added).toBe(1)
     expect(mod.getTrustedMintPubkey('mint.example')).toBe(KEY_A)
     expect(mod.isMintTrusted('evil.example')).toBe(false)
-    expect(mod.getTrustedMintPubkey('new.example')).toBe(KEY_C)
+    // the merged entry lands unconfirmed: present in the list, but kept out
+    // of signature verification until a live response advertises the key
+    expect(mod.isMintTrusted('new.example')).toBe(true)
+    expect(mod.getTrustedMintPubkey('new.example')).toBeNull()
+  })
+})
+
+describe('unconfirmed (file-sourced) pins', () => {
+  it('stays out of signature verification until corroborated live', () => {
+    mod.mergeTrustedMints([
+      {server: 'mint.example', mintPubkey: KEY_A, addedAt: 1, locked: false}
+    ] as never[])
+    expect(mod.isMintTrusted('mint.example')).toBe(true)
+    expect(mod.isMintUnconfirmed('mint.example')).toBe(true)
+    expect(mod.getTrustedMintPubkey('mint.example')).toBeNull()
+    // a live response advertising the SAME key corroborates the pin
+    expect(mod.lockTrustedMint('mint.example', KEY_A)).toBe('unchanged')
+    expect(mod.isMintUnconfirmed('mint.example')).toBe(false)
+    expect(mod.getTrustedMintPubkey('mint.example')).toBe(KEY_A)
+  })
+
+  it('a differing live key is staged for review, not confirmed in place', () => {
+    mod.mergeTrustedMints([
+      {server: 'mint.example', mintPubkey: KEY_A, addedAt: 1, locked: false}
+    ] as never[])
+    expect(mod.lockTrustedMint('mint.example', KEY_B)).toBe('rekey-pending')
+    expect(mod.isMintUnconfirmed('mint.example')).toBe(true)
+    expect(mod.getTrustedMintPubkey('mint.example')).toBeNull()
+    // explicitly confirming the rekey both promotes and corroborates
+    mod.confirmTrustedMintRekey('mint.example')
+    expect(mod.getTrustedMintPubkey('mint.example')).toBe(KEY_B)
+    expect(mod.isMintUnconfirmed('mint.example')).toBe(false)
+  })
+
+  it('a user-driven lookup (addTrustedMint) with the same key corroborates', () => {
+    mod.mergeTrustedMints([
+      {server: 'mint.example', mintPubkey: KEY_A, addedAt: 1, locked: false}
+    ] as never[])
+    expect(mod.addTrustedMint('mint.example', KEY_A)).toBe('unchanged')
+    expect(mod.getTrustedMintPubkey('mint.example')).toBe(KEY_A)
+  })
+})
+
+describe('grandfatherTrustedMint (unlock-time)', () => {
+  it('adds unknown servers unlocked and unconfirmed', () => {
+    expect(mod.grandfatherTrustedMint('mint.example', KEY_A)).toBe('added')
+    const entry = mod.trustedMints().find(m => m.server === 'mint.example')
+    expect(entry?.locked).toBe(false)
+    expect(entry?.unconfirmed).toBe(true)
+    // a storage-sourced claim never decides the "signed" badge
+    expect(mod.getTrustedMintPubkey('mint.example')).toBeNull()
+  })
+
+  it('never locks or confirms an existing entry, but stages a differing claim', () => {
+    mod.lockTrustedMint('mint.example', KEY_A)
+    expect(mod.grandfatherTrustedMint('mint.example', KEY_A)).toBe('unchanged')
+    expect(
+      mod.trustedMints().find(m => m.server === 'mint.example')?.locked
+    ).toBe(true)
+    expect(mod.grandfatherTrustedMint('mint.example', KEY_B)).toBe(
+      'rekey-pending'
+    )
+    expect(
+      mod.trustedMints().find(m => m.server === 'mint.example')?.mintPubkey
+    ).toBe(KEY_A)
   })
 })
 

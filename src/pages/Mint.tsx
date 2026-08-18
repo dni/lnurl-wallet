@@ -37,7 +37,9 @@ import {
   describeMintFee,
   mintAddressUrl,
   fetchMintAddress,
-  lightningAddressUsername
+  lightningAddressUsername,
+  probeBurnedNote,
+  AmbiguousMutationError
 } from '../lnurlcash'
 import {deviceMint, DeviceImportLeftBehindError} from '../deviceOrchestration'
 import {
@@ -539,7 +541,38 @@ const Mint: Component = () => {
           rotated.signature
         )
       } catch (err) {
-        rotationError = (err as Error).message
+        if (err instanceof AmbiguousMutationError) {
+          // the rotate request may have landed despite the failure - the
+          // fresh secret it carried is then the only copy of this note
+          const outcome = await probeBurnedNote(url)
+          if (outcome === 'gone') {
+            // the burn landed - adopt the fresh secret as the note
+            url = withNewK1(
+              declaredUrl,
+              err.newSecrets[0],
+              noteInfo.maxWithdrawable
+            )
+          } else if (outcome === 'unknown') {
+            // can't tell: the preimage note is stored below either way -
+            // track the possible rotated copy alongside it
+            await addBearer({
+              url: withNewK1(
+                declaredUrl,
+                err.newSecrets[0],
+                noteInfo.maxWithdrawable
+              ),
+              callback: noteInfo.callback,
+              amount: noteInfo.maxWithdrawable,
+              verified: false,
+              mintPubkey
+            })
+            rotationError = `${(err as Error).message} The rotation may still have gone through - the possible rotated copy is stored unverified alongside this one; refresh both to reconcile.`
+          } else {
+            rotationError = (err as Error).message
+          }
+        } else {
+          rotationError = (err as Error).message
+        }
       }
       await addBearer({
         url,

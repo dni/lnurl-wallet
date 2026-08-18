@@ -34,14 +34,19 @@ import {
   newActivityId
 } from './storage'
 import {serverOf} from './lnurlcash'
-import {lockTrustedMint} from './trustedMints'
+import type {TrustKeyResult} from './trustedMints'
+import {lockTrustedMint, grandfatherTrustedMint} from './trustedMints'
 
 // the one lockTrustedMint outcome a holder must hear about: the mint is
 // advertising a DIFFERENT signing key than the one pinned - the new key was
 // staged for review on the Mints page, not applied (see trustedMints.ts).
 // Everything else (first trust, re-lock, unchanged) is silent by design.
-const notifyIfRekeyPending = (server: string, mintPubkey: string): void => {
-  if (lockTrustedMint(server, mintPubkey) === 'rekey-pending') {
+const notifyIfRekeyPending = (
+  server: string,
+  mintPubkey: string,
+  trust: (server: string, key: string) => TrustKeyResult = lockTrustedMint
+): void => {
+  if (trust(server, mintPubkey) === 'rekey-pending') {
     notify(
       `${server} now advertises a different signing key than the one pinned - review it on the Mints page before trusting "signed" notes from it.`,
       NotifyKind.ERROR
@@ -154,10 +159,16 @@ export const WalletProvider = (props: {children: JSX.Element}) => {
     setActivity(await loadActivity(aesKey))
     // grandfather in every mint already backing a held bearer as trusted -
     // holding funds there already implied trusting it, long before this
-    // list existed to ask about it
+    // list existed to ask about it. Storage-sourced claims only, though:
+    // grandfathering never locks and marks new pins unconfirmed - both are
+    // (re-)earned by live responses during actual bearer operations
     for (const bearer of loaded) {
       if (bearer.mintPubkey) {
-        notifyIfRekeyPending(serverOf(bearer.url), bearer.mintPubkey)
+        notifyIfRekeyPending(
+          serverOf(bearer.url),
+          bearer.mintPubkey,
+          grandfatherTrustedMint
+        )
       }
     }
     setState('unlocked')

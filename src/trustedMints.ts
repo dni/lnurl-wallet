@@ -14,6 +14,14 @@ export type TrustedMint = {
   // holding funds there, not a standalone opinion, so it can't be revoked
   // by deleting it here (see removeTrustedMint)
   locked: boolean
+  // true when this pin came from a backup file or a stored bearer's cached
+  // key rather than a live response from the server itself (see
+  // mergeTrustedMints / grandfatherTrustedMint): excluded from offline
+  // signature verification until a live response from this server
+  // advertises the same key (any lockTrustedMint/addTrustedMint match
+  // clears it) - a crafted backup could otherwise plant a pin for a mint it
+  // controls and forge "signed" badges on worthless notes
+  unconfirmed?: boolean
   // a DIFFERENT signing key this mint has since advertised (via a note
   // refresh, a lookup, etc) - staged for explicit holder review, never
   // auto-applied. The pinned mintPubkey above stays authoritative until
@@ -119,7 +127,14 @@ export const isMintTrusted = (server: string): boolean =>
   trustedMints().some(m => m.server === server)
 
 export const getTrustedMintPubkey = (server: string): string | null =>
-  trustedMints().find(m => m.server === server)?.mintPubkey ?? null
+  trustedMints().find(m => m.server === server && !m.unconfirmed)?.mintPubkey ??
+  null
+
+// true when a server has a pin that came from a file/storage rather than a
+// live response (see TrustedMint.unconfirmed) - callers should treat a
+// bearer's own cached mintPubkey for such a server as equally uncorroborated
+export const isMintUnconfirmed = (server: string): boolean =>
+  trustedMints().some(m => m.server === server && m.unconfirmed)
 
 // this mint's self-reported node color, for tinting its notes' background
 // (see BearerCard) - purely cosmetic, absent whenever no mint-address
@@ -163,9 +178,13 @@ export const lockTrustedMint = (
   const existing = current.find(m => m.server === server)
   if (existing) {
     if (existing.mintPubkey === key) {
-      if (existing.locked) return 'unchanged'
+      if (existing.locked && !existing.unconfirmed) return 'unchanged'
+      // a match here is a live response from the server advertising this
+      // exact key - it corroborates an unconfirmed (file-sourced) pin
       persist(
-        current.map(m => (m.server === server ? {...m, locked: true} : m))
+        current.map(m =>
+          m.server === server ? {...m, locked: true, unconfirmed: undefined} : m
+        )
       )
       return 'unchanged'
     }
@@ -180,6 +199,45 @@ export const lockTrustedMint = (
   persist([
     ...current,
     {server, mintPubkey: key, addedAt: Date.now(), locked: true}
+  ])
+  return 'added'
+}
+
+// unlock-time grandfathering of the mints behind already-stored bearers
+// (WalletContext's activate) - the key claims come from local storage, not
+// a live response, so an unknown server is added unlocked AND unconfirmed
+// (excluded from signature verification until corroborated live, see
+// TrustedMint.unconfirmed), and an existing entry is never locked or
+// confirmed here. A differing claim still stages a rekey review. Live
+// bearer operations (addBearer/updateBearer) go through lockTrustedMint
+// instead, which is what corroborates and re-locks.
+export const grandfatherTrustedMint = (
+  server: string,
+  mintPubkey: string
+): TrustKeyResult => {
+  const key = mintPubkey.trim().toLowerCase()
+  if (!server || !PUBKEY_PATTERN.test(key)) return 'unchanged'
+  const current = trustedMints()
+  const existing = current.find(m => m.server === server)
+  if (existing) {
+    if (existing.mintPubkey === key) return 'unchanged'
+    if (existing.pendingMintPubkey === key) return 'rekey-pending'
+    persist(
+      current.map(m =>
+        m.server === server ? {...m, pendingMintPubkey: key} : m
+      )
+    )
+    return 'rekey-pending'
+  }
+  persist([
+    ...current,
+    {
+      server,
+      mintPubkey: key,
+      addedAt: Date.now(),
+      locked: false,
+      unconfirmed: true
+    }
   ])
   return 'added'
 }
@@ -212,8 +270,14 @@ export const addTrustedMint = (
   const existing = current.find(m => m.server === trimmedServer)
   if (existing) {
     if (existing.mintPubkey === key) {
+      // a match here is a live lookup corroborating the pin - it clears an
+      // unconfirmed (file-sourced) flag
       persist(
-        current.map(m => (m.server === trimmedServer ? {...m, ...nodeInfo} : m))
+        current.map(m =>
+          m.server === trimmedServer
+            ? {...m, ...nodeInfo, unconfirmed: undefined}
+            : m
+        )
       )
       return 'unchanged'
     }
@@ -252,7 +316,8 @@ export const confirmTrustedMintRekey = (server: string): void => {
         ? {
             ...m,
             mintPubkey: existing.pendingMintPubkey!,
-            pendingMintPubkey: undefined
+            pendingMintPubkey: undefined,
+            unconfirmed: undefined
           }
         : m
     )
@@ -301,11 +366,14 @@ export const removeTrustedMint = (server: string): void => {
 
 // merges a backup's trusted mints in by server - a server already known on
 // this device keeps its own current entry rather than being overwritten by
-// the backup's (possibly stale) copy. Two fields never come across from a
+// the backup's (possibly stale) copy. Three fields never come across from a
 // file: `locked` (a crafted backup could otherwise plant irremovable junk
-// entries - real locks re-establish themselves from held bearers on the
-// next unlock anyway) and `pendingMintPubkey` (a key rotation must be
-// re-detected from the mint's own live responses, never staged by a file).
+// entries - real locks re-establish themselves from held bearers on live
+// operations anyway) and `pendingMintPubkey` (a key rotation must be
+// re-detected from the mint's own live responses, never staged by a file) -
+// and every merged entry is marked `unconfirmed`, keeping it out of offline
+// signature verification until a live response from that server advertises
+// the same key (a crafted backup could otherwise forge "signed" badges)
 export const mergeTrustedMints = (incoming: TrustedMint[]): number => {
   const current = trustedMints()
   const knownServers = new Set(current.map(m => m.server))
@@ -326,6 +394,7 @@ export const mergeTrustedMints = (incoming: TrustedMint[]): number => {
       mintPubkey: mint.mintPubkey.toLowerCase(),
       addedAt: mint.addedAt,
       locked: false,
+      unconfirmed: true,
       nodeAlias:
         typeof mint.nodeAlias === 'string' ? mint.nodeAlias : undefined,
       nodeColor:
