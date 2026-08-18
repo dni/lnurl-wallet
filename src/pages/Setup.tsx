@@ -1,20 +1,23 @@
 import type {Component} from 'solid-js'
 import {Show, createSignal} from 'solid-js'
-import {useNavigate, useSearchParams} from '@solidjs/router'
+import {A, useNavigate, useSearchParams} from '@solidjs/router'
 import {IoRefreshSharp} from 'solid-icons/io'
 
 import {useWallet} from '../WalletContext'
 import {generateSeedPhrase, isValidSeedPhrase} from '../keys'
+import {applyBackup} from '../storage'
 import {notify, NotifyKind} from '../helpers'
 
-type Tab = 'create' | 'restore'
+type Tab = 'create' | 'restore' | 'backup'
 
 const Setup: Component = () => {
-  const {setup, state} = useWallet()
+  const {setup, state, refreshState} = useWallet()
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const [tab, setTab] = createSignal<Tab>(
-    searchParams.tab === 'restore' ? 'restore' : 'create'
+    searchParams.tab === 'restore' || searchParams.tab === 'backup'
+      ? searchParams.tab
+      : 'create'
   )
   const [seedPhrase, setSeedPhrase] = createSignal<string | null>(null)
   const [restorePhrase, setRestorePhrase] = createSignal('')
@@ -25,6 +28,11 @@ const Setup: Component = () => {
   const [setupPassword, setSetupPassword] = createSignal('')
   const [confirmPassword, setConfirmPassword] = createSignal('')
   const [busy, setBusy] = createSignal(false)
+  const [backupBusy, setBackupBusy] = createSignal(false)
+  // set when a backup file's own key was skipped because this device
+  // already has a wallet - see applyBackup's linkingKeySkipped
+  const [backupSkipped, setBackupSkipped] = createSignal(false)
+  let backupFileRef: HTMLInputElement | undefined
 
   const generate = () => {
     setSeedPhrase(generateSeedPhrase())
@@ -63,10 +71,53 @@ const Setup: Component = () => {
     await finishSetup(restorePhrase().trim().toLowerCase())
   }
 
+  // sets this device's wallet up straight from a backup file's own
+  // password-encrypted key (see storage.ts's applyBackup) - no seed phrase
+  // needed, as long as the same password is still known. Only installs the
+  // key onto a device with none yet; bearers from the file merge into
+  // storage regardless of whether the key was.
+  const restoreFromBackupFile = async (e: Event) => {
+    const input = e.currentTarget as HTMLInputElement
+    const file = input.files?.[0]
+    input.value = ''
+    if (!file) return
+    setBackupBusy(true)
+    setBackupSkipped(false)
+    try {
+      const data = JSON.parse(await file.text())
+      const result = applyBackup(data)
+      if (result.linkingKeyRestored) {
+        refreshState()
+        notify(
+          `Wallet restored from backup (${result.added} bearer(s) merged) - unlock it with the password it was encrypted with.`,
+          NotifyKind.SUCCESS
+        )
+        navigate('/wallet')
+        return
+      }
+      if (result.linkingKeySkipped) {
+        setBackupSkipped(true)
+        notify(
+          "This device already has a wallet, so the backup's own key was not installed.",
+          NotifyKind.ERROR
+        )
+        return
+      }
+      notify(
+        "This backup doesn't include a password-encrypted key, so it can't set up a wallet on its own - restore its seed phrase instead. Its bearers were still merged into storage and will appear once that seed is restored.",
+        NotifyKind.ERROR
+      )
+    } catch (err) {
+      notify((err as Error).message, NotifyKind.ERROR)
+    } finally {
+      setBackupBusy(false)
+    }
+  }
+
   return (
     <div id="setup" class="page">
       <h2>Set up your wallet</h2>
-      <Show when={state() !== 'none'}>
+      <Show when={state() !== 'none' && tab() !== 'backup'}>
         <p class="warning">
           A wallet already exists on this device - setting up a new one replaces
           its linking key. Stored bearer tokens encrypted with the old key will
@@ -87,42 +138,15 @@ const Setup: Component = () => {
         >
           Restore from seed
         </button>
+        <button
+          classList={{active: tab() === 'backup'}}
+          onClick={() => setTab('backup')}
+        >
+          Restore from backup
+        </button>
       </div>
       <figure class="setup-card">
-        <Show
-          when={tab() === 'create'}
-          fallback={
-            <>
-              <label>Your 12-word BIP39 seed phrase</label>
-              <textarea
-                rows="3"
-                placeholder="twelve words separated by spaces"
-                value={restorePhrase()}
-                onInput={e => setRestorePhrase(e.currentTarget.value)}
-              />
-              <EncryptChoice
-                encrypt={encrypt()}
-                setEncrypt={setEncrypt}
-                password={setupPassword()}
-                setPassword={setSetupPassword}
-                confirmPassword={confirmPassword()}
-                setConfirmPassword={setConfirmPassword}
-              />
-              <div class="btns">
-                <button
-                  disabled={busy() || !restorePhrase().trim() || !passwordOk()}
-                  onClick={restore}
-                >
-                  <Show when={busy()}>
-                    <IoRefreshSharp class="spin" />
-                    &nbsp;
-                  </Show>
-                  Restore wallet
-                </button>
-              </div>
-            </>
-          }
-        >
+        <Show when={tab() === 'create'}>
           <Show
             when={seedPhrase()}
             fallback={
@@ -172,6 +196,73 @@ const Setup: Component = () => {
               <button onClick={() => setSeedPhrase(null)}>Cancel</button>
             </div>
           </Show>
+        </Show>
+        <Show when={tab() === 'restore'}>
+          <label>Your 12-word BIP39 seed phrase</label>
+          <textarea
+            rows="3"
+            placeholder="twelve words separated by spaces"
+            value={restorePhrase()}
+            onInput={e => setRestorePhrase(e.currentTarget.value)}
+          />
+          <EncryptChoice
+            encrypt={encrypt()}
+            setEncrypt={setEncrypt}
+            password={setupPassword()}
+            setPassword={setSetupPassword}
+            confirmPassword={confirmPassword()}
+            setConfirmPassword={setConfirmPassword}
+          />
+          <div class="btns">
+            <button
+              disabled={busy() || !restorePhrase().trim() || !passwordOk()}
+              onClick={restore}
+            >
+              <Show when={busy()}>
+                <IoRefreshSharp class="spin" />
+                &nbsp;
+              </Show>
+              Restore wallet
+            </button>
+          </div>
+        </Show>
+        <Show when={tab() === 'backup'}>
+          <p>
+            Sets this device's wallet up straight from a downloaded backup
+            file's own password-encrypted key - no seed phrase needed, as long
+            as you still know the password it was encrypted with. Only works on
+            a device with no wallet on it yet; the file's bearer notes are
+            merged into storage either way and appear once the wallet they
+            belong to is unlocked.
+          </p>
+          <Show when={backupSkipped()}>
+            <p class="warning">
+              This device already has a wallet, so the backup's own key was{' '}
+              <strong>not</strong> installed. If that existing wallet isn't the
+              one this backup belongs to, forget it first (see{' '}
+              <A href="/backup">Backup &amp; restore</A>), then select this file
+              again.
+            </p>
+          </Show>
+          <input
+            ref={backupFileRef}
+            type="file"
+            accept="application/json"
+            style="display: none"
+            onChange={restoreFromBackupFile}
+          />
+          <div class="btns">
+            <button
+              disabled={backupBusy()}
+              onClick={() => backupFileRef?.click()}
+            >
+              <Show when={backupBusy()}>
+                <IoRefreshSharp class="spin" />
+                &nbsp;
+              </Show>
+              Select backup file
+            </button>
+          </div>
         </Show>
       </figure>
     </div>
