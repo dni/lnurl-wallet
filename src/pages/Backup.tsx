@@ -15,7 +15,7 @@ import {trustedMints} from '../trustedMints'
 import {notify, NotifyKind} from '../helpers'
 
 const Backup: Component = () => {
-  const {state, bearers, reloadBearers, refreshState, forgetWallet} =
+  const {state, bearers, reloadBearers, refreshState, forgetWallet, unlock} =
     useWallet()
   const navigate = useNavigate()
   let fileRef: HTMLInputElement | undefined
@@ -47,13 +47,21 @@ const Backup: Component = () => {
     if (!file) return
     setBusy(true)
     setKeySkipped(false)
+    setKeyRestored(false)
     try {
       const data = JSON.parse(await file.text())
       const result = applyBackup(data)
       if (state() === 'unlocked') await reloadBearers()
       if (result.linkingKeyRestored) {
-        setKeyRestored(true)
-        refreshState()
+        if (savedKeyIsEncrypted()) {
+          setKeyRestored(true)
+          refreshState()
+        } else {
+          // a plaintext-stored key has no password to ask for - activate
+          // it right away (buildBackup never exports one, but applyBackup
+          // accepts a well-formed one)
+          await unlock()
+        }
       }
       if (result.linkingKeySkipped) setKeySkipped(true)
       notify(
