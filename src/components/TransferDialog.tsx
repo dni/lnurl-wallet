@@ -27,6 +27,7 @@ import {
 import {
   deviceMeltRequest,
   deviceMint,
+  markDeviceNoteSpent,
   requireDeviceClient
 } from '../deviceOrchestration'
 import {notify, NotifyKind, msatToSats, copyToClipboard} from '../helpers'
@@ -239,6 +240,12 @@ const TransferDialog: Component<TransferDialogProps> = props => {
         })
         setClaimed(true)
         stopPolling()
+        // the source note's melt is what paid for this claim - retire its
+        // device copy at the same moment (queued for the next connect if
+        // the vault isn't attached right now)
+        if (props.sourceBearer.deviceId) {
+          await markDeviceNoteSpent(deviceClient(), props.sourceBearer.deviceId)
+        }
         logActivity(
           'transfer',
           `Transferred ${msatToSats(result.amountMsat)} sats from ${serverOf(props.sourceBearer.url)} to ${serverOf(result.url)}.`
@@ -275,6 +282,12 @@ const TransferDialog: Component<TransferDialogProps> = props => {
       })
       setClaimed(true)
       stopPolling()
+      // the source note's melt is what paid for this claim - retire its
+      // device copy at the same moment (queued for the next connect if the
+      // vault isn't attached right now)
+      if (props.sourceBearer.deviceId) {
+        await markDeviceNoteSpent(deviceClient(), props.sourceBearer.deviceId)
+      }
       logActivity(
         'transfer',
         `Transferred ${msatToSats(noteInfo.maxWithdrawable)} sats from ${serverOf(props.sourceBearer.url)} to ${serverOf(url)}.`

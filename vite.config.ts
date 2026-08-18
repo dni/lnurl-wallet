@@ -1,5 +1,6 @@
 import {readFileSync} from 'node:fs'
 import {fileURLToPath} from 'node:url'
+import type {Plugin} from 'vite'
 import {defineConfig} from 'vite'
 import solidPlugin from 'vite-plugin-solid'
 import {VitePWA} from 'vite-plugin-pwa'
@@ -12,8 +13,45 @@ const pkg = JSON.parse(
   )
 )
 
+// Content-Security-Policy, injected as a <meta> into production builds only.
+// GitHub Pages can't set response headers, so this meta is the only place a
+// policy can live - defense in depth: the app ships no inline scripts, no
+// third-party scripts and no DOM sinks, and this keeps it that way. Notes on
+// the shape:
+// - script-src 'self' works because the PWA registers from inside the
+//   bundled JS (virtual:pwa-register), never an inline <script>
+// - style-src keeps 'unsafe-inline' for SolidJS style={{}} attributes
+// - connect-src must stay open to arbitrary https origins - LNURL calls go
+//   to whatever mint a note or scan names; the http exceptions are the
+//   deliberate insecure-host support (lnurlcash.ts's INSECURE_HOSTS)
+// - no upgrade-insecure-requests: it would force those same intentional
+//   http://localhost mint calls onto https and break local regtest loops
+// - frame-ancestors is ignored inside a meta tag, so clickjacking defense
+//   is simply unavailable on this host - the app's own confirm steps are
+//   the mitigation
+// Dev is excluded entirely: the HMR websocket (ws://) and vite's dev client
+// would need exceptions that don't belong in the shipped policy.
+const CSP_CONTENT =
+  "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src https: wss: http://localhost:* http://127.0.0.1:* http://0.0.0.0:* http://*.onion http://*.onion:*; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'"
+
+const cspMetaPlugin = (): Plugin => ({
+  name: 'csp-meta',
+  apply: 'build',
+  transformIndexHtml: () => [
+    {
+      tag: 'meta',
+      attrs: {
+        'http-equiv': 'Content-Security-Policy',
+        content: CSP_CONTENT
+      },
+      injectTo: 'head-prepend'
+    }
+  ]
+})
+
 export default defineConfig({
   plugins: [
+    cspMetaPlugin(),
     solidPlugin(),
     VitePWA({
       // 'prompt', not 'autoUpdate': this is a wallet, so a new build must

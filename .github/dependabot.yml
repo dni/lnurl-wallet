@@ -1,0 +1,13 @@
+# Keep the SHA-pinned actions in .github/workflows/ and the npm
+# dependencies current - Dependabot PRs update the pin and its `# vX`
+# comment together
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly

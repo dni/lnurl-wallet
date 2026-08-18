@@ -378,8 +378,13 @@ const lnurlFetch = async (url: string | URL): Promise<any> => {
   }
   let res: Response
   try {
-    res = await fetch(url.toString())
-  } catch {
+    // bounded wait: without a timeout a hung service would freeze whatever
+    // flow called this (lookup, refresh, melt) forever
+    res = await fetch(url.toString(), {signal: AbortSignal.timeout(30_000)})
+  } catch (err) {
+    if ((err as Error).name === 'TimeoutError') {
+      throw new Error('The service took too long to respond - try again later.')
+    }
     throw new Error(
       'Failed to reach the service - it may be offline or not allow cross-origin requests.'
     )
@@ -826,6 +831,11 @@ export const parseMintFee = (metadata: string): MintFee | null => {
     const baseFeeMsat = Number(match[1])
     const feePpm = Number(match[2])
     if (!Number.isFinite(baseFeeMsat) || !Number.isFinite(feePpm)) continue
+    // a >= 100% fee can never net anything - and grossUpForMintFee's walk
+    // would never terminate on one (applyMintFee floors at 0 while the
+    // target stays positive), so a hostile mint could freeze the page just
+    // by advertising one. Treat it as no valid fee entry at all.
+    if (feePpm >= 1_000_000) continue
     // an explicit "Mint fees: 0,0" has the exact same effect as omitting
     // the entry entirely - treat it identically, so callers don't need to
     // special-case a fee that's technically present but withholds nothing
@@ -856,8 +866,17 @@ export const applyMintFee = (grossMsat: number, fee: MintFee): number =>
 // per-msat steps of 0 or 1, so that gross always exists and is unique)
 export const grossUpForMintFee = (netMsat: number, fee: MintFee): number => {
   let gross = Math.round((netMsat + fee.baseFeeMsat) / (1 - fee.feePpm / 1e6))
-  while (applyMintFee(gross, fee) < netMsat) gross++
-  while (gross > 0 && applyMintFee(gross - 1, fee) >= netMsat) gross--
+  // the guard is a defensive bound only - parseMintFee already rejects >=
+  // 100% fees (the case that can't terminate, with applyMintFee pinned at
+  // 0); with a sane fee the walk lands within a handful of msat either way
+  let guard = 0
+  while (applyMintFee(gross, fee) < netMsat && guard++ < 10_000) gross++
+  while (
+    gross > 0 &&
+    applyMintFee(gross - 1, fee) >= netMsat &&
+    guard++ < 20_000
+  )
+    gross--
   return gross
 }
 

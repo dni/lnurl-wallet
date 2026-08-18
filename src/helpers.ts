@@ -25,9 +25,12 @@ export const notify = (
   }
 }
 
-export const copyToClipboard = (text: string): void => {
+// awaited inside the try so a rejected writeText (permission denied,
+// document not focused) actually lands in the catch - fire-and-forget made
+// the failure toast unreachable and the rejection unhandled
+export const copyToClipboard = async (text: string): Promise<void> => {
   try {
-    navigator.clipboard.writeText(text)
+    await navigator.clipboard.writeText(text)
     notify('Copied to clipboard!', NotifyKind.SUCCESS)
   } catch (err) {
     notify('Failed to copy to clipboard.', NotifyKind.ERROR)

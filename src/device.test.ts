@@ -5,6 +5,7 @@ import {
   encodeBleFrames,
   BleFrameReassembler,
   DeviceClient,
+  SerialTransport,
   type DeviceTransport
 } from './device'
 
@@ -89,6 +90,18 @@ class FakeTransport implements DeviceTransport {
 }
 
 describe('DeviceClient', () => {
+  // a list_notes entry valid enough to survive device.ts's response validation
+  const wireNote = (id: string) => ({
+    id,
+    state: 'confirmed',
+    amount_msat: 1000,
+    label: '',
+    host: 'mock-mint.test',
+    parent_ids: [],
+    created_at: 0,
+    updated_at: 0
+  })
+
   it('resolves a command with the device response', async () => {
     const transport = new FakeTransport()
     const client = new DeviceClient(transport)
@@ -142,13 +155,13 @@ describe('DeviceClient', () => {
       ok: true,
       total: 40,
       offset: 10,
-      notes: [{id: 'a'}],
+      notes: [wireNote('aa'.repeat(32))],
       next_offset: 15
     })
     await expect(promise).resolves.toEqual({
       total: 40,
       offset: 10,
-      notes: [{id: 'a'}],
+      notes: [wireNote('aa'.repeat(32))],
       nextOffset: 15
     })
   })
@@ -165,7 +178,7 @@ describe('DeviceClient', () => {
       ok: true,
       total: 3,
       offset: 0,
-      notes: [{id: 'a'}, {id: 'b'}],
+      notes: [wireNote('aa'.repeat(32)), wireNote('bb'.repeat(32))],
       next_offset: 2
     })
 
@@ -175,9 +188,18 @@ describe('DeviceClient', () => {
         {cmd: 'list_notes', offset: 2}
       ])
     )
-    transport.respond({ok: true, total: 3, offset: 2, notes: [{id: 'c'}]})
+    transport.respond({
+      ok: true,
+      total: 3,
+      offset: 2,
+      notes: [wireNote('cc'.repeat(32))]
+    })
 
-    await expect(promise).resolves.toEqual([{id: 'a'}, {id: 'b'}, {id: 'c'}])
+    await expect(promise).resolves.toEqual([
+      wireNote('aa'.repeat(32)),
+      wireNote('bb'.repeat(32)),
+      wireNote('cc'.repeat(32))
+    ])
   })
 
   it('rejects with a typed DeviceError on a wire error response', async () => {
@@ -268,8 +290,54 @@ describe('DeviceClient', () => {
       // export-specific one is longer than - the on-device button-press
       // gate (30s) needs the client to outlast it, not race it
       await vi.advanceTimersByTimeAsync(10_000)
-      transport.respond({ok: true, k1: 'deadbeef'})
-      await expect(promise).resolves.toBe('deadbeef')
+      const k1 = 'ab'.repeat(32)
+      transport.respond({ok: true, k1})
+      await expect(promise).resolves.toBe(k1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not start the next queued command until the timed-out session has finished disconnecting', async () => {
+    vi.useFakeTimers()
+    try {
+      const transport = new FakeTransport()
+      // a disconnect that only completes once the test releases it - the
+      // worst case for the misattribution race: the old session is still
+      // being torn down while the queue wants to advance
+      let releaseDisconnect!: () => void
+      const disconnectGate = new Promise<void>(resolve => {
+        releaseDisconnect = resolve
+      })
+      const realDisconnect = transport.disconnect.bind(transport)
+      transport.disconnect = async () => {
+        await disconnectGate
+        await realDisconnect()
+      }
+      const client = new DeviceClient(transport)
+      const first = client.getInfo()
+      const second = client.listNotes()
+      const firstAssertion = expect(first).rejects.toMatchObject({
+        code: 'timeout'
+      })
+
+      await vi.advanceTimersByTimeAsync(10_000)
+      // the timeout fired and teardown started, but until disconnect() has
+      // settled the queue must NOT advance - a late response from the old
+      // session could otherwise be misattributed as this next command's
+      expect(transport.sent.length).toBe(1)
+
+      releaseDisconnect()
+      await firstAssertion
+      await vi.advanceTimersByTimeAsync(0)
+      await vi.waitFor(() => expect(transport.sent.length).toBe(2))
+      transport.respond({ok: true, notes: []})
+      await expect(second).resolves.toEqual({
+        total: undefined,
+        offset: undefined,
+        notes: [],
+        nextOffset: null
+      })
     } finally {
       vi.useRealTimers()
     }
@@ -301,4 +369,117 @@ describe('DeviceClient', () => {
       }
     }
   )
+})
+
+describe('DeviceClient response validation', () => {
+  it('clamps an unknown wire error code to a generic bad_request', async () => {
+    const transport = new FakeTransport()
+    const client = new DeviceClient(transport)
+    const promise = client.getInfo()
+    await vi.waitFor(() => expect(transport.sent.length).toBe(1))
+    transport.respond({ok: false, error: 'definitely_not_a_real_code'})
+    await expect(promise).rejects.toMatchObject({
+      name: 'DeviceError',
+      code: 'bad_request'
+    })
+  })
+
+  it('fails a command whose response carries a malformed id or hash', async () => {
+    const transport = new FakeTransport()
+    const client = new DeviceClient(transport)
+    const promise = client.newSecret()
+    await vi.waitFor(() => expect(transport.sent.length).toBe(1))
+    transport.respond({ok: true, id: 'not-hex-at-all', h: 'ab'.repeat(32)})
+    await expect(promise).rejects.toMatchObject({
+      code: 'bad_request',
+      message: expect.stringContaining('id')
+    })
+  })
+
+  it('fails export_secret on a k1 that is not 64 hex characters', async () => {
+    const transport = new FakeTransport()
+    const client = new DeviceClient(transport)
+    const promise = client.exportSecret('cd'.repeat(32))
+    await vi.waitFor(() => expect(transport.sent.length).toBe(1))
+    transport.respond({ok: true, k1: 'deadbeef'})
+    await expect(promise).rejects.toMatchObject({
+      code: 'bad_request',
+      message: expect.stringContaining('k1')
+    })
+  })
+
+  it('drops malformed list_notes entries without failing the whole list', async () => {
+    const good = {
+      id: 'cd'.repeat(32),
+      state: 'confirmed',
+      amount_msat: 1000,
+      label: '',
+      host: 'mock-mint.test',
+      parent_ids: [],
+      created_at: 0,
+      updated_at: 0
+    }
+    const alsoGood = {...good, id: 'ef'.repeat(32), state: 'pending'}
+    const transport = new FakeTransport()
+    const client = new DeviceClient(transport)
+    const promise = client.listNotes()
+    await vi.waitFor(() => expect(transport.sent.length).toBe(1))
+    // a null entry (crashed Vault.tsx before), a wrong-typed id, and a
+    // missing field - all dropped, the conforming entries kept
+    transport.respond({
+      ok: true,
+      notes: [good, null, {...good, id: 'nope'}, {state: 'pending'}, alsoGood]
+    })
+    await expect(promise).resolves.toEqual({
+      total: undefined,
+      offset: undefined,
+      notes: [good, alsoGood],
+      nextOffset: null
+    })
+  })
+})
+
+describe('SerialTransport receive buffer cap', () => {
+  it('tears the session down when the device floods the buffer without a newline', async () => {
+    // a fake SerialPort just real enough for requestAndConnect: a readable
+    // stream the test pushes bytes into, a writable that records sends
+    let controller!: ReadableStreamDefaultController<Uint8Array>
+    const writes: Uint8Array[] = []
+    const fakePort = {
+      readable: new ReadableStream<Uint8Array>({
+        start: c => {
+          controller = c
+        }
+      }),
+      writable: {
+        getWriter: () => ({
+          write: async (chunk: Uint8Array) => {
+            writes.push(chunk)
+          },
+          releaseLock: () => {}
+        })
+      },
+      open: async () => {},
+      close: async () => {}
+    }
+    vi.stubGlobal('navigator', {
+      serial: {requestPort: async () => fakePort}
+    })
+    try {
+      const transport = await SerialTransport.requestAndConnect()
+      const client = new DeviceClient(transport)
+      const promise = client.getInfo()
+      await vi.waitFor(() => expect(writes.length).toBe(1))
+      const assertion = expect(promise).rejects.toMatchObject({
+        code: 'disconnected',
+        message: expect.stringContaining('newline')
+      })
+      // one chunk over the 1 MB cap with no '\n' anywhere - a well-behaved
+      // response is a single small JSON line, so this can only be garbage
+      controller.enqueue(new Uint8Array(1_048_576 + 1))
+      await assertion
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
 })

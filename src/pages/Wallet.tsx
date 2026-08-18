@@ -138,6 +138,9 @@ const Wallet: Component = () => {
                 <input
                   type="password"
                   placeholder="Password"
+                  autocomplete="current-password"
+                  autocapitalize="off"
+                  spellcheck={false}
                   value={password()}
                   onInput={e => setPassword(e.currentTarget.value)}
                 />

@@ -1,8 +1,8 @@
 import {beforeEach, describe, expect, it, vi} from 'vitest'
 
 // storage.ts imports trustedMints.ts, whose module-level signal reads
-// localStorage at import time - so localStorage is stubbed with an
-// in-memory stand-in, with a fresh module graph per test
+// localStorage at import time - same in-memory stand-in pattern as
+// trustedMints.test.ts, with a fresh module graph per test
 const store = new Map<string, string>()
 vi.stubGlobal('localStorage', {
   getItem: (key: string) => store.get(key) ?? null,
@@ -123,8 +123,7 @@ describe('applyBackup linking key handling', () => {
       'lnurlwallet_linking_key'
     ]) {
       const result = storage.applyBackup(validBackup({linkingKey}))
-      // reported like "no key in this backup" - never as skipped, which is
-      // reserved for a well-formed key deliberately not installed
+      // reported like "no key in this backup", never as skipped
       expect(result.linkingKeyRestored).toBe(false)
       expect(result.linkingKeySkipped).toBe(false)
       expect(keys.savedKeyExists()).toBe(false)

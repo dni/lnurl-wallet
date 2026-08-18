@@ -19,6 +19,7 @@ import {
 } from '../lnurlcash'
 import {receiveNote, secureReceivedNote} from '../receive'
 import {deviceReceive} from '../deviceOrchestration'
+import {handoffMeltInvoice} from '../meltHandoff'
 import {notify, NotifyKind, msatToSats, pasteFromClipboard} from '../helpers'
 import {offlineMode} from '../offlineMode'
 import ScanToggle from './ScanToggle'
@@ -44,8 +45,12 @@ const ReceiveDialog: Component<ReceiveDialogProps> = props => {
   )
 
   // shared by both the scanner and the paste field once they've settled on
-  // a valid bearer note
+  // a valid bearer note. Re-entrancy-guarded: Enter-key and confirm-click
+  // landing together (or a scanner double-fire) must not run two receives
+  // for the same k1 - both would pass receiveNote's duplicate check before
+  // either addBearer landed, leaving a dead duplicate behind
   const receiveIntoWallet = async (noteValue: string) => {
+    if (busy()) return
     setBusy(true)
     try {
       const received = await receiveNote(noteValue, bearers())
@@ -119,10 +124,14 @@ const ReceiveDialog: Component<ReceiveDialogProps> = props => {
   }
 
   // this wallet has no Lightning node of its own - paying an invoice is its
-  // own dialog on the Melt page, reachable from the main nav
+  // own dialog on the Melt page, reachable from the main nav. The invoice
+  // travels via an in-memory handoff (meltHandoff.ts), not a URL param -
+  // with the hash router a ?pr= would land in location.hash, hence in
+  // browser history and bookmarks
   const goToMelt = (pr: string) => {
     props.onClose()
-    navigate(`/melt?pr=${encodeURIComponent(pr.trim())}`)
+    handoffMeltInvoice(pr)
+    navigate('/melt')
   }
 
   // scanning stays bearer-notes-only (a camera pointed at someone else's

@@ -32,7 +32,8 @@ import {
   deviceRefresh,
   migrateNoteToDevice,
   deviceSplit,
-  deviceSettle
+  deviceSettle,
+  markDeviceNoteSpent
 } from '../deviceOrchestration'
 import {
   msatToSats,
@@ -301,7 +302,24 @@ const BearerCard: Component<BearerCardProps> = props => {
             msat,
             currentAmount
           )
-          removeBearer(remainderId)
+          // past this point the input IS burned server-side, so both
+          // outputs are tracked BEFORE the remainder record is removed -
+          // otherwise a settle failure here would strand the change note
+          // (CONFIRMED on the device) with no local record. A failed
+          // settle still tracks a mirror of the raw output (unverified,
+          // at its expected pre-fee amount) and stops the chain; the next
+          // device refresh repairs it
+          let settledChange = parts.change
+          let changeVerified = false
+          let settleError: Error | null = null
+          try {
+            settledChange = await deviceSettle(client, parts.change)
+            changeVerified = true
+          } catch (err) {
+            settleError = new Error(
+              `Settling the change note didn't complete (${(err as Error).message}) - it's kept as an unverified note; refresh it with the vault connected to repair.`
+            )
+          }
           await addBearer({
             url: parts.target.url,
             callback: parts.target.callback,
@@ -310,22 +328,23 @@ const BearerCard: Component<BearerCardProps> = props => {
             mintPubkey: props.bearer.mintPubkey,
             deviceId: parts.target.deviceId
           })
-          const settledChange = await deviceSettle(client, parts.change)
+          const remainder = await addBearer({
+            url: settledChange.url,
+            callback: settledChange.callback,
+            amount: settledChange.amountMsat,
+            verified: changeVerified,
+            mintPubkey: props.bearer.mintPubkey,
+            deviceId: settledChange.deviceId
+          })
+          removeBearer(remainderId)
+          remainderId = remainder.id
+          if (settleError) throw settleError
           perSplitFeeMsat = expectedChange - settledChange.amountMsat
           totalFeeMsat += perSplitFeeMsat
           currentAmount = settledChange.amountMsat
           currentUrl = settledChange.url
           currentCallback = settledChange.callback
           currentDeviceId = settledChange.deviceId
-          const remainder = await addBearer({
-            url: settledChange.url,
-            callback: settledChange.callback,
-            amount: settledChange.amountMsat,
-            verified: true,
-            mintPubkey: props.bearer.mintPubkey,
-            deviceId: settledChange.deviceId
-          })
-          remainderId = remainder.id
           continue
         }
 
@@ -421,9 +440,15 @@ const BearerCard: Component<BearerCardProps> = props => {
   }
 
   // a local-only lock (see storage.ts's Bearer.spent) - no network call,
-  // just stops this wallet from acting on a note it considers given away
-  const markSpent = () => {
+  // just stops this wallet from acting on a note it considers given away.
+  // A device-backed note's on-device copy is retired alongside (queued for
+  // the next connect if the vault isn't attached right now), so the vault
+  // doesn't keep listing as spendable a note this wallet considers gone
+  const markSpent = async () => {
     updateBearer(props.bearer.id, {spent: true})
+    if (props.bearer.deviceId) {
+      await markDeviceNoteSpent(deviceClient(), props.bearer.deviceId)
+    }
     logActivity(
       'spent',
       `Marked ${msatToSats(props.bearer.amount)} sats from ${serverOf(props.bearer.url)} as spent.`

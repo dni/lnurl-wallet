@@ -39,7 +39,7 @@ import {
   fetchMintAddress,
   lightningAddressUsername
 } from '../lnurlcash'
-import {deviceMint} from '../deviceOrchestration'
+import {deviceMint, DeviceImportLeftBehindError} from '../deviceOrchestration'
 import {
   notify,
   NotifyKind,
@@ -464,33 +464,60 @@ const Mint: Component = () => {
       // if a vault is connected, this note's secret is generated and held
       // there instead of in this browser - import the preimage, then
       // immediately rotate it (deviceMint), same reasoning as the
-      // browser-only rotate below
+      // browser-only rotate below. A rotate that fails AFTER the import
+      // already landed leaves the note CONFIRMED on the device (the failed
+      // mint call burned nothing) - that case still tracks it, as an
+      // unverified mirror, rather than stranding it (see the catch below)
       const client = deviceClient()
       if (client) {
-        const result = await deviceMint(
-          client,
-          info.withdrawLink,
-          noteInfo.callback,
-          serverOf(noteInfo.callback),
-          preimageValue,
-          noteInfo.maxWithdrawable
-        )
-        await addBearer({
-          url: result.url,
-          callback: result.callback,
-          amount: result.amountMsat,
-          verified: true,
-          mintPubkey,
-          deviceId: result.deviceId
-        })
-        logActivity(
-          'mint',
-          `Minted ${msatToSats(result.amountMsat)} sats from ${serverOf(result.url)} (on device).`
-        )
-        notify(
-          `Minted a bearer note of ${msatToSats(result.amountMsat)} sats.`,
-          NotifyKind.SUCCESS
-        )
+        try {
+          const result = await deviceMint(
+            client,
+            info.withdrawLink,
+            noteInfo.callback,
+            serverOf(noteInfo.callback),
+            preimageValue,
+            noteInfo.maxWithdrawable
+          )
+          await addBearer({
+            url: result.url,
+            callback: result.callback,
+            amount: result.amountMsat,
+            verified: true,
+            mintPubkey,
+            deviceId: result.deviceId
+          })
+          logActivity(
+            'mint',
+            `Minted ${msatToSats(result.amountMsat)} sats from ${serverOf(result.url)} (on device).`
+          )
+          notify(
+            `Minted a bearer note of ${msatToSats(result.amountMsat)} sats.`,
+            NotifyKind.SUCCESS
+          )
+        } catch (err) {
+          if (!(err instanceof DeviceImportLeftBehindError)) throw err
+          // the imported preimage note is still whole on the device - keep
+          // tracking it locally (k1-less, unverified, at the service's own
+          // reported amount); the next device refresh rotates it properly
+          // under device custody and repairs the record
+          await addBearer({
+            url: err.imported.url,
+            callback: err.imported.callback,
+            amount: err.imported.amountMsat,
+            verified: false,
+            mintPubkey,
+            deviceId: err.imported.deviceId
+          })
+          logActivity(
+            'mint',
+            `Minted ${msatToSats(err.imported.amountMsat)} sats from ${serverOf(err.imported.url)} (on device), but rotating it under device custody failed (${err.message}) - tracked unverified.`
+          )
+          notify(
+            `Minted ${msatToSats(err.imported.amountMsat)} sats, but moving it onto the vault didn't complete (${err.message}) - the note is tracked unverified; refresh it with the vault connected to repair.`,
+            NotifyKind.ERROR
+          )
+        }
         navigate('/wallet')
         return
       }

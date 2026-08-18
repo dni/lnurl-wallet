@@ -14,6 +14,12 @@ import {notify, NotifyKind} from '../helpers'
 
 type Tab = 'create' | 'restore' | 'backup'
 
+// the linking key's ciphertext sits in localStorage AND travels inside
+// every backup file by design, so this password is the only thing between
+// an offline brute-force and every note the wallet holds - a one-character
+// password is no password at all
+const MIN_PASSWORD_LENGTH = 8
+
 const Setup: Component = () => {
   const {setup, state, refreshState, unlock} = useWallet()
   const navigate = useNavigate()
@@ -44,11 +50,16 @@ const Setup: Component = () => {
   }
 
   const passwordOk = () =>
-    !encrypt() || (!!setupPassword() && setupPassword() === confirmPassword())
+    !encrypt() ||
+    (setupPassword().length >= MIN_PASSWORD_LENGTH &&
+      setupPassword() === confirmPassword())
 
   const finishSetup = async (phrase: string) => {
-    if (encrypt() && !setupPassword()) {
-      notify('Enter a password to encrypt your linking key.', NotifyKind.ERROR)
+    if (encrypt() && setupPassword().length < MIN_PASSWORD_LENGTH) {
+      notify(
+        `Password must be at least ${MIN_PASSWORD_LENGTH} characters.`,
+        NotifyKind.ERROR
+      )
       return
     }
     if (encrypt() && setupPassword() !== confirmPassword()) {
@@ -217,6 +228,11 @@ const Setup: Component = () => {
           <textarea
             rows="3"
             placeholder="twelve words separated by spaces"
+            autocomplete="off"
+            autocapitalize="off"
+            spellcheck={false}
+            data-1p-ignore
+            data-lpignore="true"
             value={restorePhrase()}
             onInput={e => setRestorePhrase(e.currentTarget.value)}
           />
@@ -313,15 +329,32 @@ const EncryptChoice: Component<{
       <input
         type="password"
         placeholder="Password to encrypt the linking key"
+        autocomplete="new-password"
+        autocapitalize="off"
+        spellcheck={false}
         value={props.password}
         onInput={e => props.setPassword(e.currentTarget.value)}
       />
       <input
         type="password"
         placeholder="Confirm password"
+        autocomplete="new-password"
+        autocapitalize="off"
+        spellcheck={false}
         value={props.confirmPassword}
         onInput={e => props.setConfirmPassword(e.currentTarget.value)}
       />
+      <Show
+        when={
+          props.password.length > 0 &&
+          props.password.length < MIN_PASSWORD_LENGTH
+        }
+      >
+        <p class="warning">
+          At least {MIN_PASSWORD_LENGTH} characters - this password is the only
+          thing standing between an offline brute-force and your notes.
+        </p>
+      </Show>
       <Show
         when={props.confirmPassword && props.password !== props.confirmPassword}
       >
