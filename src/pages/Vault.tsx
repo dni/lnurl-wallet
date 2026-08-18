@@ -43,6 +43,7 @@ const Vault: Component = () => {
     bleSupported,
     connectSerial,
     connectBle,
+    connectHeartwood,
     disconnect,
     refresh,
     rename,
@@ -104,6 +105,14 @@ const Vault: Component = () => {
                     onClick={() => withBusy(connectSerial)}
                   >
                     Connect via USB
+                  </button>
+                </Show>
+                <Show when={serialSupported}>
+                  <button
+                    disabled={connectionState() === 'connecting'}
+                    onClick={() => withBusy(connectHeartwood)}
+                  >
+                    Connect a Heartwood signer
                   </button>
                 </Show>
                 <Show when={bleSupported}>

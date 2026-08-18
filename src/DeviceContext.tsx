@@ -6,8 +6,10 @@ import {
   SerialTransport,
   BleTransport,
   type DeviceInfo,
-  type DeviceNote
+  type DeviceNote,
+  type DeviceTransport
 } from './device'
+import {HeartwoodTransport} from './heartwoodTransport'
 import {notify, NotifyKind} from './helpers'
 import {drainPendingDeviceOps} from './deviceQueue'
 
@@ -21,6 +23,9 @@ export type DeviceContextType = {
   bleSupported: boolean
   connectSerial: () => Promise<void>
   connectBle: () => Promise<void>
+  // a Heartwood signer's note locker - same command set over its own
+  // binary-framed WebSerial (see heartwoodTransport.ts)
+  connectHeartwood: () => Promise<void>
   disconnect: () => Promise<void>
   refresh: () => Promise<void>
   rename: (id: string, label: string) => Promise<void>
@@ -74,7 +79,7 @@ export const DeviceProvider = (props: {children: JSX.Element}) => {
   // press on the device itself, and pending-op recovery (deviceQueue.ts)
   // only ever pushes confirm/mark_spent at note ids this wallet staged.
   const connectWith = async (
-    requestAndConnect: () => Promise<SerialTransport | BleTransport>
+    requestAndConnect: () => Promise<DeviceTransport>
   ) => {
     if (connectionState() !== 'disconnected') return
     setConnectionState('connecting')
@@ -111,6 +116,8 @@ export const DeviceProvider = (props: {children: JSX.Element}) => {
   const connectSerial = () =>
     connectWith(() => SerialTransport.requestAndConnect())
   const connectBle = () => connectWith(() => BleTransport.requestAndConnect())
+  const connectHeartwood = () =>
+    connectWith(() => HeartwoodTransport.requestAndConnect())
 
   const disconnect = async () => {
     const current = client()
@@ -142,6 +149,7 @@ export const DeviceProvider = (props: {children: JSX.Element}) => {
         bleSupported: BleTransport.isSupported(),
         connectSerial,
         connectBle,
+        connectHeartwood,
         disconnect,
         refresh,
         rename,
