@@ -5,7 +5,8 @@ import {
   getSavedLinkingKeyStored,
   savedKeyExists,
   savedKeyIsEncrypted,
-  restoreLinkingKeyStored
+  restoreLinkingKeyStored,
+  isValidStoredSecret
 } from './keys'
 import type {TrustedMint} from './trustedMints'
 import {trustedMints, mergeTrustedMints} from './trustedMints'
@@ -295,7 +296,16 @@ export const applyBackup = (data: unknown): RestoreResult => {
 
   let linkingKeyRestored = false
   let linkingKeySkipped = false
-  if (backup.linkingKey) {
+  // the key record is shape-validated before anything is installed: a
+  // crafted backup could otherwise plant an arbitrary linking key on a
+  // fresh device (e.g. one the file's author knows), turning every later
+  // backup the victim makes into readable plaintext for them - and a
+  // malformed one would wedge the device in 'locked' with a key that can
+  // never unlock. An invalid record is treated like "no key in this
+  // backup": the caller's seed-phrase guidance is the right recovery for
+  // both. (The RestoreResult comment above stays accurate: linkingKey-
+  // Skipped is only ever set for a well-formed key.)
+  if (backup.linkingKey && isValidStoredSecret(backup.linkingKey)) {
     if (savedKeyExists()) {
       linkingKeySkipped = true
     } else {
