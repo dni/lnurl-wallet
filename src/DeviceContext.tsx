@@ -12,6 +12,14 @@ import {
 import {HeartwoodTransport} from './heartwoodTransport'
 import {notify, NotifyKind} from './helpers'
 import {drainPendingDeviceOps} from './deviceQueue'
+import {
+  identityChallenge,
+  judgeIdentity,
+  identityWarning,
+  pinIdentity,
+  readPinnedIdentity,
+  type PinVerdict
+} from './devicePinning'
 
 export type DeviceConnectionState = 'disconnected' | 'connecting' | 'connected'
 
@@ -55,6 +63,13 @@ export type DeviceContextType = {
   // true while the on-load silent reconnect is still running, so the pairing
   // UI can hold off offering buttons the owner is about to not need
   reconnecting: Accessor<boolean>
+  // trust-on-first-use verdict for the connected vault (devicePinning.ts).
+  // null before a connection, or on firmware with no identity
+  identity: Accessor<PinVerdict | null>
+  // accept a vault this wallet has not seen before as the one to trust from
+  // now on. The owner's call, not the wallet's: a wipe changes the key on
+  // purpose, and only they know whether it should have
+  trustCurrentIdentity: () => void
   refresh: () => Promise<void>
   rename: (id: string, label: string) => Promise<void>
   deleteNote: (id: string) => Promise<void>
@@ -72,12 +87,46 @@ export const DeviceProvider = (props: {children: JSX.Element}) => {
   const [notes, setNotes] = createSignal<DeviceNote[]>([])
   const [client, setClient] = createSignal<DeviceClient | null>(null)
   const [reconnecting, setReconnecting] = createSignal(false)
+  const [identity, setIdentity] = createSignal<PinVerdict | null>(null)
 
   const teardown = () => {
     setClient(null)
     setConnectionState('disconnected')
     setInfo(null)
     setNotes([])
+    setIdentity(null)
+  }
+
+  // Ask the vault to prove it is the one this wallet paired with before
+  // (lnurl-vault issue #69). Never throws: firmware without an identity is
+  // older firmware, not a fault, and must not break a working connection.
+  //
+  // A 'changed' or 'invalid' verdict does NOT disconnect on its own. A wipe
+  // changes the key deliberately, so only the owner knows whether a different
+  // vault is the wrong vault - the wallet's job is to say so loudly and let
+  // them decide (see trustCurrentIdentity, and pages/Vault.tsx).
+  const checkIdentity = async (current: DeviceClient) => {
+    const nonce = identityChallenge()
+    let answer = null
+    try {
+      answer = await current.identify(nonce)
+    } catch {
+      answer = null
+    }
+    const verdict = judgeIdentity(answer, nonce, readPinnedIdentity())
+    setIdentity(verdict)
+    // First sighting pins silently - there is nothing to compare against, and
+    // asking someone to approve a key they have never seen teaches nothing.
+    if (verdict.kind === 'new') pinIdentity(verdict.pubkey)
+    const warning = identityWarning(verdict)
+    if (warning) notify(warning, NotifyKind.ERROR)
+  }
+
+  const trustCurrentIdentity = () => {
+    const verdict = identity()
+    if (verdict?.kind !== 'changed') return
+    pinIdentity(verdict.pubkey)
+    setIdentity({kind: 'known', pubkey: verdict.pubkey})
   }
 
   const refresh = async () => {
@@ -94,19 +143,16 @@ export const DeviceProvider = (props: {children: JSX.Element}) => {
   // shared by connectSerial/connectBle - only the transport's own
   // requestAndConnect() differs between them
   //
-  // NOTE on device identity: the vault protocol (docs/PROTOCOL.md in
-  // ../../lnurl-vault) exposes NO stable per-device identity to pin to.
-  // get_info reports fw_version and board - self-reported software/
-  // hardware CLASS identifiers every unit of a build shares - plus
-  // volatile diagnostics (boot_count, free_heap), and no other command
-  // carries a device key or serial either. Trust-on-first-use pinning is
-  // therefore deliberately NOT implemented here: a physically swapped (or
-  // hostile) vault answering the same protocol is indistinguishable from
-  // the previously paired one, and no pseudo-identity derived from
-  // fw_version/board would change that. The mitigations that do exist
-  // live elsewhere: every plaintext export is gated by a physical button
-  // press on the device itself, and pending-op recovery (deviceQueue.ts)
-  // only ever pushes confirm/mark_spent at note ids this wallet staged.
+  // Device identity: the vault now carries a per-device key and answers a
+  // challenge over it (`identify`), so trust-on-first-use IS implemented -
+  // see checkIdentity above and devicePinning.ts. It replaces the note that
+  // used to sit here explaining why it could not be.
+  //
+  // It proves the thing answering holds the same key as last time, and
+  // nothing about who is holding it. The other mitigations still carry the
+  // weight they always did: every plaintext export needs a physical press on
+  // the device, and pending-op recovery (deviceQueue.ts) only ever pushes
+  // confirm/mark_spent at note ids this wallet staged.
   const connectWith = async (
     requestAndConnect: () => Promise<DeviceTransport>,
     kind?: DeviceTransportKind
@@ -120,6 +166,7 @@ export const DeviceProvider = (props: {children: JSX.Element}) => {
       setClient(newClient)
       setConnectionState('connected')
       if (kind) rememberTransport(kind)
+      await checkIdentity(newClient)
       // reconciles any confirm/mark_spent this device missed from a
       // previous session that dropped mid-operation (see deviceQueue.ts) -
       // drainPendingDeviceOps never throws, it just leaves whatever didn't
@@ -185,6 +232,7 @@ export const DeviceProvider = (props: {children: JSX.Element}) => {
       newClient.onDisconnect(teardown)
       setClient(newClient)
       setConnectionState('connected')
+      await checkIdentity(newClient)
       await drainPendingDeviceOps(newClient)
       await refresh().catch(() => {})
     } catch {
@@ -230,6 +278,8 @@ export const DeviceProvider = (props: {children: JSX.Element}) => {
         connectHeartwood,
         disconnect,
         reconnecting,
+        identity,
+        trustCurrentIdentity,
         refresh,
         rename,
         deleteNote,

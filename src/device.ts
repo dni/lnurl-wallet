@@ -83,6 +83,14 @@ export type DeviceCapabilities = {
   transports: string[]
 }
 
+// identify's answer (lnurl-vault docs/PROTOCOL.md, issue #69). Verified in
+// devicePinning.ts against a nonce this wallet chose - never trusted because
+// the device said so.
+export type DeviceIdentity = {
+  pubkey: string
+  sig: string
+}
+
 export type DeviceInfo = {
   fw_version: string
   note_count: number
@@ -575,6 +583,10 @@ type PendingCommand = {
 const isHex64 = (value: unknown): value is string =>
   typeof value === 'string' && /^[0-9a-f]{64}$/i.test(value)
 
+// an ed25519 signature: 64 bytes, hex
+const isHex128 = (value: unknown): value is string =>
+  typeof value === 'string' && /^[0-9a-f]{128}$/i.test(value)
+
 // response fields that must hold such a value when present at all
 const HEX_RESPONSE_FIELDS = ['id', 'id2', 'h', 'h2', 'k1'] as const
 
@@ -835,6 +847,17 @@ export class DeviceClient {
     const capabilities = parseCapabilities(res.capabilities)
     if (capabilities) info.capabilities = capabilities
     return info
+  }
+
+  // Challenge-response over the device's identity key. The nonce is the
+  // caller's, always - a fixed one turns this into a recording anything can
+  // replay. Throws DeviceError('unsupported') on firmware with no identity.
+  async identify(nonceHex: string): Promise<DeviceIdentity> {
+    const res = await this.send({cmd: 'identify', nonce: nonceHex})
+    if (!isHex64(res.pubkey) || !isHex128(res.sig)) {
+      throw new DeviceError('bad_request', 'Malformed identity response.')
+    }
+    return {pubkey: res.pubkey.toLowerCase(), sig: res.sig.toLowerCase()}
   }
 
   // one page - `offset`/`limit` both optional, matching the wire command

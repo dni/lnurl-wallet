@@ -9,6 +9,7 @@ import {
   inputWarning,
   canShowQrHandoff
 } from '../deviceGuidance'
+import {identityWarning} from '../devicePinning'
 import {msatToSats, notify, NotifyKind} from '../helpers'
 
 // get_info's `storage` (docs/PROTOCOL.md) - only 'ok' (or absent, meaning
@@ -51,6 +52,8 @@ const Vault: Component = () => {
     connectHeartwood,
     disconnect,
     reconnecting,
+    identity,
+    trustCurrentIdentity,
     refresh,
     rename,
     deleteNote
@@ -159,6 +162,23 @@ const Vault: Component = () => {
               ? `Vault firmware ${info()!.fw_version}${info()!.board ? ` (${info()!.board})` : ''}`
               : 'Connected'}
           </figcaption>
+          <Show when={identity() && identityWarning(identity()!)}>
+            {message => (
+              <>
+                <p class="warning">{message()}</p>
+                <div class="btns">
+                  <Show when={identity()?.kind === 'changed'}>
+                    <button disabled={busy()} onClick={trustCurrentIdentity}>
+                      Trust this vault from now on
+                    </button>
+                  </Show>
+                  <button disabled={busy()} onClick={() => withBusy(disconnect)}>
+                    Disconnect
+                  </button>
+                </div>
+              </>
+            )}
+          </Show>
           <Show when={info()}>
             {i => (
               <>
