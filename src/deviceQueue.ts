@@ -1,5 +1,6 @@
 import type {DeviceClient} from './device'
 import {DeviceError} from './device'
+import {withStorageLock} from './storageLock'
 
 // Persisted record of device-side bookkeeping still owed after a mint call
 // already succeeded - see deviceOrchestration.ts's commitToDevice. Plain
@@ -42,9 +43,18 @@ let memoryFallback: PendingDeviceOp[] = []
 const readStored = (): PendingDeviceOp[] => {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return []
-    const parsed = JSON.parse(raw)
-    return Array.isArray(parsed) ? parsed : []
+    const parsed = raw ? JSON.parse(raw) : []
+    const stored: PendingDeviceOp[] = Array.isArray(parsed) ? parsed : []
+    if (memoryFallback.length > 0) {
+      // ops that landed in memory because a write hit quota/permission get
+      // folded back in (deduped by id) - otherwise they'd silently vanish
+      // from every drain once localStorage reads succeed again
+      const known = new Set(stored.map(o => o.id))
+      stored.push(...memoryFallback.filter(o => !known.has(o.id)))
+      memoryFallback = []
+      writeStored(stored)
+    }
+    return stored
   } catch {
     return memoryFallback
   }
@@ -60,20 +70,38 @@ const writeStored = (ops: PendingDeviceOp[]): void => {
 
 export const readPendingDeviceOps = (): PendingDeviceOp[] => readStored()
 
+// wipes the queue - part of forgetting a wallet (WalletContext's
+// forgetWallet): pending device bookkeeping for a wallet that no longer
+// exists must not survive it
+export const clearPendingDeviceOps = (): void => {
+  memoryFallback = []
+  try {
+    localStorage.removeItem(STORAGE_KEY)
+  } catch {
+    // no localStorage (plain-Node tests) - the memory wipe above is it
+  }
+}
+
 // written the instant a mint call succeeds, before confirm/mark_spent are
 // even attempted - see deviceOrchestration.ts's commitToDevice. Returns the
 // stored record (id/createdAt filled in) so the caller can try draining it
-// immediately, same record left behind if that attempt doesn't finish.
-export const enqueuePendingDeviceOp = (
+// immediately, same record left behind if that attempt doesn't finish. The
+// cross-tab lock keeps two tabs' enqueue/dequeue from losing each other's
+// ops (a lost confirm+burn op strands a device note as PENDING)
+export const enqueuePendingDeviceOp = async (
   op: Omit<PendingDeviceOp, 'id' | 'createdAt'>
-): PendingDeviceOp => {
+): Promise<PendingDeviceOp> => {
   const entry: PendingDeviceOp = {...op, id: newOpId(), createdAt: Date.now()}
-  writeStored([...readStored(), entry])
+  await withStorageLock(STORAGE_KEY, () => {
+    writeStored([...readStored(), entry])
+  })
   return entry
 }
 
-export const dequeuePendingDeviceOp = (id: string): void => {
-  writeStored(readStored().filter(op => op.id !== id))
+export const dequeuePendingDeviceOp = async (id: string): Promise<void> => {
+  await withStorageLock(STORAGE_KEY, () => {
+    writeStored(readStored().filter(op => op.id !== id))
+  })
 }
 
 // 'invalid_state' from confirm/mark_spent means the device already did
@@ -112,7 +140,7 @@ export const drainPendingDeviceOps = async (
           if (!isAlreadyDone(err)) throw err
         }
       }
-      dequeuePendingDeviceOp(op.id)
+      await dequeuePendingDeviceOp(op.id)
     } catch {
       // still incomplete - leave it queued, the next drain retries it
     }

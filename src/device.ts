@@ -469,14 +469,26 @@ const isHex64 = (value: unknown): value is string =>
 const HEX_RESPONSE_FIELDS = ['id', 'id2', 'h', 'h2', 'k1'] as const
 
 // 'disconnected' is deliberately absent - it's raised locally (see
-// handleDisconnect), never adopted from the wire
+// handleDisconnect), never adopted from the wire. Everything else the
+// protocol defines IS listed: collapsing a legitimate code to 'bad_request'
+// would hide it from callers showing per-code guidance (e.g.
+// 'display_unavailable', which explicitly says to treat it separately from
+// 'user_declined') - and deviceQueue.ts's idempotency recovery
+// pattern-matches DeviceError.code, so the whitelist must not drift from
+// the protocol
 const WIRE_ERROR_CODES: readonly DeviceErrorCode[] = [
   'not_found',
   'invalid_state',
   'user_declined',
   'timeout',
   'storage_full',
-  'bad_request'
+  'bad_request',
+  'display_unavailable',
+  'response_too_large',
+  'unsupported',
+  'wipe_failed',
+  'bad_signature',
+  'ota_failed'
 ]
 
 // an error code off the wire is trusted only if it's one of the known codes
@@ -526,6 +538,7 @@ export class DeviceClient {
   private pending: PendingCommand | null = null
   private queue: Promise<any> = Promise.resolve()
   private externalDisconnectHandler: (() => void) | null = null
+  private disconnectNotified = false
 
   constructor(transport: DeviceTransport) {
     this.transport = transport
@@ -579,6 +592,12 @@ export class DeviceClient {
       )
       this.pending = null
     }
+    // one-shot: a client is dead after its first disconnect (DeviceContext
+    // tears down and builds a fresh one per connect), so a transport that
+    // signals the drop twice (e.g. BLE's gatt event racing the timeout
+    // path's own notification, see sendOne) must not fire teardown twice
+    if (this.disconnectNotified) return
+    this.disconnectNotified = true
     this.externalDisconnectHandler?.()
   }
 
@@ -608,11 +627,16 @@ export class DeviceClient {
         this.transport
           .disconnect()
           .catch(() => {})
-          .then(() =>
+          .then(() => {
+            // a serial timeout's plain disconnect() fires no event of its
+            // own (BLE's does - handleDisconnect is one-shot, so either
+            // way the handler runs exactly once) - without this the UI
+            // would keep showing "connected" on a dead port
+            this.handleDisconnect('Device did not respond in time.')
             reject(
               new DeviceError('timeout', 'Device did not respond in time.')
             )
-          )
+          })
       }, timeoutMs)
 
       this.pending = {
@@ -676,15 +700,27 @@ export class DeviceClient {
   // a caller (DeviceContext.tsx) that wants the full list, not one page.
   // Omitting `limit` throughout means each page is "as many as fit", so
   // this never risks a 'response_too_large' the way an explicit limit
-  // chosen too large would.
+  // chosen too large would. A hostile or buggy device could answer with a
+  // stationary/cycling next_offset forever, hanging the Vault page's
+  // refresh in command roundtrips - pages must strictly advance and stay
+  // within the reported total, and the page count is capped outright
   async listAllNotes(): Promise<DeviceNote[]> {
     const notes: DeviceNote[] = []
     let offset: number | undefined
-    for (;;) {
+    let lastOffset = -1
+    for (let pages = 0; ;) {
       const page = await this.listNotes(offset)
       notes.push(...page.notes)
-      if (page.nextOffset === null) break
-      offset = page.nextOffset
+      const next = page.nextOffset
+      if (next === null) break
+      if (next <= lastOffset || next >= page.total || ++pages >= 1000) {
+        throw new DeviceError(
+          'bad_request',
+          'Device sent invalid list_notes pagination.'
+        )
+      }
+      lastOffset = next
+      offset = next
     }
     return notes
   }

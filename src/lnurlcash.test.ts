@@ -28,7 +28,8 @@ import {
   grossUpForMintFee,
   mintAddressUrl,
   lightningAddressUsername,
-  isAllowedServiceUrl
+  isAllowedServiceUrl,
+  sameInvoice
 } from './lnurlcash'
 
 const K1 = 'a'.repeat(64)
@@ -119,6 +120,19 @@ describe('input resolution', () => {
         `https://mint.example.com/withdraw?k1=${K1.toUpperCase()}`
       )
     ).toBe(true)
+  })
+
+  it('normalizes k1 case - it is bytes, not text', () => {
+    expect(noteK1(`https://mint.example.com/w?k1=${K1.toUpperCase()}`)).toBe(K1)
+  })
+
+  it('resolves insecure dev hosts to http, ports included', () => {
+    expect(resolveMintInput('localhost:8000')).toBe(
+      'http://localhost:8000/.well-known/lnurlp/mint'
+    )
+    expect(resolveMintInput('mint@127.0.0.1:8000')).toBe(
+      'http://127.0.0.1:8000/.well-known/lnurlp/mint'
+    )
   })
 
   it('rejects non-https URLs and clearnet http, even bech32-encoded', () => {
@@ -267,6 +281,11 @@ describe('preimage', () => {
 })
 
 describe('bolt11 invoice', () => {
+  it('compares invoices case-insensitively (bech32)', () => {
+    expect(sameInvoice('  LNBC21N1ABC  ', 'lnbc21n1abc')).toBe(true)
+    expect(sameInvoice('lnbc21n1abc', 'lnbc21n1abd')).toBe(false)
+  })
+
   it('recognizes mainnet/testnet/regtest prefixes with and without an amount', () => {
     expect(isBolt11Invoice('lnbc1p0examplebech32data')).toBe(true)
     expect(isBolt11Invoice('lnbc210n1p0examplebech32data')).toBe(true)

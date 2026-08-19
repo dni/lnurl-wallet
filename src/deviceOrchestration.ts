@@ -78,7 +78,7 @@ const commitToDevice = async (
   }[],
   burnDeviceIds: string[]
 ): Promise<void> => {
-  enqueuePendingDeviceOp({outputs, burnDeviceIds})
+  await enqueuePendingDeviceOp({outputs, burnDeviceIds})
   await drainPendingDeviceOps(client)
 }
 
@@ -524,7 +524,7 @@ export const markDeviceNoteSpent = async (
     if (client) {
       await deviceMarkSpent(client, deviceId)
     } else {
-      enqueuePendingDeviceOp({outputs: [], burnDeviceIds: [deviceId]})
+      await enqueuePendingDeviceOp({outputs: [], burnDeviceIds: [deviceId]})
     }
   } catch {
     // unreachable by design (enqueue falls back to memory, drain never

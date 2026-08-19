@@ -107,7 +107,9 @@ export const isLightningAddress = (value: string): boolean =>
 
 const lnAddressToUrl = (address: string): string => {
   const [name, domain] = address.trim().split('@')
-  const scheme = isInsecureHost(domain) ? 'http' : 'https'
+  // the domain may carry a port (mint@127.0.0.1:8000) - the insecure-host
+  // check is about the host part only, same split fromLud17 does
+  const scheme = isInsecureHost(domain.split(':')[0]) ? 'http' : 'https'
   return `${scheme}://${domain}/.well-known/lnurlp/${name}`
 }
 
@@ -118,10 +120,14 @@ const lnAddressToUrl = (address: string): string => {
 // own default mint@<domain> convention (see Mint.tsx's guessMintAddress,
 // PUBLIC_MINTS below), the same "mint" username lnurl-mint itself defaults
 // USERNAME to, so a mint that actually uses a different one still just
-// fails normally and has to be typed out in full.
+// fails normally and has to be typed out in full. A bare insecure dev host
+// ("localhost:8000", no dot at all) is also accepted, so the documented
+// local-mint dev loop actually resolves.
 const isBareMintDomain = (value: string): boolean => {
   const trimmed = value.trim()
-  return /^@?[^\s@/]+\.[^\s@/]+$/.test(trimmed) && !isLightningAddress(trimmed)
+  if (isLightningAddress(trimmed)) return false
+  if (/^@?[^\s@/]+\.[^\s@/]+$/.test(trimmed)) return true
+  return isInsecureHost(trimmed.replace(/^@/, '').split(':')[0])
 }
 
 const bareMintDomainToUrl = (value: string): string =>
@@ -211,10 +217,14 @@ export const resolveLnurlInput = (value: string): string | null => {
 
 // ---- bearer notes ----
 
-// a note is its withdraw LNURL with the secret as k1 query param
+// a note is its withdraw LNURL with the secret as k1 query param. The k1
+// is normalized to lowercase hex - it's bytes, not text, so case carries
+// no meaning, and normalizing keeps duplicate detection and the echo check
+// (fetchNoteInfo) from treating the same secret pasted in two casings as
+// two different notes
 export const noteK1 = (url: string): string | null => {
   try {
-    return new URL(url).searchParams.get('k1')
+    return new URL(url).searchParams.get('k1')?.toLowerCase() ?? null
   } catch {
     return null
   }
@@ -511,7 +521,14 @@ export const fetchNoteInfo = async (
     body?.tag !== 'withdrawRequest' ||
     typeof body.callback !== 'string' ||
     typeof body.k1 !== 'string' ||
-    typeof body.maxWithdrawable !== 'number'
+    typeof body.maxWithdrawable !== 'number' ||
+    !Number.isFinite(body.maxWithdrawable) ||
+    body.maxWithdrawable < 0 ||
+    (body.minWithdrawable !== undefined &&
+      (typeof body.minWithdrawable !== 'number' ||
+        !Number.isFinite(body.minWithdrawable) ||
+        body.minWithdrawable < 0 ||
+        body.minWithdrawable > body.maxWithdrawable))
   ) {
     throw new Error('Not a withdrawRequest (unexpected response).')
   }
@@ -519,7 +536,7 @@ export const fetchNoteInfo = async (
   // derived/opaque id - a service returning something else for the k1 we
   // queried is non-compliant (or the note was rotated by someone else)
   const queried = noteK1(url)
-  if (queried && body.k1 !== queried) {
+  if (queried && body.k1.toLowerCase() !== queried) {
     throw new Error(
       "Service echoed back a different k1 than queried - the note may have been redeemed elsewhere, or the service isn't spec-compliant."
     )
@@ -700,6 +717,10 @@ export type MeltResult = {
   // fetchInvoiceVerification. Absent unless SERVICE advertises it
   // (lnurl-mint: only when VERIFY_ENABLED).
   verify?: string
+  // the invoice being paid, echoed back alongside the proof - lets the
+  // caller bind a later settled report to THIS melt, not some other
+  // payment's (see sameInvoice)
+  pr?: string
 }
 
 // melt: burn a single note, the service pays `pr` of exactly its value -
@@ -719,7 +740,10 @@ export const meltNote = async (
     ['k1', k1],
     ['pr', pr.trim()]
   ])
-  return {verify: body.verify}
+  return {
+    verify: body.verify,
+    pr: typeof body.pr === 'string' ? body.pr : undefined
+  }
 }
 
 // ---- hash-parameterized primitives ----
@@ -1067,6 +1091,16 @@ export const requestInvoice = async (
   if (typeof body?.pr !== 'string') {
     throw new Error('Service did not return an invoice.')
   }
+  // a service that answers an amount request with an invoice for a
+  // DIFFERENT amount is broken or hostile - the invoice's amount is
+  // checked wherever it decodes (an amountless one is passed through:
+  // nothing to check it against here, the mint judges it later)
+  const invoiceMsat = decodeBolt11AmountMsat(body.pr)
+  if (invoiceMsat !== null && invoiceMsat !== amountMsat) {
+    throw new Error(
+      `Service returned an invoice for ${invoiceMsat} msat, not the ${amountMsat} requested.`
+    )
+  }
   return {
     pr: body.pr,
     verify: typeof body.verify === 'string' ? body.verify : undefined,
@@ -1101,6 +1135,13 @@ export const fetchInvoiceVerification = async (
     pr: body.pr
   }
 }
+
+// bolt11 is bech32 - case-insensitive - so invoice equality is a
+// normalized string compare. Used to bind a verify response (or a melt
+// proof) to the exact invoice it claims to report on: a settled result for
+// some OTHER invoice must never confirm this wallet's payment
+export const sameInvoice = (a: string, b: string): boolean =>
+  a.trim().toLowerCase() === b.trim().toLowerCase()
 
 // a payment preimage (the future k1): 32 bytes hex
 export const isPreimage = (value: string): boolean =>

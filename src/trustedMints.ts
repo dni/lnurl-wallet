@@ -108,7 +108,18 @@ const readStored = (): TrustedMint[] => {
   if (!raw) return []
   try {
     const parsed = JSON.parse(raw)
-    return Array.isArray(parsed) ? parsed : []
+    if (!Array.isArray(parsed)) return []
+    // shape-check every entry - this is the wallet's own persisted state
+    // (so locked/pendingMintPubkey/unconfirmed are all kept), but a
+    // tampered or corrupt record must not plant junk entries
+    return parsed.filter(
+      m =>
+        typeof m?.server === 'string' &&
+        typeof m?.mintPubkey === 'string' &&
+        PUBKEY_PATTERN.test(m.mintPubkey.toLowerCase()) &&
+        typeof m?.addedAt === 'number' &&
+        typeof m?.locked === 'boolean'
+    )
   } catch {
     return []
   }
@@ -138,9 +149,13 @@ export const isMintUnconfirmed = (server: string): boolean =>
 
 // this mint's self-reported node color, for tinting its notes' background
 // (see BearerCard) - purely cosmetic, absent whenever no mint-address
-// lookup has ever cached one for this server
-export const getTrustedMintNodeColor = (server: string): string | null =>
-  trustedMints().find(m => m.server === server)?.nodeColor ?? null
+// lookup has ever cached one for this server. Mint-supplied, so it's only
+// ever handed out as a plain hex color - anything else (a style sink can
+// take far more than colors) is treated as absent
+export const getTrustedMintNodeColor = (server: string): string | null => {
+  const color = trustedMints().find(m => m.server === server)?.nodeColor
+  return color && /^#[0-9a-f]{3}([0-9a-f]{3})?$/i.test(color) ? color : null
+}
 
 // the exact Lightning Address this mint was last reached at (see
 // TrustedMint.username), for a quick-select that reconstructs it instead of
@@ -362,6 +377,14 @@ export const removeTrustedMint = (server: string): void => {
     throw new Error("Can't remove - you hold a bearer note from this mint.")
   }
   persist(trustedMints().filter(m => m.server !== server))
+}
+
+// wipes the whole registry - part of forgetting a wallet (WalletContext's
+// forgetWallet): nothing about a wallet's mints (including otherwise
+// irremovable locked pins) should linger on the device after it
+export const clearTrustedMints = (): void => {
+  localStorage.removeItem(STORAGE_KEY)
+  setTrustedMintsSignal([])
 }
 
 // merges a backup's trusted mints in by server - a server already known on

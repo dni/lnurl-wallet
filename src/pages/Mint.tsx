@@ -39,6 +39,7 @@ import {
   fetchMintAddress,
   lightningAddressUsername,
   probeBurnedNote,
+  sameInvoice,
   AmbiguousMutationError
 } from '../lnurlcash'
 import {deviceMint, DeviceImportLeftBehindError} from '../deviceOrchestration'
@@ -165,6 +166,17 @@ const Mint: Component = () => {
     setVerifying(true)
     try {
       const result = await fetchInvoiceVerification(url)
+      // a settled report only means this wallet's invoice was paid if it's
+      // for the invoice this wallet actually requested
+      const requested = invoice()
+      if (result.settled && requested && !sameInvoice(result.pr, requested)) {
+        stopPolling()
+        notify(
+          "The service's verify response is for a different invoice than requested - don't pay the shown invoice until this is checked.",
+          NotifyKind.ERROR
+        )
+        return
+      }
       if (result.settled) {
         stopPolling()
         if (result.preimage && isPreimage(result.preimage)) {

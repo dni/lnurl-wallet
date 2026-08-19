@@ -853,7 +853,7 @@ describe('markDeviceNoteSpent', () => {
     expect(readPendingDeviceOps().length).toBe(1)
     // test-local cleanup: the queue's in-memory fallback is shared across
     // this file, so the undrainable op must not leak into other tests
-    dequeuePendingDeviceOp(readPendingDeviceOps()[0].id)
+    await dequeuePendingDeviceOp(readPendingDeviceOps()[0].id)
     expect(readPendingDeviceOps().length).toBe(0)
   })
 })

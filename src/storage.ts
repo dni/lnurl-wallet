@@ -10,6 +10,7 @@ import {
 } from './keys'
 import type {TrustedMint} from './trustedMints'
 import {trustedMints, mergeTrustedMints} from './trustedMints'
+import {withStorageLock} from './storageLock'
 
 // One bearer note held by this wallet - the decrypted, in-memory shape.
 // `url` is the note's withdraw LNURL with the secret as its k1 param (so it
@@ -102,13 +103,17 @@ export const persistBearer = async (
 ): Promise<void> => {
   const {id, ...plain} = bearer
   const parts = await encryptRecord(aesKey, plain)
-  const records = readEncryptedBearers().filter(r => r.id !== id)
-  records.push({id, ...parts})
-  writeEncryptedBearers(records)
+  await withStorageLock(BEARERS_STORAGE_KEY, () => {
+    const records = readEncryptedBearers().filter(r => r.id !== id)
+    records.push({id, ...parts})
+    writeEncryptedBearers(records)
+  })
 }
 
-export const deleteBearerRecord = (id: string): void => {
-  writeEncryptedBearers(readEncryptedBearers().filter(r => r.id !== id))
+export const deleteBearerRecord = async (id: string): Promise<void> => {
+  await withStorageLock(BEARERS_STORAGE_KEY, () => {
+    writeEncryptedBearers(readEncryptedBearers().filter(r => r.id !== id))
+  })
 }
 
 // wipes every bearer record from this device outright - unlike forgetting
@@ -201,9 +206,11 @@ export const persistActivityEvent = async (
 ): Promise<void> => {
   const {id, ...plain} = event
   const parts = await encryptRecord(aesKey, plain)
-  const records = readEncryptedActivity()
-  records.push({id, ...parts})
-  writeEncryptedActivity(records.slice(-MAX_ACTIVITY_ENTRIES))
+  await withStorageLock(ACTIVITY_STORAGE_KEY, () => {
+    const records = readEncryptedActivity()
+    records.push({id, ...parts})
+    writeEncryptedActivity(records.slice(-MAX_ACTIVITY_ENTRIES))
+  })
 }
 
 export const clearAllActivity = (): void => {
@@ -253,6 +260,15 @@ export type RestoreResult = {
   trustedMintsAdded: number
 }
 
+// restore-time bounds - a crafted or corrupt file must not be able to fill
+// localStorage with junk records that never decrypt (quota exhaustion turns
+// every later write into a failure, which can strand a just-rotated note),
+// nor hang the tab in JSON.parse. A real backup holds a handful of notes,
+// each well under a kilobyte encrypted, so these are generous
+export const MAX_BACKUP_FILE_BYTES = 10 * 1024 * 1024
+const MAX_BACKUP_RECORDS = 10_000
+const MAX_BACKUP_FIELD_LENGTH = 64 * 1024
+
 // merges a backup into localStorage: bearer records are added by id (already
 // present ids are left as-is), the backup's linking key is only installed
 // when this device has none yet - never overwriting an existing wallet.
@@ -273,13 +289,21 @@ export const applyBackup = (data: unknown): RestoreResult => {
   }
   const existing = readEncryptedBearers()
   const existingIds = new Set(existing.map(r => r.id))
+  if (backup.bearers.length > MAX_BACKUP_RECORDS) {
+    throw new Error(
+      `Backup holds ${backup.bearers.length} records - more than the ${MAX_BACKUP_RECORDS} a real wallet could produce.`
+    )
+  }
   let added = 0
   let skipped = 0
   for (const record of backup.bearers) {
     if (
       typeof record?.id !== 'string' ||
       typeof record?.iv !== 'string' ||
-      typeof record?.ciphertext !== 'string'
+      typeof record?.ciphertext !== 'string' ||
+      record.id.length > MAX_BACKUP_FIELD_LENGTH ||
+      record.iv.length > MAX_BACKUP_FIELD_LENGTH ||
+      record.ciphertext.length > MAX_BACKUP_FIELD_LENGTH
     ) {
       skipped++
       continue
@@ -292,7 +316,13 @@ export const applyBackup = (data: unknown): RestoreResult => {
     existingIds.add(record.id)
     added++
   }
-  writeEncryptedBearers(existing)
+  try {
+    writeEncryptedBearers(existing)
+  } catch {
+    throw new Error(
+      'Local storage is full - the backup could not be written. Free up space (or forget unused wallets) and try again.'
+    )
+  }
 
   let linkingKeyRestored = false
   let linkingKeySkipped = false

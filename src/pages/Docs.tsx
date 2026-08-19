@@ -123,7 +123,7 @@ callback?k1=X&k1=Y&h=<sha256(Z)>         merge: all burned, one note keyed by h 
               LUD-21
             </a>{' '}
             verify URL, a "Check payment" button appears with a countdown and
-            checks automatically every 10 seconds - if that check ever returns
+            checks automatically every 5 seconds - if that check ever returns
             the preimage itself, the wallet claims and rotates the note right
             then, no pasting needed. Most mints won't return it there (for
             lnurlcash the preimage is the spend secret, so handing it to anyone

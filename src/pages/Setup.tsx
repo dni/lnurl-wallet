@@ -9,7 +9,7 @@ import {
   isValidSeedPhrase,
   savedKeyIsEncrypted
 } from '../keys'
-import {applyBackup} from '../storage'
+import {applyBackup, MAX_BACKUP_FILE_BYTES} from '../storage'
 import {notify, NotifyKind} from '../helpers'
 
 type Tab = 'create' | 'restore' | 'backup'
@@ -103,6 +103,9 @@ const Setup: Component = () => {
     setBackupBusy(true)
     setBackupSkipped(false)
     try {
+      if (file.size > MAX_BACKUP_FILE_BYTES) {
+        throw new Error('That file is far too large to be a wallet backup.')
+      }
       const data = JSON.parse(await file.text())
       const result = applyBackup(data)
       if (result.linkingKeyRestored) {

@@ -29,6 +29,7 @@ import {
   splitNote,
   settleNote,
   probeBurnedNote,
+  sameInvoice,
   NoteSpentError,
   AmbiguousMutationError
 } from '../lnurlcash'
@@ -127,6 +128,22 @@ const Melt: Component = () => {
     try {
       const result = await fetchInvoiceVerification(url)
       if (!result.settled) return // still in flight - next tick
+      // a settled report is only this payment's proof when it's for the
+      // invoice this melt actually paid - a mint that mixes up proofs (or
+      // a migrated/compromised verify endpoint) must not confirm the wrong
+      // payment
+      const paid = pastedInvoice()
+      if (paid && !sameInvoice(result.pr, paid)) {
+        stopPolling()
+        setPendingNote(null)
+        setMeltVerifyUrl(null)
+        notify(
+          "The service's payment proof is for a different invoice than the one paid - the note stays locked as spent; check the payment's outcome before clearing or unspending it.",
+          NotifyKind.ERROR
+        )
+        navigate('/wallet')
+        return
+      }
       stopPolling()
       setPendingNote(null)
       setMeltVerifyUrl(null)
