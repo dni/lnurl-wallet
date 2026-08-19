@@ -25,6 +25,7 @@ import Activity from './pages/Activity'
 import Backup from './pages/Backup'
 import Docs from './pages/Docs'
 import Vault from './pages/Vault'
+import Claim from './pages/Claim'
 
 const root = document.getElementById('root')
 
@@ -83,6 +84,7 @@ const cleanup = render(
       <Route path="/backup" component={Backup} />
       <Route path="/docs" component={Docs} />
       <Route path="/vault" component={Vault} />
+      <Route path="/claim" component={Claim} />
       <Route path="*" component={() => <h1>Page not found</h1>} />
     </HashRouter>
   ),

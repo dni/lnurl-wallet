@@ -29,6 +29,10 @@ import ScanToggle from './ScanToggle'
 
 export type ReceiveDialogProps = {
   onClose: () => void
+  // prefilled when the dialog was reached by opening a vault's handoff link
+  // (pages/Claim.tsx). Deliberately prefilled and not auto-accepted: the
+  // person should see what they are taking, and from which mint, first.
+  initialValue?: string
 }
 
 // bringing a note into this wallet, scanned or pasted - same destination
@@ -39,7 +43,7 @@ const ReceiveDialog: Component<ReceiveDialogProps> = props => {
   const {client: deviceClient} = useDevice()
   const navigate = useNavigate()
   let pasteRef: HTMLInputElement | null = null
-  const [value, setValue] = createSignal('')
+  const [value, setValue] = createSignal(props.initialValue ?? '')
   const [busy, setBusy] = createSignal(false)
 
   const isValid = createMemo(
