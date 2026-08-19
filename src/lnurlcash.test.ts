@@ -366,6 +366,9 @@ describe('LUD-25 mint fees', () => {
       for (const net of [1, 1000, 21_000, 1_000_000]) {
         const gross = grossUpForMintFee(net, fee)
         expect(applyMintFee(gross, fee)).toBe(net)
+        // and it's the *smallest* such gross - anything above it is the
+        // payer handing the mint a larger fee for no extra value
+        expect(applyMintFee(gross - 1, fee)).toBeLessThan(net)
       }
     }
     // the no-fee case specifically shouldn't inflate the amount at all
@@ -387,6 +390,71 @@ describe('LUD-25 mint fees', () => {
       parseMintFee(JSON.stringify([['text/plain', 'Mint fees: 0,999999']]))
     ).toEqual(fee)
     expect(applyMintFee(grossUpForMintFee(1000, fee), fee)).toBe(1000)
+  })
+})
+
+describe('LUD-25 mint fee arithmetic at the edges', () => {
+  // the fee is SERVICE's to choose, so both of these are reachable on
+  // purpose by a mint that wants them to be
+  it('grosses up minimally even at a fee just under 100%', () => {
+    const fee = {baseFeeMsat: 3, feePpm: 999_999}
+    const gross = grossUpForMintFee(1, fee)
+    expect(gross).toBe(3_000_001)
+    expect(applyMintFee(gross, fee)).toBe(1)
+    expect(applyMintFee(gross - 1, fee)).toBe(0)
+  })
+
+  it('is minimal across a sweep of hostile fees, not just near ones', () => {
+    for (const feePpm of [1, 999, 500_000, 990_000, 999_000, 999_999]) {
+      for (const baseFeeMsat of [0, 1, 3, 1000]) {
+        const fee = {baseFeeMsat, feePpm}
+        for (const net of [1, 2, 999, 21_000, 1_000_000]) {
+          const gross = grossUpForMintFee(net, fee)
+          expect(applyMintFee(gross, fee)).toBeGreaterThanOrEqual(net)
+          expect(applyMintFee(gross - 1, fee)).toBeLessThan(net)
+        }
+      }
+    }
+  })
+
+  it('takes no fee off a zero amount, and grosses zero up to zero', () => {
+    const fee = {baseFeeMsat: 1000, feePpm: 2000}
+    expect(applyMintFee(0, fee)).toBe(0)
+    expect(grossUpForMintFee(0, fee)).toBe(0)
+  })
+
+  it('keeps the proportional cut exact past 2^53', () => {
+    // gross * ppm leaves the safe-integer range around 100 BTC at a
+    // realistic ppm, and a rounded product floors to the wrong msat.
+    // BigInt is the oracle - it does the same arithmetic without losing
+    // anything
+    const exact = (gross: bigint, base: bigint, ppm: bigint): bigint => {
+      const net = gross - base - (gross * ppm) / 1_000_000n
+      return net < 0n ? 0n : net
+    }
+    const amounts = [
+      9_990_000_000_000, // ~99.9 BTC
+      12_345_678_901_234,
+      100_000_000_000_000, // 1000 BTC
+      2_100_000_000_000_000 // the whole supply, in msat
+    ]
+    for (const gross of amounts) {
+      for (const feePpm of [1, 999, 100_000, 999_999]) {
+        const fee = {baseFeeMsat: 0, feePpm}
+        expect(applyMintFee(gross, fee)).toBe(
+          Number(exact(BigInt(gross), 0n, BigInt(feePpm)))
+        )
+      }
+    }
+  })
+
+  it('grosses up minimally at those amounts too', () => {
+    const fee = {baseFeeMsat: 1000, feePpm: 100_000}
+    for (const net of [9_990_000_000_000, 100_000_000_000_000]) {
+      const gross = grossUpForMintFee(net, fee)
+      expect(applyMintFee(gross, fee)).toBe(net)
+      expect(applyMintFee(gross - 1, fee)).toBeLessThan(net)
+    }
   })
 })
 
