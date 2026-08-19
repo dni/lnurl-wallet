@@ -8,7 +8,9 @@ const params = (query: string) => new URLSearchParams(query)
 
 describe('claimLinkToNoteInput', () => {
   it('turns a vault claim link into a note URL', () => {
-    const note = claimLinkToNoteInput(params(`u=mint.example&k1=${K1}&a=21000`))!
+    const note = claimLinkToNoteInput(
+      params(`u=mint.example&k1=${K1}&a=21000`)
+    )!
     expect(note).not.toBeNull()
     expect(noteK1(note)).toBe(K1)
     expect(serverOf(note)).toBe('mint.example')

@@ -480,7 +480,9 @@ export class BleTransport implements DeviceTransport {
     return null
   }
 
-  private static async connectTo(device: BluetoothDevice): Promise<BleTransport> {
+  private static async connectTo(
+    device: BluetoothDevice
+  ): Promise<BleTransport> {
     if (!device.gatt) throw new Error('This device has no GATT server.')
     const server = await device.gatt.connect()
     const service = await server.getPrimaryService(BLE_SERVICE_UUID)

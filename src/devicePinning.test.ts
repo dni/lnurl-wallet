@@ -71,15 +71,15 @@ describe('identityMessage', () => {
 
 describe('verifyIdentity', () => {
   it('accepts a genuine answer', () => {
-    expect(
-      verifyIdentity(pubkeyOf(seedA), NONCE, signWith(seedA, NONCE))
-    ).toBe(true)
+    expect(verifyIdentity(pubkeyOf(seedA), NONCE, signWith(seedA, NONCE))).toBe(
+      true
+    )
   })
 
   it('rejects another device answering', () => {
-    expect(
-      verifyIdentity(pubkeyOf(seedA), NONCE, signWith(seedB, NONCE))
-    ).toBe(false)
+    expect(verifyIdentity(pubkeyOf(seedA), NONCE, signWith(seedB, NONCE))).toBe(
+      false
+    )
   })
 
   // The property that makes this a challenge rather than a password.

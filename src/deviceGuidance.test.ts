@@ -64,14 +64,20 @@ describe('approvalInstruction', () => {
   // Older firmware sends no capabilities. The fallback has to be true on
   // every board, including ones that did not exist when it was written.
   it('falls back to wording that is true everywhere', () => {
-    expect(approvalInstruction(info())).toBe('Confirm on your vault when it asks.')
-    expect(approvalInstruction(null)).toBe('Confirm on your vault when it asks.')
+    expect(approvalInstruction(info())).toBe(
+      'Confirm on your vault when it asks.'
+    )
+    expect(approvalInstruction(null)).toBe(
+      'Confirm on your vault when it asks.'
+    )
   })
 
   // No buttons, no touch, but the device claims it can ask. Rather than
   // invent a gesture, say the safe thing.
   it('does not invent a gesture for hardware it does not model', () => {
-    const text = approvalInstruction(info({buttons: 0, touch: false, gated: true}))
+    const text = approvalInstruction(
+      info({buttons: 0, touch: false, gated: true})
+    )
     expect(text).toBe('Confirm on your vault when it asks.')
   })
 })
@@ -89,7 +95,9 @@ describe('inputWarning', () => {
   // 'unknown' is not a fault. It means the device has not yet seen that pin
   // released, which is the ordinary state for the first few seconds of a boot.
   it('does not raise a fault for an undecided input', () => {
-    expect(inputWarning(info({}, {confirm: 'unknown', cancel: 'unknown'}))).toBeNull()
+    expect(
+      inputWarning(info({}, {confirm: 'unknown', cancel: 'unknown'}))
+    ).toBeNull()
   })
 
   // The ESP32-S3 case. The important part is that the vault is still SAFE -
@@ -115,7 +123,9 @@ describe('inputWarning', () => {
 
 describe('gatedCommandsUnavailable', () => {
   it('is false on a healthy vault', () => {
-    expect(gatedCommandsUnavailable(info({}, {confirm: 'ok', cancel: 'ok'}))).toBe(false)
+    expect(
+      gatedCommandsUnavailable(info({}, {confirm: 'ok', cancel: 'ok'}))
+    ).toBe(false)
   })
 
   it('is true when the build has no confirmation wired', () => {
@@ -123,13 +133,17 @@ describe('gatedCommandsUnavailable', () => {
   })
 
   it('is true when the confirm button itself is wedged', () => {
-    expect(gatedCommandsUnavailable(info({}, {confirm: 'stuck', cancel: 'ok'}))).toBe(true)
+    expect(
+      gatedCommandsUnavailable(info({}, {confirm: 'stuck', cancel: 'ok'}))
+    ).toBe(true)
   })
 
   // A stuck CANCEL still leaves every gated command usable - it can be
   // approved, just not refused. Disabling the controls here would be wrong.
   it('is false when only cancel is wedged', () => {
-    expect(gatedCommandsUnavailable(info({}, {confirm: 'ok', cancel: 'stuck'}))).toBe(false)
+    expect(
+      gatedCommandsUnavailable(info({}, {confirm: 'ok', cancel: 'stuck'}))
+    ).toBe(false)
   })
 
   // Silence from older firmware is not evidence of a fault.
@@ -141,7 +155,9 @@ describe('gatedCommandsUnavailable', () => {
 
 describe('canShowQrHandoff', () => {
   it('is true on a panel with room for a note-sized code', () => {
-    expect(canShowQrHandoff(info({display: {width: 320, height: 170}}))).toBe(true)
+    expect(canShowQrHandoff(info({display: {width: 320, height: 170}}))).toBe(
+      true
+    )
   })
 
   // The T-Dongle-S3, 80x160, sits right on the line: 80 pixels across a

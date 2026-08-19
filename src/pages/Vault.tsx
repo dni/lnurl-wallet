@@ -172,7 +172,10 @@ const Vault: Component = () => {
                       Trust this vault from now on
                     </button>
                   </Show>
-                  <button disabled={busy()} onClick={() => withBusy(disconnect)}>
+                  <button
+                    disabled={busy()}
+                    onClick={() => withBusy(disconnect)}
+                  >
                     Disconnect
                   </button>
                 </div>
