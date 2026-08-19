@@ -13,6 +13,9 @@ interface SerialPort {
 
 interface Serial extends EventTarget {
   requestPort(): Promise<SerialPort>
+  // ports already granted for this origin - reconnecting to one needs no
+  // user gesture, unlike requestPort()
+  getPorts(): Promise<SerialPort[]>
 }
 
 interface BluetoothRemoteGATTCharacteristic extends EventTarget {

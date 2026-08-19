@@ -1,5 +1,5 @@
 import type {Accessor, JSX} from 'solid-js'
-import {createContext, createSignal, useContext} from 'solid-js'
+import {createContext, createSignal, onMount, useContext} from 'solid-js'
 
 import {
   DeviceClient,
@@ -15,6 +15,31 @@ import {drainPendingDeviceOps} from './deviceQueue'
 
 export type DeviceConnectionState = 'disconnected' | 'connecting' | 'connected'
 
+export type DeviceTransportKind = 'serial' | 'ble' | 'heartwood'
+
+// Which transport last worked, so the next load can bring the vault back
+// without a chooser. Not a secret and not note data - plain localStorage,
+// same as trustedMints.ts.
+const LAST_TRANSPORT_KEY = 'lnurlvault.lastTransport'
+
+const readLastTransport = (): DeviceTransportKind | null => {
+  try {
+    const raw = localStorage.getItem(LAST_TRANSPORT_KEY)
+    return raw === 'serial' || raw === 'ble' || raw === 'heartwood' ? raw : null
+  } catch {
+    return null
+  }
+}
+
+const rememberTransport = (kind: DeviceTransportKind | null): void => {
+  try {
+    if (kind) localStorage.setItem(LAST_TRANSPORT_KEY, kind)
+    else localStorage.removeItem(LAST_TRANSPORT_KEY)
+  } catch {
+    // private browsing, quota - reconnect is a convenience, never required
+  }
+}
+
 export type DeviceContextType = {
   connectionState: Accessor<DeviceConnectionState>
   info: Accessor<DeviceInfo | null>
@@ -27,6 +52,9 @@ export type DeviceContextType = {
   // binary-framed WebSerial (see heartwoodTransport.ts)
   connectHeartwood: () => Promise<void>
   disconnect: () => Promise<void>
+  // true while the on-load silent reconnect is still running, so the pairing
+  // UI can hold off offering buttons the owner is about to not need
+  reconnecting: Accessor<boolean>
   refresh: () => Promise<void>
   rename: (id: string, label: string) => Promise<void>
   deleteNote: (id: string) => Promise<void>
@@ -43,6 +71,7 @@ export const DeviceProvider = (props: {children: JSX.Element}) => {
   const [info, setInfo] = createSignal<DeviceInfo | null>(null)
   const [notes, setNotes] = createSignal<DeviceNote[]>([])
   const [client, setClient] = createSignal<DeviceClient | null>(null)
+  const [reconnecting, setReconnecting] = createSignal(false)
 
   const teardown = () => {
     setClient(null)
@@ -79,7 +108,8 @@ export const DeviceProvider = (props: {children: JSX.Element}) => {
   // press on the device itself, and pending-op recovery (deviceQueue.ts)
   // only ever pushes confirm/mark_spent at note ids this wallet staged.
   const connectWith = async (
-    requestAndConnect: () => Promise<DeviceTransport>
+    requestAndConnect: () => Promise<DeviceTransport>,
+    kind?: DeviceTransportKind
   ) => {
     if (connectionState() !== 'disconnected') return
     setConnectionState('connecting')
@@ -89,6 +119,7 @@ export const DeviceProvider = (props: {children: JSX.Element}) => {
       newClient.onDisconnect(teardown)
       setClient(newClient)
       setConnectionState('connected')
+      if (kind) rememberTransport(kind)
       // reconciles any confirm/mark_spent this device missed from a
       // previous session that dropped mid-operation (see deviceQueue.ts) -
       // drainPendingDeviceOps never throws, it just leaves whatever didn't
@@ -114,14 +145,61 @@ export const DeviceProvider = (props: {children: JSX.Element}) => {
   }
 
   const connectSerial = () =>
-    connectWith(() => SerialTransport.requestAndConnect())
-  const connectBle = () => connectWith(() => BleTransport.requestAndConnect())
+    connectWith(() => SerialTransport.requestAndConnect(), 'serial')
+  const connectBle = () =>
+    connectWith(() => BleTransport.requestAndConnect(), 'ble')
   const connectHeartwood = () =>
-    connectWith(() => HeartwoodTransport.requestAndConnect())
+    connectWith(() => HeartwoodTransport.requestAndConnect(), 'heartwood')
+
+  // Does what answered actually speak the vault protocol? getPorts() hands
+  // back every port this origin was ever granted, so a reconnect must not
+  // assume the first one is a vault - see SerialTransport.tryReconnect.
+  const probe = async (transport: DeviceTransport): Promise<boolean> => {
+    try {
+      await new DeviceClient(transport).getInfo()
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  // On load, bring back the vault the owner already granted, with no click.
+  // Only for a transport that has worked here before: an unprompted scan of
+  // every granted port on a wallet nobody has ever paired is noise.
+  //
+  // Heartwood is deliberately not auto-reconnected. It rides the same
+  // WebSerial permission with different framing (heartwoodTransport.ts), and
+  // guessing wrong means talking newline JSON at a binary-framed signer.
+  onMount(async () => {
+    const last = readLastTransport()
+    if (!last || last === 'heartwood') return
+    if (connectionState() !== 'disconnected') return
+    setReconnecting(true)
+    try {
+      const transport =
+        last === 'serial'
+          ? await SerialTransport.tryReconnect(probe)
+          : await BleTransport.tryReconnect(probe)
+      if (!transport) return
+      const newClient = new DeviceClient(transport)
+      newClient.onDisconnect(teardown)
+      setClient(newClient)
+      setConnectionState('connected')
+      await drainPendingDeviceOps(newClient)
+      await refresh().catch(() => {})
+    } catch {
+      // nothing granted, unplugged, or in use elsewhere. Silent by design:
+      // this runs without anyone asking for it, so it must never interrupt
+    } finally {
+      setReconnecting(false)
+    }
+  })
 
   const disconnect = async () => {
     const current = client()
     if (current) await current.disconnect().catch(() => {})
+    // An explicit disconnect is a decision, so stop bringing it back.
+    rememberTransport(null)
     teardown()
   }
 
@@ -151,6 +229,7 @@ export const DeviceProvider = (props: {children: JSX.Element}) => {
         connectBle,
         connectHeartwood,
         disconnect,
+        reconnecting,
         refresh,
         rename,
         deleteNote,
