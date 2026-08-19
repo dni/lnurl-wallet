@@ -440,6 +440,21 @@ export class AmbiguousMutationError extends AmbiguousMintError {
   }
 }
 
+// the definitive counterpart: a parsed {"status":"ERROR"} the SERVICE sent,
+// carrying its `reason` exactly as it arrived - empty string included.
+// Kept separate from `message` (display text, which falls back to this
+// wallet's own wording when SERVICE says nothing) because classifyNoteError
+// decides a note's fate by matching that text, and must only ever match
+// words SERVICE actually said
+export class ServiceError extends Error {
+  readonly reason: string
+  constructor(reason: string) {
+    super(reason || 'The service rejected the request without saying why.')
+    this.reason = reason
+    this.name = 'ServiceError'
+  }
+}
+
 const lnurlFetch = async (url: string | URL): Promise<any> => {
   if (offlineMode()) {
     throw new Error(
@@ -472,7 +487,7 @@ const lnurlFetch = async (url: string | URL): Promise<any> => {
     throw new AmbiguousMintError('Service returned an invalid response.')
   })
   if (body?.status === 'ERROR') {
-    throw new Error(body.reason || 'Unknown service error.')
+    throw new ServiceError(typeof body.reason === 'string' ? body.reason : '')
   }
   return body
 }
@@ -505,7 +520,7 @@ export const fetchNoteInfo = async (
   try {
     body = await lnurlFetch(reqUrl)
   } catch (err) {
-    throw classifyNoteError((err as Error).message)
+    throw classifyNoteError(err as Error)
   }
   if (
     body?.tag !== 'withdrawRequest' ||
@@ -656,10 +671,17 @@ export class NoteUnknownError extends Error {
 // "Invalid or already spent k1." since it can't tell which case applies to
 // which k1. Classified here so every note-specific call site gets a
 // consistent, typed error instead of each re-parsing raw reason text.
-const classifyNoteError = (reason: string): Error => {
+// Only what SERVICE actually said is matched. Anything else - a transport
+// failure, an unparseable body, a rejection carrying no reason at all -
+// is no evidence about the note either way and passes through
+// unclassified, so probeBurnedNote reads it as 'unknown' and callers keep
+// every secret they hold.
+const classifyNoteError = (err: Error): Error => {
+  if (!(err instanceof ServiceError)) return err
+  const reason = err.reason
   if (/spent/i.test(reason)) return new NoteSpentError(reason)
   if (/unknown|not found/i.test(reason)) return new NoteUnknownError(reason)
-  return new Error(reason)
+  return err
 }
 
 const callbackRequest = async (
@@ -680,13 +702,13 @@ const callbackRequest = async (
   } catch (err) {
     // a k1 already mid-melt (see meltNote) rejects any other callback
     // naming it with this exact reason string, verbatim per spec
-    if ((err as Error).message === 'pending') {
+    if (err instanceof ServiceError && err.reason === 'pending') {
       throw new PendingNoteError()
     }
     // a transport-level failure leaves the mutation's outcome unknown -
     // it must reach callers typed, not reclassified from its message text
     if (err instanceof AmbiguousMintError) throw err
-    throw classifyNoteError((err as Error).message)
+    throw classifyNoteError(err as Error)
   }
   if (body?.status !== 'OK') {
     throw new AmbiguousMintError('Operation was not confirmed by the service.')
@@ -969,10 +991,10 @@ export const parseMintFee = (metadata: string): MintFee | null => {
     const baseFeeMsat = Number(match[1])
     const feePpm = Number(match[2])
     if (!Number.isFinite(baseFeeMsat) || !Number.isFinite(feePpm)) continue
-    // a >= 100% fee can never net anything - and grossUpForMintFee's walk
-    // would never terminate on one (applyMintFee floors at 0 while the
-    // target stays positive), so a hostile mint could freeze the page just
-    // by advertising one. Treat it as no valid fee entry at all.
+    // a >= 100% fee can never net anything at all (applyMintFee floors at 0
+    // while the target stays positive), so there is no gross-up to offer
+    // and nothing a caller could do with one. Treat it as no valid fee
+    // entry at all.
     if (feePpm >= 1_000_000) continue
     // an explicit "Mint fees: 0,0" has the exact same effect as omitting
     // the entry entirely - treat it identically, so callers don't need to
@@ -990,32 +1012,45 @@ export const parseMintFee = (metadata: string): MintFee | null => {
 // only ever an estimate to display before paying - the authoritative value
 // is always whatever the informational GET reports after claiming (see
 // Mint.tsx's claim)
-export const applyMintFee = (grossMsat: number, fee: MintFee): number =>
-  Math.max(
-    0,
-    grossMsat - fee.baseFeeMsat - Math.floor((grossMsat * fee.feePpm) / 1e6)
-  )
+export const applyMintFee = (grossMsat: number, fee: MintFee): number => {
+  // gross * ppm exceeds Number.MAX_SAFE_INTEGER around 100 BTC at a
+  // realistic ppm, and a rounded product floors to the wrong msat - so the
+  // multiply is split across the divide, keeping both halves exact at any
+  // amount that fits in msat
+  const whole = Math.floor(grossMsat / 1e6)
+  const rest = grossMsat % 1e6
+  const proportional =
+    whole * fee.feePpm + Math.floor((rest * fee.feePpm) / 1e6)
+  return Math.max(0, grossMsat - fee.baseFeeMsat - proportional)
+}
 
-// the inverse: how big an invoice needs to be so the note it mints nets
-// netMsat once SERVICE's fee comes out. The linear formula is only a
-// starting estimate - flooring in applyMintFee means it can land either a
-// hair short or a hair over, so this walks to the exact minimal gross
-// amount that nets netMsat (applyMintFee is non-decreasing in gross with
+// the inverse: the smallest invoice whose note still nets netMsat once
+// SERVICE's fee comes out. It has to be the smallest - anything above it
+// is the payer overpaying a fee for nothing - and flooring in applyMintFee
+// puts it a little either side of the linear inverse, so it's searched for
+// rather than computed (applyMintFee is non-decreasing in gross with
 // per-msat steps of 0 or 1, so that gross always exists and is unique)
 export const grossUpForMintFee = (netMsat: number, fee: MintFee): number => {
-  let gross = Math.round((netMsat + fee.baseFeeMsat) / (1 - fee.feePpm / 1e6))
-  // the guard is a defensive bound only - parseMintFee already rejects >=
-  // 100% fees (the case that can't terminate, with applyMintFee pinned at
-  // 0); with a sane fee the walk lands within a handful of msat either way
+  if (netMsat <= 0) return 0
+  // applyMintFee is non-decreasing in gross, so the answer is the leftmost
+  // gross that clears netMsat and binary search finds it exactly. A walk
+  // can't: near a 100% fee the distance from any linear estimate runs to
+  // millions of msat, and a walk bounded by a guard stops wherever the
+  // guard runs out and silently overpays the difference
+  let lo = netMsat
+  let hi = netMsat + fee.baseFeeMsat
+  // doubled rather than derived from the linear inverse, which divides by
+  // zero at a 100% fee. The bound only has to clear netMsat; the search
+  // does the rest. Exhausting it means no gross ever nets netMsat (a >=
+  // 100% fee, which parseMintFee already refuses to return)
   let guard = 0
-  while (applyMintFee(gross, fee) < netMsat && guard++ < 10_000) gross++
-  while (
-    gross > 0 &&
-    applyMintFee(gross - 1, fee) >= netMsat &&
-    guard++ < 20_000
-  )
-    gross--
-  return gross
+  while (applyMintFee(hi, fee) < netMsat && guard++ < 64) hi *= 2
+  while (lo < hi) {
+    const mid = Math.floor((lo + hi) / 2)
+    if (applyMintFee(mid, fee) < netMsat) lo = mid + 1
+    else hi = mid
+  }
+  return lo
 }
 
 // fee_percent_ppm is parts-per-million - /10_000 for a percent, then trim

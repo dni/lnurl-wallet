@@ -19,6 +19,7 @@ import {
   PendingNoteError,
   NoteSpentError,
   NoteUnknownError,
+  ServiceError,
   AmbiguousMintError,
   AmbiguousMutationError
 } from './lnurlcash'
@@ -508,6 +509,87 @@ describe('spent vs. unknown note classification', () => {
     await expect(
       rotateNote(WITHDRAW_CALLBACK, neverIssued)
     ).rejects.toBeInstanceOf(NoteUnknownError)
+  })
+})
+
+describe('a rejection carrying no reason says nothing about the note', () => {
+  // classifyNoteError reads SERVICE's own words to decide a note's fate.
+  // A reasonless {"status":"ERROR"} contains no such words, so it must
+  // reach callers unclassified - if wording invented on this side for the
+  // display string were classified instead, an ambiguous mutation would
+  // read as "the burn landed" and the rescued secrets, the only copies of
+  // the outputs, would be dropped as worthless
+  const respondWith = (body: object): void => {
+    vi.stubGlobal(
+      'fetch',
+      (async () =>
+        ({
+          json: async () => body
+        }) as unknown as Response) as unknown as typeof fetch
+    )
+  }
+
+  it('is not classified as spent or unknown', async () => {
+    respondWith({status: 'ERROR'})
+    const url = buildNoteUrl(WITHDRAW_URL, randomHex(32), 1000)
+    const err = await fetchNoteInfo(url).catch(e => e)
+    expect(err).toBeInstanceOf(ServiceError)
+    expect(err).not.toBeInstanceOf(NoteUnknownError)
+    expect(err).not.toBeInstanceOf(NoteSpentError)
+    expect((err as ServiceError).reason).toBe('')
+    // still says something a person can read
+    expect((err as Error).message).not.toBe('')
+  })
+
+  it('leaves probeBurnedNote with no verdict rather than a wrong one', async () => {
+    respondWith({status: 'ERROR'})
+    const url = buildNoteUrl(WITHDRAW_URL, randomHex(32), 1000)
+    expect(await probeBurnedNote(url)).toBe('unknown')
+  })
+
+  it('holds for an empty reason and a non-string one too', async () => {
+    const url = buildNoteUrl(WITHDRAW_URL, randomHex(32), 1000)
+    for (const body of [
+      {status: 'ERROR', reason: ''},
+      {status: 'ERROR', reason: null},
+      {status: 'ERROR', reason: 42}
+    ]) {
+      respondWith(body)
+      expect(await probeBurnedNote(url)).toBe('unknown')
+    }
+  })
+
+  it('does not classify a mutating callback either', async () => {
+    respondWith({status: 'ERROR'})
+    const err = await rotateNote(WITHDRAW_CALLBACK, randomHex(32)).catch(e => e)
+    expect(err).not.toBeInstanceOf(NoteUnknownError)
+    expect(err).not.toBeInstanceOf(NoteSpentError)
+  })
+
+  it('still classifies a reason SERVICE actually gave', async () => {
+    const url = buildNoteUrl(WITHDRAW_URL, randomHex(32), 1000)
+    respondWith({status: 'ERROR', reason: 'Note already spent.'})
+    await expect(fetchNoteInfo(url)).rejects.toBeInstanceOf(NoteSpentError)
+    expect(await probeBurnedNote(url)).toBe('gone')
+
+    respondWith({status: 'ERROR', reason: 'Unknown note.'})
+    await expect(fetchNoteInfo(url)).rejects.toBeInstanceOf(NoteUnknownError)
+    expect(await probeBurnedNote(url)).toBe('gone')
+  })
+
+  it('still maps the verbatim "pending" reason to PendingNoteError', async () => {
+    respondWith({status: 'ERROR', reason: 'pending'})
+    await expect(
+      rotateNote(WITHDRAW_CALLBACK, randomHex(32))
+    ).rejects.toBeInstanceOf(PendingNoteError)
+  })
+
+  it('never classifies a transport failure as a verdict on the note', async () => {
+    vi.stubGlobal('fetch', (() => {
+      throw new TypeError('fetch failed')
+    }) as unknown as typeof fetch)
+    const url = buildNoteUrl(WITHDRAW_URL, randomHex(32), 1000)
+    expect(await probeBurnedNote(url)).toBe('unknown')
   })
 })
 
