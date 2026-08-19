@@ -49,6 +49,48 @@ export type DeviceNote = {
 export type DeviceStorageState =
   'ok' | 'full' | 'version_unsupported' | 'unavailable' | 'index_unreadable'
 
+// get_info's `inputs` - whether each button can be believed.
+//
+// 'stuck' is a usability problem, not a security one: the device won't let a
+// button unseen-released answer a prompt, so a wedged line decides nothing.
+// But a vault with a wedged cancel button has lost the ability to refuse, and
+// only this field explains why pressing cancel does nothing.
+//
+// 'ok' means "not wedged low", NOT "works" - a disconnected button reads
+// released forever. Don't render it as a clean bill of health.
+export type DeviceInputState = 'ok' | 'stuck' | 'unknown'
+
+export type DeviceInputs = {
+  confirm: DeviceInputState
+  cancel: DeviceInputState
+}
+
+// get_info's `capabilities` - what the device can physically do, so the
+// wallet stops guessing. "Press cancel on the device" is wrong on a
+// one-button board and meaningless on a touch-only one. deviceGuidance.ts
+// turns this into the sentence a person reads.
+export type DeviceCapabilities = {
+  // buttons wired for confirm/cancel, not buttons present
+  buttons: number
+  touch: boolean
+  // false => this build has no on-device confirmation wired at all, so every
+  // physically-gated command will answer 'unsupported'. Worth saying before
+  // the owner tries one, not after
+  gated: boolean
+  // usable pixels after the board's own rotation; 0 when the panel didn't
+  // come up, which is how a client knows a QR handoff isn't available
+  display: {width: number; height: number}
+  transports: string[]
+}
+
+// identify's answer (lnurl-vault docs/PROTOCOL.md, issue #69). Verified in
+// devicePinning.ts against a nonce this wallet chose - never trusted because
+// the device said so.
+export type DeviceIdentity = {
+  pubkey: string
+  sig: string
+}
+
 export type DeviceInfo = {
   fw_version: string
   note_count: number
@@ -60,6 +102,12 @@ export type DeviceInfo = {
   // from 'unavailable', which means storage exists but couldn't come up
   // this boot (see DeviceStorageState)
   storage?: DeviceStorageState
+  // absent on firmware that can't observe its own buttons. Absent is NOT
+  // "they're fine" - it's "this build doesn't say"
+  inputs?: DeviceInputs
+  // absent on firmware that can't describe its own hardware. Again, absent
+  // is not "no buttons and no screen"
+  capabilities?: DeviceCapabilities
 }
 
 // one page of list_notes (docs/PROTOCOL.md's "list_notes") - `total` is how
@@ -170,6 +218,42 @@ export class SerialTransport implements DeviceTransport {
       throw new Error('This browser does not support WebSerial.')
     }
     const port = await navigator.serial!.requestPort()
+    return SerialTransport.open(port)
+  }
+
+  // Reconnect to a port the owner already granted, with no chooser and no
+  // click. requestPort() needs a user gesture; open() does not, so a vault
+  // still plugged in comes back by itself on reload.
+  //
+  // `probe` decides whether what answered is actually a vault. getPorts()
+  // returns every port this origin was ever granted, which can include a
+  // Heartwood signer (binary framing, see heartwoodTransport.ts) or anything
+  // else the owner once picked - talking newline JSON at those is wrong. A
+  // port that fails the probe is closed and the next one tried.
+  static async tryReconnect(
+    probe: (transport: SerialTransport) => Promise<boolean>
+  ): Promise<SerialTransport | null> {
+    if (!SerialTransport.isSupported()) return null
+    let ports: SerialPort[] = []
+    try {
+      ports = await navigator.serial!.getPorts()
+    } catch {
+      return null
+    }
+    for (const port of ports) {
+      let transport: SerialTransport
+      try {
+        transport = await SerialTransport.open(port)
+      } catch {
+        continue // already open in another tab, or unplugged since granted
+      }
+      if (await probe(transport)) return transport
+      await transport.disconnect().catch(() => {})
+    }
+    return null
+  }
+
+  private static async open(port: SerialPort): Promise<SerialTransport> {
     await port.open({baudRate: 115200})
     const transport = new SerialTransport(port)
     transport.startReading()
@@ -363,6 +447,42 @@ export class BleTransport implements DeviceTransport {
     const device = await navigator.bluetooth!.requestDevice({
       filters: [{services: [BLE_SERVICE_UUID]}]
     })
+    return BleTransport.connectTo(device)
+  }
+
+  // Same idea as SerialTransport.tryReconnect. getDevices() lists devices
+  // already permitted for this origin; it is not in every browser, so an
+  // absent method is a null, not an error.
+  static async tryReconnect(
+    probe: (transport: BleTransport) => Promise<boolean>
+  ): Promise<BleTransport | null> {
+    if (!BleTransport.isSupported()) return null
+    const bluetooth = navigator.bluetooth as unknown as {
+      getDevices?: () => Promise<BluetoothDevice[]>
+    }
+    if (typeof bluetooth.getDevices !== 'function') return null
+    let devices: BluetoothDevice[] = []
+    try {
+      devices = await bluetooth.getDevices()
+    } catch {
+      return null
+    }
+    for (const device of devices) {
+      let transport: BleTransport
+      try {
+        transport = await BleTransport.connectTo(device)
+      } catch {
+        continue // out of range, or off
+      }
+      if (await probe(transport)) return transport
+      await transport.disconnect().catch(() => {})
+    }
+    return null
+  }
+
+  private static async connectTo(
+    device: BluetoothDevice
+  ): Promise<BleTransport> {
     if (!device.gatt) throw new Error('This device has no GATT server.')
     const server = await device.gatt.connect()
     const service = await server.getPrimaryService(BLE_SERVICE_UUID)
@@ -465,6 +585,10 @@ type PendingCommand = {
 const isHex64 = (value: unknown): value is string =>
   typeof value === 'string' && /^[0-9a-f]{64}$/i.test(value)
 
+// an ed25519 signature: 64 bytes, hex
+const isHex128 = (value: unknown): value is string =>
+  typeof value === 'string' && /^[0-9a-f]{128}$/i.test(value)
+
 // response fields that must hold such a value when present at all
 const HEX_RESPONSE_FIELDS = ['id', 'id2', 'h', 'h2', 'k1'] as const
 
@@ -499,6 +623,51 @@ const normalizeErrorCode = (code: unknown): DeviceErrorCode =>
   WIRE_ERROR_CODES.includes(code as DeviceErrorCode)
     ? (code as DeviceErrorCode)
     : 'bad_request'
+
+const INPUT_STATES: readonly DeviceInputState[] = ['ok', 'stuck', 'unknown']
+
+// Unrecognised collapses to 'unknown' - the one value no UI treats as either
+// a fault or a clean bill.
+const asInputState = (value: unknown): DeviceInputState =>
+  INPUT_STATES.includes(value as DeviceInputState)
+    ? (value as DeviceInputState)
+    : 'unknown'
+
+const parseInputs = (value: any): DeviceInputs | undefined => {
+  if (value === null || typeof value !== 'object') return undefined
+  return {
+    confirm: asInputState(value.confirm),
+    cancel: asInputState(value.cancel)
+  }
+}
+
+// Dropped whole rather than defaulted: defaulting `buttons` to 2 puts a
+// confident wrong instruction in front of a one-button device. Dropping it
+// falls back to generic wording, which is never wrong.
+const parseCapabilities = (value: any): DeviceCapabilities | undefined => {
+  if (value === null || typeof value !== 'object') return undefined
+  if (typeof value.buttons !== 'number' || !Number.isFinite(value.buttons)) {
+    return undefined
+  }
+  const display =
+    value.display !== null &&
+    typeof value.display === 'object' &&
+    typeof value.display.width === 'number' &&
+    typeof value.display.height === 'number'
+      ? {width: value.display.width, height: value.display.height}
+      : {width: 0, height: 0}
+  return {
+    buttons: value.buttons,
+    touch: value.touch === true,
+    // absent => assume it CAN ask; the other default would alarm every
+    // owner of older firmware, wrongly
+    gated: value.gated !== false,
+    display,
+    transports: Array.isArray(value.transports)
+      ? value.transports.filter((t: unknown) => typeof t === 'string')
+      : []
+  }
+}
 
 // the per-entry shape a list_notes note must have - anything else (a null
 // entry, a missing/wrong-typed field) is dropped, not trusted, so a single
@@ -675,7 +844,22 @@ export class DeviceClient {
     if (typeof res.storage === 'string') {
       info.storage = res.storage as DeviceStorageState
     }
+    const inputs = parseInputs(res.inputs)
+    if (inputs) info.inputs = inputs
+    const capabilities = parseCapabilities(res.capabilities)
+    if (capabilities) info.capabilities = capabilities
     return info
+  }
+
+  // Challenge-response over the device's identity key. The nonce is the
+  // caller's, always - a fixed one turns this into a recording anything can
+  // replay. Throws DeviceError('unsupported') on firmware with no identity.
+  async identify(nonceHex: string): Promise<DeviceIdentity> {
+    const res = await this.send({cmd: 'identify', nonce: nonceHex})
+    if (!isHex64(res.pubkey) || !isHex128(res.sig)) {
+      throw new DeviceError('bad_request', 'Malformed identity response.')
+    }
+    return {pubkey: res.pubkey.toLowerCase(), sig: res.sig.toLowerCase()}
   }
 
   // one page - `offset`/`limit` both optional, matching the wire command

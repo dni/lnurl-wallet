@@ -4,6 +4,12 @@ import {IoBanSharp, IoPencilSharp, IoTrashSharp} from 'solid-icons/io'
 
 import {useDevice} from '../DeviceContext'
 import type {DeviceNote, DeviceStorageState} from '../device'
+import {
+  approvalInstruction,
+  inputWarning,
+  canShowQrHandoff
+} from '../deviceGuidance'
+import {identityWarning} from '../devicePinning'
 import {msatToSats, notify, NotifyKind} from '../helpers'
 
 // get_info's `storage` (docs/PROTOCOL.md) - only 'ok' (or absent, meaning
@@ -43,13 +49,18 @@ const Vault: Component = () => {
     bleSupported,
     connectSerial,
     connectBle,
+    connectHeartwood,
     disconnect,
+    reconnecting,
+    identity,
+    trustCurrentIdentity,
     refresh,
     rename,
     deleteNote
   } = useDevice()
 
   const [busy, setBusy] = createSignal(false)
+  const [showOtherWays, setShowOtherWays] = createSignal(false)
   const [editingId, setEditingId] = createSignal<string | null>(null)
   const [labelInput, setLabelInput] = createSignal('')
 
@@ -97,24 +108,50 @@ const Vault: Component = () => {
                 </p>
               }
             >
-              <div class="btns">
-                <Show when={serialSupported}>
+              <Show
+                when={!reconnecting()}
+                fallback={<p class="bearer-hint">Looking for your vault...</p>}
+              >
+                <div class="btns">
                   <button
                     disabled={connectionState() === 'connecting'}
-                    onClick={() => withBusy(connectSerial)}
+                    onClick={() =>
+                      withBusy(serialSupported ? connectSerial : connectBle)
+                    }
                   >
-                    Connect via USB
+                    {serialSupported
+                      ? 'Connect vault over USB'
+                      : 'Connect vault over Bluetooth'}
                   </button>
+                </div>
+                <Show when={!showOtherWays()}>
+                  <div class="btns">
+                    <button onClick={() => setShowOtherWays(true)}>
+                      Other ways to connect
+                    </button>
+                  </div>
                 </Show>
-                <Show when={bleSupported}>
-                  <button
-                    disabled={connectionState() === 'connecting'}
-                    onClick={() => withBusy(connectBle)}
-                  >
-                    Connect via Bluetooth
-                  </button>
+                <Show when={showOtherWays()}>
+                  <div class="btns">
+                    <Show when={serialSupported && bleSupported}>
+                      <button
+                        disabled={connectionState() === 'connecting'}
+                        onClick={() => withBusy(connectBle)}
+                      >
+                        Over Bluetooth
+                      </button>
+                    </Show>
+                    <Show when={serialSupported}>
+                      <button
+                        disabled={connectionState() === 'connecting'}
+                        onClick={() => withBusy(connectHeartwood)}
+                      >
+                        A Heartwood signer
+                      </button>
+                    </Show>
+                  </div>
                 </Show>
-              </div>
+              </Show>
             </Show>
           </figure>
         }
@@ -125,16 +162,46 @@ const Vault: Component = () => {
               ? `Vault firmware ${info()!.fw_version}${info()!.board ? ` (${info()!.board})` : ''}`
               : 'Connected'}
           </figcaption>
+          <Show when={identity() && identityWarning(identity()!)}>
+            {message => (
+              <>
+                <p class="warning">{message()}</p>
+                <div class="btns">
+                  <Show when={identity()?.kind === 'changed'}>
+                    <button disabled={busy()} onClick={trustCurrentIdentity}>
+                      Trust this vault from now on
+                    </button>
+                  </Show>
+                  <button
+                    disabled={busy()}
+                    onClick={() => withBusy(disconnect)}
+                  >
+                    Disconnect
+                  </button>
+                </div>
+              </>
+            )}
+          </Show>
           <Show when={info()}>
             {i => (
               <>
                 <Show when={storageWarning(i().storage)}>
                   {message => <p class="warning">{message()}</p>}
                 </Show>
+                <Show when={inputWarning(i())}>
+                  {message => <p class="warning">{message()}</p>}
+                </Show>
                 <p class="bearer-hint">
                   {i().note_count} note{i().note_count === 1 ? '' : 's'} on
                   device, {i().pending_count} pending.
                 </p>
+                <p class="bearer-hint">{approvalInstruction(i())}</p>
+                <Show when={i().capabilities && !canShowQrHandoff(i())}>
+                  <p class="bearer-hint">
+                    This vault's screen is too small to show a note as a QR
+                    code, so notes on it can't be handed over in person.
+                  </p>
+                </Show>
               </>
             )}
           </Show>
