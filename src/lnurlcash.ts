@@ -101,9 +101,35 @@ export const fromLud17 = (url: string): string => {
 export const toLud17w = (url: string): string =>
   url.replace(/^https?:\/\//, 'lnurlw://')
 
-// LUD-16: a Lightning Address resolves to its .well-known payRequest URL
-export const isLightningAddress = (value: string): boolean =>
-  /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim())
+// LUD-16: a Lightning Address resolves to its .well-known payRequest URL -
+// a local-part, an "@", and a domain. The domain has to carry a dot,
+// because a name without one cannot resolve on the public internet - except
+// for the handful of hosts this wallet deliberately reaches over http
+// (INSECURE_HOSTS above), where "localhost" is a real destination and has no
+// dot to give.
+//
+// That exception is not tidiness. The mint quick-select builds an address by
+// prepending "mint@" to a stored server (Mint.tsx's guessMintAddress), so a
+// mint trusted at localhost:8111 - which is exactly what this project's own
+// documented dev loop produces - could be typed by hand but not clicked. The
+// bare form "localhost:8111" resolved, because isBareMintDomain already bends
+// for a dot-less dev host; "mint@localhost:8111" matched neither branch and
+// came back "Enter a mint LNURL or Lightning Address" against a button the
+// holder had just pressed. 127.0.0.1 hid it: it has dots, so the one dev host
+// in the tests was the one that worked.
+export const isLightningAddress = (value: string): boolean => {
+  const trimmed = value.trim()
+  const at = trimmed.indexOf('@')
+  // exactly one "@", and something either side of it
+  if (at <= 0 || at === trimmed.length - 1) return false
+  if (trimmed.indexOf('@', at + 1) !== -1) return false
+  const domain = trimmed.slice(at + 1)
+  if (/\s/.test(trimmed)) return false
+  if (/^[^\s@]+\.[^\s@]+$/.test(domain)) return true
+  // dot-less: only the hosts an http fetch is allowed to reach at all, so
+  // this can never widen what resolves on the public internet
+  return isInsecureHost(domain.split(':')[0])
+}
 
 const lnAddressToUrl = (address: string): string => {
   const [name, domain] = address.trim().split('@')
