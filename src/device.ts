@@ -579,18 +579,36 @@ type PendingCommand = {
 // accessors - which would otherwise adopt them blindly. Deliberately a
 // handful of checks, not a schema framework.
 
-// every k1/h/id the protocol carries is a 32-byte value hex-encoded (a note
-// secret, its SHA-256 hash, or a note id) - anything else on the wire is a
-// malformed response, never valid data
+// every k1/h the protocol carries is a 32-byte value hex-encoded (a note
+// secret or its SHA-256 hash) - anything else on the wire is a malformed
+// response, never valid data
 const isHex64 = (value: unknown): value is string =>
   typeof value === 'string' && /^[0-9a-f]{64}$/i.test(value)
+
+// a note id is NOT one of those. It is the device's own local handle for a
+// note, 8 hex characters - lnurl-vault's VAULT_ID_BUF is 9, "8 hex chars +
+// NUL", and every example in its docs/PROTOCOL.md shows one that long
+// ({"ok":true,"id":"e5f6a7b8","h":"<64-hex sha256>"} - the two are different
+// lengths in the same response).
+//
+// This was previously validated as 64 hex along with k1/h, which rejected
+// every response a real vault has ever sent: new_secret failed outright, and
+// list_notes entries were dropped one by one until the list came back empty,
+// so a device holding notes looked like an empty one. It survived because the
+// mocks in device.test.ts returned 64-hex ids too, and no test ever put this
+// code in front of the firmware it describes.
+const isVaultId = (value: unknown): value is string =>
+  typeof value === 'string' && /^[0-9a-f]{8}$/i.test(value)
 
 // an ed25519 signature: 64 bytes, hex
 const isHex128 = (value: unknown): value is string =>
   typeof value === 'string' && /^[0-9a-f]{128}$/i.test(value)
 
-// response fields that must hold such a value when present at all
-const HEX_RESPONSE_FIELDS = ['id', 'id2', 'h', 'h2', 'k1'] as const
+// response fields that must hold a 32-byte hex value when present at all
+const HEX_RESPONSE_FIELDS = ['h', 'h2', 'k1'] as const
+
+// response fields that must hold a device note id when present at all
+const ID_RESPONSE_FIELDS = ['id', 'id2'] as const
 
 // 'disconnected' is deliberately absent - it's raised locally (see
 // handleDisconnect), never adopted from the wire. Everything else the
@@ -676,7 +694,7 @@ const parseCapabilities = (value: any): DeviceCapabilities | undefined => {
 const isDeviceNote = (value: any): value is DeviceNote =>
   value !== null &&
   typeof value === 'object' &&
-  isHex64(value.id) &&
+  isVaultId(value.id) &&
   (value.state === 'pending' ||
     value.state === 'confirmed' ||
     value.state === 'spent') &&
@@ -733,6 +751,17 @@ export class DeviceClient {
             new DeviceError(
               'bad_request',
               `Device sent a malformed response (${field} must be 64 hex characters).`
+            )
+          )
+          return
+        }
+      }
+      for (const field of ID_RESPONSE_FIELDS) {
+        if (field in message && !isVaultId(message[field])) {
+          pending.reject(
+            new DeviceError(
+              'bad_request',
+              `Device sent a malformed response (${field} must be 8 hex characters).`
             )
           )
           return
