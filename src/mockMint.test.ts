@@ -183,7 +183,9 @@ class MockMint {
         nodeAlias: 'mock node',
         nodeUri: 'deadbeef@127.0.0.1:9735',
         nodeColor: '#3399ff',
-        nodeCapacityMsat: 750_000_000,
+        // the wire name, as lnurl-mint sends it - not the nodeCapacityMsat
+        // the parsed type exposes
+        nodeCapacity: 750_000_000,
         nodeNumChannels: 3,
         nodeNumPeers: 5
       })
