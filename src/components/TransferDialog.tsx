@@ -19,6 +19,7 @@ import {
   meltNote,
   requireNoteK1,
   serverOf,
+  noteEndpointOf,
   isPreimage,
   applyMintFee,
   describeMintFee,
@@ -229,7 +230,7 @@ const TransferDialog: Component<TransferDialogProps> = props => {
           client,
           info.withdrawLink,
           noteInfo.callback,
-          serverOf(noteInfo.callback),
+          noteEndpointOf(info.withdrawLink),
           preimageValue,
           noteInfo.maxWithdrawable
         )

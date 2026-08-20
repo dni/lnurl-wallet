@@ -31,6 +31,7 @@ import {
   fetchNoteInfo,
   rotateNote,
   serverOf,
+  noteEndpointOf,
   isPreimage,
   applyMintFee,
   grossUpForMintFee,
@@ -489,7 +490,7 @@ const Mint: Component = () => {
             client,
             info.withdrawLink,
             noteInfo.callback,
-            serverOf(noteInfo.callback),
+            noteEndpointOf(info.withdrawLink),
             preimageValue,
             noteInfo.maxWithdrawable
           )

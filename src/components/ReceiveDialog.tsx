@@ -15,6 +15,7 @@ import {
   isBolt11Invoice,
   requireNoteK1,
   serverOf,
+  noteEndpointOf,
   withNewK1,
   probeBurnedNote,
   PendingNoteError,
@@ -81,7 +82,7 @@ const ReceiveDialog: Component<ReceiveDialogProps> = props => {
             client,
             received.url,
             received.callback,
-            serverOf(received.url),
+            noteEndpointOf(received.url),
             requireNoteK1(received.url),
             received.amount
           )

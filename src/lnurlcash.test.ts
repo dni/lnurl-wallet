@@ -19,6 +19,7 @@ import {
   buildNoteUrl,
   withNewK1,
   serverOf,
+  noteEndpointOf,
   verifyNoteSignature,
   isPreimage,
   isBolt11Invoice,
@@ -231,6 +232,25 @@ describe('note helpers', () => {
     ).toBeNull()
     expect(noteSignature(NOTE_URL)).toBeNull()
     expect(serverOf(NOTE_URL)).toBe('mint.example.com')
+  })
+
+  it('keeps the path when naming the endpoint a note is rebuilt from', () => {
+    // LUD-25: "lnurlw://mint.example/w?k1=<P>&amount=<msat> *is* the bearer
+    // note". Drop the /w and there is nothing left to GET. serverOf is for
+    // display and does drop it, which is why these are separate functions.
+    expect(noteEndpointOf('lnurlw://mint.example/w')).toBe('mint.example/w')
+    expect(noteEndpointOf('https://mint.example/w')).toBe('mint.example/w')
+    expect(noteEndpointOf(NOTE_URL)).toBe('mint.example.com/withdraw')
+    expect(noteEndpointOf('lnurlw://localhost:8000/w')).toBe('localhost:8000/w')
+    // a deeper path is not special-cased away either
+    expect(noteEndpointOf('https://mint.example/lnurl/w')).toBe(
+      'mint.example/lnurl/w'
+    )
+    // a root endpoint contributes no segment, so the note is host?k1=...
+    expect(noteEndpointOf('https://mint.example/')).toBe('mint.example')
+    expect(noteEndpointOf('https://mint.example')).toBe('mint.example')
+    // and it is never the bare host for a path-bearing endpoint
+    expect(noteEndpointOf('https://mint.example/w')).not.toBe('mint.example')
   })
 
   it('builds a note from withdrawLink + preimage + amount', () => {

@@ -176,10 +176,11 @@ class MockDeviceFirmware implements DeviceTransport {
     this.disconnectHandler = handler
   }
 
-  // note ids are 64-char hex on the wire (device.ts validates them as
-  // such), so the mock's sequential ids are padded into that shape
+  // 8 hex characters, the width lnurl-vault's VAULT_ID_BUF actually allows -
+  // this mock used to pad to 64, which is why nothing here noticed that
+  // device.ts rejected every id a real vault sends.
   private newId(): string {
-    return (this.idCounter++).toString(16).padStart(64, '0')
+    return (this.idCounter++).toString(16).padStart(8, '0')
   }
 
   async send(message: unknown): Promise<void> {
@@ -844,7 +845,7 @@ describe('markDeviceNoteSpent', () => {
   it('leaves a mark for a note the device does not know queued for retry', async () => {
     const firmware = new MockDeviceFirmware()
     // no mint involvement at all - the mark never leaves the queue layer
-    await markDeviceNoteSpent(null, 'ff'.repeat(32))
+    await markDeviceNoteSpent(null, 'ffffffff')
     expect(readPendingDeviceOps().length).toBe(1)
     // 'not_found' is deliberately NOT idempotent success (the note may
     // simply not have been written to this device yet) - the op stays
