@@ -243,7 +243,9 @@ describe('note helpers', () => {
     expect(noteEndpointOf(NOTE_URL)).toBe('mint.example.com/withdraw')
     expect(noteEndpointOf('lnurlw://localhost:8000/w')).toBe('localhost:8000/w')
     // a deeper path is not special-cased away either
-    expect(noteEndpointOf('https://mint.example/lnurl/w')).toBe('mint.example/lnurl/w')
+    expect(noteEndpointOf('https://mint.example/lnurl/w')).toBe(
+      'mint.example/lnurl/w'
+    )
     // a root endpoint contributes no segment, so the note is host?k1=...
     expect(noteEndpointOf('https://mint.example/')).toBe('mint.example')
     expect(noteEndpointOf('https://mint.example')).toBe('mint.example')

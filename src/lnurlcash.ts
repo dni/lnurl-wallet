@@ -364,7 +364,8 @@ export const noteEndpointOf = (url: string): string => {
     const parsed = new URL(fromLud17(url.trim()))
     // A root-path endpoint contributes no path segment, so the rebuilt note
     // is "mint.example?k1=..." rather than "mint.example/?k1=...".
-    const path = parsed.pathname === '/' ? '' : parsed.pathname.replace(/\/+$/, '')
+    const path =
+      parsed.pathname === '/' ? '' : parsed.pathname.replace(/\/+$/, '')
     return `${parsed.host}${path}`
   } catch {
     return serverOf(url)
