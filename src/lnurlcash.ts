@@ -68,6 +68,14 @@ const INSECURE_HOSTS = ['127.0.0.1', '0.0.0.0', 'localhost']
 const isInsecureHost = (host: string): boolean =>
   INSECURE_HOSTS.includes(host) || host.endsWith('.onion')
 
+// the scheme to assume for a host that arrived without one. Three places need
+// this - a LUD-17 URL, a Lightning Address domain, and a claim link's bare
+// mint - and the third of them used to hardcode https, so a note from the
+// local dev mint scanned off a vault resolved to a URL nothing serves.
+// `hostish` may carry a port or a path; only the host part decides.
+export const defaultSchemeFor = (hostish: string): 'http' | 'https' =>
+  isInsecureHost(hostish.split('/')[0]!.split(':')[0]!) ? 'http' : 'https'
+
 // the one admission rule every URL this wallet fetches must pass, whether it
 // came from a scanned/pasted note string or from a service's own response
 // (callback, verify, payLink, ...): https anywhere, http only for the
@@ -94,8 +102,7 @@ export const isAllowedServiceUrl = (value: string): boolean => {
 export const fromLud17 = (url: string): string => {
   const match = url.match(/^(?:lnurlw|lnurlp|lnurlc|keyauth):\/\/([^/]+)/i)
   if (!match) return url
-  const scheme = isInsecureHost(match[1].split(':')[0]) ? 'http' : 'https'
-  return url.replace(/^[a-z]+:\/\//i, `${scheme}://`)
+  return url.replace(/^[a-z]+:\/\//i, `${defaultSchemeFor(match[1]!)}://`)
 }
 
 export const toLud17w = (url: string): string =>
@@ -133,10 +140,7 @@ export const isLightningAddress = (value: string): boolean => {
 
 const lnAddressToUrl = (address: string): string => {
   const [name, domain] = address.trim().split('@')
-  // the domain may carry a port (mint@127.0.0.1:8000) - the insecure-host
-  // check is about the host part only, same split fromLud17 does
-  const scheme = isInsecureHost(domain.split(':')[0]) ? 'http' : 'https'
-  return `${scheme}://${domain}/.well-known/lnurlp/${name}`
+  return `${defaultSchemeFor(domain!)}://${domain}/.well-known/lnurlp/${name}`
 }
 
 // a bare mint domain, with no local-part - either literally bare
