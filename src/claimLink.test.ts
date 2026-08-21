@@ -72,4 +72,27 @@ describe('claimParamsFromHref', () => {
     expect(claimParamsFromHref('https://wallet.example/')).toBeNull()
     expect(claimParamsFromHref('https://wallet.example/#/claim')).toBeNull()
   })
+
+  it('gives a bare dev host the scheme it is actually served on', () => {
+    // The vault writes the mint endpoint schemeless, so a note from the local
+    // dev mint arrives as "u=localhost:8111/w". Forcing https on it produced a
+    // URL nothing serves - every other bare host in this wallet asks
+    // defaultSchemeFor, and now so does this one.
+    const params = new URLSearchParams({
+      u: 'localhost:8111/w',
+      k1: K1,
+      a: '21000'
+    })
+    expect(claimLinkToNoteInput(params)).toBe(
+      `http://localhost:8111/w?k1=${K1}&amount=21000`
+    )
+    const clearnet = new URLSearchParams({
+      u: 'mint.example.com/w',
+      k1: K1,
+      a: '21000'
+    })
+    expect(claimLinkToNoteInput(clearnet)).toBe(
+      `https://mint.example.com/w?k1=${K1}&amount=21000`
+    )
+  })
 })

@@ -1,4 +1,4 @@
-import {resolveNoteInput} from './lnurlcash'
+import {defaultSchemeFor, resolveNoteInput} from './lnurlcash'
 
 // The link a vault puts in the QR code when a note is handed over in person
 // (lnurl-vault src/proto/note_url.c, NOTE_URL_CLAIM).
@@ -29,9 +29,13 @@ export const claimLinkToNoteInput = (
   if (!mint || !k1) return null
 
   // A bare host is what the vault sends. Anything already carrying a scheme
-  // is passed through so a mint on a non-default path or an onion/localhost
-  // host still works - resolveNoteInput applies the https-only policy.
-  const base = /^[a-z]+:\/\//i.test(mint) ? mint : `https://${mint}`
+  // is passed through so a mint on a non-default path still works, and a bare
+  // one gets the same scheme every other bare host in this wallet gets -
+  // http for the deliberate dev hosts, https for everything else.
+  // resolveNoteInput applies the admission policy either way.
+  const base = /^[a-z]+:\/\//i.test(mint)
+    ? mint
+    : `${defaultSchemeFor(mint)}://${mint}`
 
   let url: URL
   try {

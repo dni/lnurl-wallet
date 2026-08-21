@@ -68,6 +68,14 @@ const INSECURE_HOSTS = ['127.0.0.1', '0.0.0.0', 'localhost']
 const isInsecureHost = (host: string): boolean =>
   INSECURE_HOSTS.includes(host) || host.endsWith('.onion')
 
+// the scheme to assume for a host that arrived without one. Three places need
+// this - a LUD-17 URL, a Lightning Address domain, and a claim link's bare
+// mint - and the third of them used to hardcode https, so a note from the
+// local dev mint scanned off a vault resolved to a URL nothing serves.
+// `hostish` may carry a port or a path; only the host part decides.
+export const defaultSchemeFor = (hostish: string): 'http' | 'https' =>
+  isInsecureHost(hostish.split('/')[0]!.split(':')[0]!) ? 'http' : 'https'
+
 // the one admission rule every URL this wallet fetches must pass, whether it
 // came from a scanned/pasted note string or from a service's own response
 // (callback, verify, payLink, ...): https anywhere, http only for the
@@ -94,23 +102,45 @@ export const isAllowedServiceUrl = (value: string): boolean => {
 export const fromLud17 = (url: string): string => {
   const match = url.match(/^(?:lnurlw|lnurlp|lnurlc|keyauth):\/\/([^/]+)/i)
   if (!match) return url
-  const scheme = isInsecureHost(match[1].split(':')[0]) ? 'http' : 'https'
-  return url.replace(/^[a-z]+:\/\//i, `${scheme}://`)
+  return url.replace(/^[a-z]+:\/\//i, `${defaultSchemeFor(match[1]!)}://`)
 }
 
 export const toLud17w = (url: string): string =>
   url.replace(/^https?:\/\//, 'lnurlw://')
 
-// LUD-16: a Lightning Address resolves to its .well-known payRequest URL
-export const isLightningAddress = (value: string): boolean =>
-  /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim())
+// LUD-16: a Lightning Address resolves to its .well-known payRequest URL -
+// a local-part, an "@", and a domain. The domain has to carry a dot,
+// because a name without one cannot resolve on the public internet - except
+// for the handful of hosts this wallet deliberately reaches over http
+// (INSECURE_HOSTS above), where "localhost" is a real destination and has no
+// dot to give.
+//
+// That exception is not tidiness. The mint quick-select builds an address by
+// prepending "mint@" to a stored server (Mint.tsx's guessMintAddress), so a
+// mint trusted at localhost:8111 - which is exactly what this project's own
+// documented dev loop produces - could be typed by hand but not clicked. The
+// bare form "localhost:8111" resolved, because isBareMintDomain already bends
+// for a dot-less dev host; "mint@localhost:8111" matched neither branch and
+// came back "Enter a mint LNURL or Lightning Address" against a button the
+// holder had just pressed. 127.0.0.1 hid it: it has dots, so the one dev host
+// in the tests was the one that worked.
+export const isLightningAddress = (value: string): boolean => {
+  const trimmed = value.trim()
+  const at = trimmed.indexOf('@')
+  // exactly one "@", and something either side of it
+  if (at <= 0 || at === trimmed.length - 1) return false
+  if (trimmed.indexOf('@', at + 1) !== -1) return false
+  const domain = trimmed.slice(at + 1)
+  if (/\s/.test(trimmed)) return false
+  if (/^[^\s@]+\.[^\s@]+$/.test(domain)) return true
+  // dot-less: only the hosts an http fetch is allowed to reach at all, so
+  // this can never widen what resolves on the public internet
+  return isInsecureHost(domain.split(':')[0])
+}
 
 const lnAddressToUrl = (address: string): string => {
   const [name, domain] = address.trim().split('@')
-  // the domain may carry a port (mint@127.0.0.1:8000) - the insecure-host
-  // check is about the host part only, same split fromLud17 does
-  const scheme = isInsecureHost(domain.split(':')[0]) ? 'http' : 'https'
-  return `${scheme}://${domain}/.well-known/lnurlp/${name}`
+  return `${defaultSchemeFor(domain!)}://${domain}/.well-known/lnurlp/${name}`
 }
 
 // a bare mint domain, with no local-part - either literally bare

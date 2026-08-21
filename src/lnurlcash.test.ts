@@ -10,6 +10,7 @@ import {
   fromLud17,
   toLud17w,
   resolveLnurlInput,
+  isLightningAddress,
   resolveMintInput,
   resolveNoteInput,
   isValidNoteInput,
@@ -133,6 +134,47 @@ describe('input resolution', () => {
     expect(resolveMintInput('mint@127.0.0.1:8000')).toBe(
       'http://127.0.0.1:8000/.well-known/lnurlp/mint'
     )
+  })
+
+  it('resolves a dot-less dev host with a local-part - the mint picker builds one', () => {
+    // Mint.tsx's quick-select prepends "mint@" to a stored server, so this
+    // is the exact string clicking a trusted mint produces. It used to come
+    // back null: the domain has no dot, so it was not a Lightning Address,
+    // and it has an "@", so it was not a bare mint domain either. A mint
+    // trusted at localhost could be typed and not clicked.
+    //
+    // 127.0.0.1 is why the case above never caught it - it has dots.
+    expect(resolveMintInput('mint@localhost:8111')).toBe(
+      'http://localhost:8111/.well-known/lnurlp/mint'
+    )
+    expect(resolveMintInput('mint@localhost')).toBe(
+      'http://localhost/.well-known/lnurlp/mint'
+    )
+    // every server the picker can hold, run through the same "mint@" it
+    // prepends, so none of them can regress into being unclickable
+    for (const server of [
+      'localhost:8111',
+      '127.0.0.1:8111',
+      '0.0.0.0:8111',
+      'mint.example.com'
+    ]) {
+      expect(resolveMintInput(`mint@${server}`)).not.toBeNull()
+    }
+  })
+
+  it('does not accept a dot-less domain that is not a dev host', () => {
+    // the whole point of requiring a dot: a name with none cannot resolve on
+    // the public internet, and an https fetch at it would go nowhere. Only
+    // the hosts this wallet is allowed to reach over http are exempt.
+    expect(isLightningAddress('mint@intranet')).toBe(false)
+    expect(resolveMintInput('mint@intranet')).toBeNull()
+    expect(isLightningAddress('mint@localhost')).toBe(true)
+    // ...and the shape rules still hold
+    expect(isLightningAddress('mint@')).toBe(false)
+    expect(isLightningAddress('@mint.example.com')).toBe(false)
+    expect(isLightningAddress('a@b@mint.example.com')).toBe(false)
+    expect(isLightningAddress('mint mint@mint.example.com')).toBe(false)
+    expect(isLightningAddress('mint@mint.example.com')).toBe(true)
   })
 
   it('rejects non-https URLs and clearnet http, even bech32-encoded', () => {
