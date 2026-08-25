@@ -635,6 +635,10 @@ export type MintAddressInfo = {
   nodeAlias?: string
   nodeUri?: string
   nodeColor?: string
+  // the wire field is `nodeCapacity` (msat, see lnurl-mint's
+  // LnurlMintAddressResponse) - suffixed here so a caller doesn't read a
+  // bare capacity as sats, and mapped below, since a rename that isn't
+  // mapped just reads undefined
   nodeCapacityMsat?: number
   nodeNumChannels?: number
   nodeNumPeers?: number
@@ -658,8 +662,13 @@ export const fetchMintAddress = async (
   ) {
     throw new Error('Not a mint address response (unexpected shape).')
   }
-  const {mintPubkey, ...rest} = body
-  return {...rest, nodePubkey: mintPubkey} as MintAddressInfo
+  const {mintPubkey, nodeCapacity, ...rest} = body
+  return {
+    ...rest,
+    nodePubkey: mintPubkey,
+    nodeCapacityMsat:
+      typeof nodeCapacity === 'number' ? nodeCapacity : undefined
+  } as MintAddressInfo
 }
 
 export type WithdrawSuccessResponse = {
