@@ -155,13 +155,13 @@ describe('DeviceClient', () => {
       ok: true,
       total: 40,
       offset: 10,
-      notes: [wireNote('aa'.repeat(32))],
+      notes: [wireNote('aaaaaaaa')],
       next_offset: 15
     })
     await expect(promise).resolves.toEqual({
       total: 40,
       offset: 10,
-      notes: [wireNote('aa'.repeat(32))],
+      notes: [wireNote('aaaaaaaa')],
       nextOffset: 15
     })
   })
@@ -178,7 +178,7 @@ describe('DeviceClient', () => {
       ok: true,
       total: 3,
       offset: 0,
-      notes: [wireNote('aa'.repeat(32)), wireNote('bb'.repeat(32))],
+      notes: [wireNote('aaaaaaaa'), wireNote('bbbbbbbb')],
       next_offset: 2
     })
 
@@ -192,13 +192,13 @@ describe('DeviceClient', () => {
       ok: true,
       total: 3,
       offset: 2,
-      notes: [wireNote('cc'.repeat(32))]
+      notes: [wireNote('cccccccc')]
     })
 
     await expect(promise).resolves.toEqual([
-      wireNote('aa'.repeat(32)),
-      wireNote('bb'.repeat(32)),
-      wireNote('cc'.repeat(32))
+      wireNote('aaaaaaaa'),
+      wireNote('bbbbbbbb'),
+      wireNote('cccccccc')
     ])
   })
 
@@ -399,7 +399,7 @@ describe('DeviceClient response validation', () => {
   it('fails export_secret on a k1 that is not 64 hex characters', async () => {
     const transport = new FakeTransport()
     const client = new DeviceClient(transport)
-    const promise = client.exportSecret('cd'.repeat(32))
+    const promise = client.exportSecret('cdcdcdcd')
     await vi.waitFor(() => expect(transport.sent.length).toBe(1))
     transport.respond({ok: true, k1: 'deadbeef'})
     await expect(promise).rejects.toMatchObject({
@@ -410,7 +410,7 @@ describe('DeviceClient response validation', () => {
 
   it('drops malformed list_notes entries without failing the whole list', async () => {
     const good = {
-      id: 'cd'.repeat(32),
+      id: 'cdcdcdcd',
       state: 'confirmed',
       amount_msat: 1000,
       label: '',
@@ -419,7 +419,7 @@ describe('DeviceClient response validation', () => {
       created_at: 0,
       updated_at: 0
     }
-    const alsoGood = {...good, id: 'ef'.repeat(32), state: 'pending'}
+    const alsoGood = {...good, id: 'efefefef', state: 'pending'}
     const transport = new FakeTransport()
     const client = new DeviceClient(transport)
     const promise = client.listNotes()

@@ -375,6 +375,33 @@ export const serverOf = (url: string): string => {
   }
 }
 
+// The withdraw endpoint's host AND path - what a note has to be rebuilt from,
+// and so what a vault must be told to store as a note's `host`.
+//
+// LUD-25 is explicit that a note is the whole withdrawRequest URL:
+// "lnurlw://mint.example/w?k1=<P>&amount=<msat> *is* the bearer note". Reduce
+// that to "mint.example" and there is nothing left to GET - the path is not
+// decoration, it is part of which note this is, and no amount of guessing
+// recovers it for a SERVICE that does not serve withdraw at the root.
+//
+// serverOf() above is for DISPLAY, where a bare hostname is what a person
+// wants to read. It was being used for this too, which is how a vault ended
+// up holding notes whose on-screen QR encoded lnurlw://mint.example?k1=...
+// and resolved to the mint's landing page. The two are not interchangeable
+// and are deliberately not one function.
+export const noteEndpointOf = (url: string): string => {
+  try {
+    const parsed = new URL(fromLud17(url.trim()))
+    // A root-path endpoint contributes no path segment, so the rebuilt note
+    // is "mint.example?k1=..." rather than "mint.example/?k1=...".
+    const path =
+      parsed.pathname === '/' ? '' : parsed.pathname.replace(/\/+$/, '')
+    return `${parsed.host}${path}`
+  } catch {
+    return serverOf(url)
+  }
+}
+
 // ---- offline verification (optional) ----
 
 // Signed the same way LUD-13 signs its auth seed phrase - the standard
