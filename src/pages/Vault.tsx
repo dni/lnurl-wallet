@@ -1,8 +1,15 @@
 import type {Component} from 'solid-js'
 import {For, Show, createSignal} from 'solid-js'
-import {IoBanSharp, IoPencilSharp, IoTrashSharp} from 'solid-icons/io'
+import {
+  IoBanSharp,
+  IoDownloadSharp,
+  IoPencilSharp,
+  IoTrashSharp
+} from 'solid-icons/io'
 
 import {useDevice} from '../DeviceContext'
+import {useWallet} from '../WalletContext'
+import {adoptDeviceNote} from '../deviceOrchestration'
 import type {DeviceNote, DeviceStorageState} from '../device'
 import {
   approvalInstruction,
@@ -58,8 +65,44 @@ const Vault: Component = () => {
     refresh,
     rename,
     deleteNote,
-    pruneSpent
+    pruneSpent,
+    client
   } = useDevice()
+  const {bearers, addBearer, logActivity} = useWallet()
+
+  // A note the vault holds that this browser has no record of: paired to a
+  // different browser, storage cleared, a restore that predates it. Without
+  // a bearer it has no card anywhere else in the wallet, so this page is the
+  // only place it can be acted on at all.
+  const isOrphan = (note: DeviceNote) =>
+    note.state === 'confirmed' && !bearers().some(b => b.deviceId === note.id)
+
+  const adopt = async (note: DeviceNote) => {
+    const current = client()
+    if (!current) return
+    const adopted = await adoptDeviceNote(current, {
+      id: note.id,
+      host: note.host,
+      amountMsat: note.amount_msat
+    })
+    await addBearer({
+      url: adopted.url,
+      callback: adopted.callback,
+      amount: adopted.amountMsat,
+      verified: true,
+      mintPubkey: adopted.mintPubkey,
+      deviceId: adopted.deviceId
+    })
+    logActivity(
+      'transfer',
+      `Adopted ${msatToSats(adopted.amountMsat)} sats from the vault into this wallet.`
+    )
+    notify(
+      `Adopted ${msatToSats(adopted.amountMsat)} sats - it has a card on the wallet page now.`,
+      NotifyKind.SUCCESS
+    )
+    await refresh()
+  }
 
   const [busy, setBusy] = createSignal(false)
   const [showOtherWays, setShowOtherWays] = createSignal(false)
@@ -293,6 +336,16 @@ const Vault: Component = () => {
                         >
                           <IoPencilSharp />
                         </button>
+                        <Show when={isOrphan(note)}>
+                          <button
+                            class="icon-btn"
+                            title="Adopt into this wallet - this browser has no record of this note, so it has no card on the wallet page"
+                            disabled={busy()}
+                            onClick={() => withBusy(() => adopt(note))}
+                          >
+                            <IoDownloadSharp />
+                          </button>
+                        </Show>
                         <Show when={note.state === 'spent'}>
                           <button
                             class="icon-btn"

@@ -11,6 +11,10 @@ import {
   requireNoteK1,
   noteSignature,
   noteEndpointOf,
+  defaultSchemeFor,
+  resolveMintInput,
+  fetchPayRequest,
+  buildNoteUrl,
   probeBurnedNote,
   AmbiguousMintError,
   type HashedMutationResult,
@@ -545,6 +549,80 @@ export const markDeviceNoteSpent = async (
 // here. `noteUrl` is the bearer's own blank-mirror url (see withoutK1) -
 // reused as the template so any offline-verification `sig` it already
 // carries travels with the revealed note too, not just its k1/amount.
+// Where a note the device holds actually lives, best candidate first.
+//
+// The device's stored host is a hint, not gospel. It is what the firmware
+// rebuilds `https://<host>?k1=...` from, and a build that wrote a bare
+// hostname where the withdraw endpoint belonged strands exactly the notes
+// this exists to rescue - so when the mint does not answer there, the mint
+// is asked for its own withdrawLink (LUD-06 payRequest) instead of guessing
+// a path.
+const noteEndpointCandidates = async (host: string): Promise<string[]> => {
+  const trimmed = host.trim()
+  if (!trimmed) return []
+  const candidates = [`${defaultSchemeFor(trimmed)}://${trimmed}`]
+  const payUrl = resolveMintInput(trimmed.split('/')[0]!)
+  if (payUrl) {
+    try {
+      const advertised = (await fetchPayRequest(payUrl)).withdrawLink
+      if (advertised) {
+        const resolved = fromLud17(advertised)
+        if (!candidates.includes(resolved)) candidates.push(resolved)
+      }
+    } catch {
+      // the mint is unreachable or advertises no withdrawLink - the stored
+      // host is all there is to go on, which is the pre-existing behaviour
+    }
+  }
+  return candidates
+}
+
+export type AdoptedDeviceNote = {
+  url: string
+  callback: string
+  amountMsat: number
+  mintPubkey?: string
+  deviceId: string
+}
+
+// Bring a note the vault holds but this browser has no record of back into
+// the wallet: paired to a different browser, storage cleared, a restore that
+// predates it. The secret never leaves the device beyond the one export the
+// mint call needs, exactly as a rotate does.
+//
+// The amount is taken from the mint's answer, never from the device: the
+// device records what it was told when the note was confirmed, and only the
+// mint knows what is actually outstanding now.
+export const adoptDeviceNote = async (
+  client: DeviceClient,
+  note: {id: string; host: string; amountMsat: number}
+): Promise<AdoptedDeviceNote> => {
+  const candidates = await noteEndpointCandidates(note.host)
+  if (candidates.length === 0) {
+    throw new Error('This note has no mint recorded on the device.')
+  }
+  const k1 = await client.exportSecret(note.id)
+  let lastError: unknown
+  for (const endpoint of candidates) {
+    const url = buildNoteUrl(endpoint, k1, note.amountMsat)
+    try {
+      const info = await fetchNoteInfo(url)
+      return {
+        url: withoutK1(url, info.maxWithdrawable),
+        callback: info.callback,
+        amountMsat: info.maxWithdrawable,
+        mintPubkey: info.mintPubkey,
+        deviceId: note.id
+      }
+    } catch (err) {
+      lastError = err
+    }
+  }
+  throw lastError instanceof Error
+    ? lastError
+    : new Error('The mint did not recognise this note.')
+}
+
 export const deviceExportForHandoff = async (
   client: DeviceClient,
   deviceId: string,
