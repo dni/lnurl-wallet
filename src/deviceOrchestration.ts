@@ -10,7 +10,7 @@ import {
   fromLud17,
   requireNoteK1,
   noteSignature,
-  serverOf,
+  noteEndpointOf,
   probeBurnedNote,
   AmbiguousMintError,
   type HashedMutationResult,
@@ -120,7 +120,11 @@ const rotateK1OnDevice = async (
   k1: string,
   amountMsat: number
 ): Promise<DeviceMutationResult> => {
-  const host = serverOf(note.callback)
+  // from the note URL, never the callback: the device rebuilds
+  // `https://<host>?k1=...` from this, so it needs the withdraw endpoint
+  // (mint/w). The callback is mint/w/cb, and a bare hostname resolves to
+  // the mint's landing page - see noteEndpointOf in lnurlcash.ts
+  const host = noteEndpointOf(note.url)
   const {id, h} = await client.newSecret(parentDeviceId ? [parentDeviceId] : [])
   let signature: string | undefined
   try {
@@ -255,7 +259,7 @@ export const deviceMerge = async (
 ): Promise<DeviceMutationResult> => {
   const k1s: string[] = []
   for (const input of inputs) k1s.push(await exportInputK1(client, input))
-  const host = serverOf(callback)
+  const host = noteEndpointOf(inputs[0].url)
   const parentIds = inputs.flatMap(i => (i.deviceId ? [i.deviceId] : []))
   const {id, h} = await client.newSecret(parentIds)
   let signature: string | undefined
@@ -306,7 +310,7 @@ export const deviceSplit = async (
 ): Promise<DeviceSplitResult> => {
   const k1s: string[] = []
   for (const input of inputs) k1s.push(await exportInputK1(client, input))
-  const host = serverOf(callback)
+  const host = noteEndpointOf(inputs[0].url)
   const parentIds = inputs.flatMap(i => (i.deviceId ? [i.deviceId] : []))
   const {id, h, id2, h2} = await client.newSecretPair(parentIds)
   let signature: string | undefined

@@ -375,6 +375,85 @@ describe('deviceRotate / migrateNoteToDevice', () => {
   })
 })
 
+// A note's host is what the device rebuilds `https://<host>?k1=...` from,
+// so it has to be the withdraw endpoint. Derived from the callback it came
+// out as the bare hostname, which resolves to the mint's landing page: the
+// QR scanned into a real wallet, which reported it could not decode what it
+// got back. Every path that commits a note is checked, because the mint path
+// was fixed on its own once already and these were left behind.
+describe('the host committed with a note', () => {
+  const hostOf = (firmware: MockDeviceFirmware, id: string) =>
+    firmware.get(id)?.host
+
+  it('carries the withdraw path through rotate, split and merge', async () => {
+    const mint = new MockMint()
+    const firmware = new MockDeviceFirmware()
+    const client = new DeviceClient(firmware)
+    const k1 = randomHex(32)
+    mint.seed(k1, 21000)
+
+    await withMint(mint, async () => {
+      const importedId = await client.importSecret(k1, HOST, 21000)
+      const rotated = await deviceRotate(client, {
+        deviceId: importedId,
+        url: noteTemplateUrl(k1, 21000),
+        callback: WITHDRAW_CALLBACK,
+        amount: 21000
+      })
+      expect(hostOf(firmware, rotated.deviceId)).toBe('mock-mint.test/w')
+
+      const rotatedK1 = await client.exportSecret(rotated.deviceId)
+      const parts = await deviceSplit(
+        client,
+        [{deviceId: rotated.deviceId, url: noteTemplateUrl(rotatedK1, 21000)}],
+        WITHDRAW_CALLBACK,
+        6000,
+        21000
+      )
+      expect(hostOf(firmware, parts.target.deviceId)).toBe('mock-mint.test/w')
+      expect(hostOf(firmware, parts.change.deviceId)).toBe('mock-mint.test/w')
+
+      const targetK1 = await client.exportSecret(parts.target.deviceId)
+      const changeK1 = await client.exportSecret(parts.change.deviceId)
+      const merged = await deviceMerge(
+        client,
+        [
+          {
+            deviceId: parts.target.deviceId,
+            url: noteTemplateUrl(targetK1, 6000)
+          },
+          {
+            deviceId: parts.change.deviceId,
+            url: noteTemplateUrl(changeK1, 15000)
+          }
+        ],
+        WITHDRAW_CALLBACK,
+        21000
+      )
+      expect(hostOf(firmware, merged.deviceId)).toBe('mock-mint.test/w')
+    })
+  })
+
+  it('keeps a mint whose withdraw endpoint is at the root free of a stray slash', async () => {
+    const mint = new MockMint()
+    const firmware = new MockDeviceFirmware()
+    const client = new DeviceClient(firmware)
+    const k1 = randomHex(32)
+    mint.seed(k1, 21000)
+
+    await withMint(mint, async () => {
+      const importedId = await client.importSecret(k1, HOST, 21000)
+      const rotated = await deviceRotate(client, {
+        deviceId: importedId,
+        url: buildNoteUrl('https://mock-mint.test/', k1, 21000),
+        callback: WITHDRAW_CALLBACK,
+        amount: 21000
+      })
+      expect(hostOf(firmware, rotated.deviceId)).toBe('mock-mint.test')
+    })
+  })
+})
+
 describe('ambiguous mint-call failures', () => {
   it('a dropped rotate response commits the staged secret rather than discarding it', async () => {
     const mint = new MockMint()
