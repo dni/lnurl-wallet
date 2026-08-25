@@ -73,6 +73,8 @@ export type DeviceContextType = {
   refresh: () => Promise<void>
   rename: (id: string, label: string) => Promise<void>
   deleteNote: (id: string) => Promise<void>
+  // clears every spent note in one press - see DeviceClient.pruneSpent
+  pruneSpent: () => Promise<number>
   // exposed for a later phase (device-backed secrets in the rotate/split/
   // merge/melt flows) - the pairing UI itself never needs it directly
   client: Accessor<DeviceClient | null>
@@ -265,6 +267,14 @@ export const DeviceProvider = (props: {children: JSX.Element}) => {
     await refresh()
   }
 
+  const pruneSpent = async (): Promise<number> => {
+    const current = client()
+    if (!current) return 0
+    const {removed} = await current.pruneSpent()
+    await refresh()
+    return removed
+  }
+
   return (
     <DeviceContext.Provider
       value={{
@@ -283,6 +293,7 @@ export const DeviceProvider = (props: {children: JSX.Element}) => {
         refresh,
         rename,
         deleteNote,
+        pruneSpent,
         client
       }}
     >

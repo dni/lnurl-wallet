@@ -264,6 +264,27 @@ describe('DeviceClient', () => {
     expect(handler).toHaveBeenCalledOnce()
   })
 
+  // A rotate leaves its parent behind as a spent record, so a vault in use
+  // fills with dead weight. The firmware clears the lot in one press; the
+  // trash icon on each note is one press per note.
+  it('prunes spent notes on the physical-confirm timeout, not the short one', async () => {
+    vi.useFakeTimers()
+    try {
+      const transport = new FakeTransport()
+      const client = new DeviceClient(transport)
+      const promise = client.pruneSpent()
+      // past the default 10s a gated command would have died on, and the
+      // on-device prompt has not even timed out yet
+      await vi.advanceTimersByTimeAsync(10_000)
+      expect(transport.disconnected).toBe(false)
+      transport.respond({ok: true, removed: 3, remaining: 1})
+      await expect(promise).resolves.toEqual({removed: 3, remaining: 1})
+      expect(transport.sent).toEqual([{cmd: 'prune_spent'}])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('reports the disconnect, not the closed port, on a later command', async () => {
     const transport = new FakeTransport()
     const client = new DeviceClient(transport)

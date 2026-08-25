@@ -1046,6 +1046,20 @@ export class DeviceClient {
     await this.send({cmd: 'delete', id}, PHYSICAL_CONFIRM_TIMEOUT_MS)
   }
 
+  // Forgets every note the device already knows is dead, in one press
+  // instead of one per note. Gated like delete, except when there is
+  // nothing spent: the firmware answers removed:0 without prompting rather
+  // than teach people to approve a no-op (dispatcher.c handle_prune_spent).
+  // It never touches a confirmed note - only the mint knows whether one is
+  // still outstanding.
+  async pruneSpent(): Promise<{removed: number; remaining: number}> {
+    const res = await this.send(
+      {cmd: 'prune_spent'},
+      PHYSICAL_CONFIRM_TIMEOUT_MS
+    )
+    return {removed: res.removed ?? 0, remaining: res.remaining ?? 0}
+  }
+
   async disconnect(): Promise<void> {
     await this.transport.disconnect()
   }

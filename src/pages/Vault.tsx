@@ -7,7 +7,8 @@ import type {DeviceNote, DeviceStorageState} from '../device'
 import {
   approvalInstruction,
   inputWarning,
-  canShowQrHandoff
+  canShowQrHandoff,
+  gatedCommandsUnavailable
 } from '../deviceGuidance'
 import {identityWarning} from '../devicePinning'
 import {msatToSats, notify, NotifyKind} from '../helpers'
@@ -56,13 +57,27 @@ const Vault: Component = () => {
     trustCurrentIdentity,
     refresh,
     rename,
-    deleteNote
+    deleteNote,
+    pruneSpent
   } = useDevice()
 
   const [busy, setBusy] = createSignal(false)
   const [showOtherWays, setShowOtherWays] = createSignal(false)
   const [editingId, setEditingId] = createSignal<string | null>(null)
   const [labelInput, setLabelInput] = createSignal('')
+
+  const spentCount = () => notes().filter(n => n.state === 'spent').length
+
+  // one press for the lot, against one per note through the trash icons.
+  // A rotate leaves its parent behind as a spent record by design, so these
+  // pile up fast on a vault in use
+  const clearSpent = async () => {
+    const removed = await pruneSpent()
+    notify(
+      `Cleared ${removed} spent note${removed === 1 ? '' : 's'} from the device.`,
+      NotifyKind.SUCCESS
+    )
+  }
 
   const withBusy = async (action: () => Promise<void>) => {
     setBusy(true)
@@ -223,6 +238,11 @@ const Vault: Component = () => {
             <button disabled={busy()} onClick={() => withBusy(refresh)}>
               Refresh
             </button>
+            <Show when={spentCount() > 0 && !gatedCommandsUnavailable(info())}>
+              <button disabled={busy()} onClick={() => withBusy(clearSpent)}>
+                Clear {spentCount()} spent
+              </button>
+            </Show>
             <button disabled={busy()} onClick={() => withBusy(disconnect)}>
               Disconnect
             </button>
