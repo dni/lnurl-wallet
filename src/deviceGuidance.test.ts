@@ -53,6 +53,19 @@ describe('approvalInstruction', () => {
     expect(text).toMatch(/swipe/i)
   })
 
+  // The panel shows this the whole time a vault is connected, so an
+  // imperative sends people to stare at an idle screen. Every variant that
+  // names a gesture has to say when it applies.
+  it('frames every gesture as a condition, not an instruction to act now', () => {
+    for (const caps of [
+      {buttons: 2},
+      {buttons: 1},
+      {buttons: 0, touch: true}
+    ]) {
+      expect(approvalInstruction(info(caps))).toMatch(/^When your vault asks,/)
+    }
+  })
+
   // A build with no confirmation hook refuses every gated command outright.
   // Saying so beats letting someone find out by having an export refused.
   it('says up front when a vault cannot ask at all', () => {

@@ -10,7 +10,10 @@ import type {DeviceInfo} from './device'
 // One rule throughout: never claim more than the device reported. Older
 // firmware sends neither field, so the fallback must be true everywhere.
 
-// What the owner has to do on the device when something is waiting for them.
+// What the owner will have to do on the device when it asks. Shown for the
+// whole session, not only while something is pending, so every variant is
+// worded as a condition - a bare imperative reads as "do this now" and sends
+// people looking at a vault that is idle and has nothing to show them.
 // Always returns a usable sentence; the generic one is correct everywhere,
 // just less helpful.
 export const approvalInstruction = (info: DeviceInfo | null): string => {
@@ -24,14 +27,14 @@ export const approvalInstruction = (info: DeviceInfo | null): string => {
   }
 
   if (caps.buttons >= 2) {
-    return 'Hold the confirm button on your vault for two seconds to approve, or press the other button to cancel.'
+    return 'When your vault asks, hold its confirm button for two seconds to approve, or press the other button to cancel.'
   }
   if (caps.buttons === 1) {
     // No cancel gesture exists here; someone hunting for one just waits.
-    return 'Hold your vault’s button for two seconds to approve. It has no cancel button, so to refuse, leave it alone and let the request time out.'
+    return 'When your vault asks, hold its button for two seconds to approve. It has no cancel button, so to refuse, leave it alone and let the request time out.'
   }
   if (caps.touch) {
-    return 'Swipe to approve on your vault, or dismiss the prompt to cancel.'
+    return 'When your vault asks, swipe to approve, or dismiss the prompt to cancel.'
   }
   // No buttons, no touch, but it claims it can ask. Don't invent a gesture.
   return 'Confirm on your vault when it asks.'

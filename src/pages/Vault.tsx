@@ -89,12 +89,26 @@ const Vault: Component = () => {
   return (
     <div id="vault" class="page">
       <h2>LNURLvault</h2>
-      <p>
-        Pair an LNURLvault hardware device over USB or Bluetooth. The device
-        generates and holds note secrets itself - this page only reads its
-        state, it never sees a plaintext secret unless you explicitly export one
-        on the device (which requires a physical button press there).
-      </p>
+      {/* the pairing call to action has to go once a vault is paired -
+          left standing next to "No notes on this device yet" it reads as
+          "you still have not paired", on a page that just did */}
+      <Show
+        when={connectionState() === 'connected'}
+        fallback={
+          <p>
+            Pair an LNURLvault hardware device over USB or Bluetooth. The device
+            generates and holds note secrets itself - this page only reads its
+            state, it never sees a plaintext secret unless you explicitly export
+            one on the device (which requires a physical button press there).
+          </p>
+        }
+      >
+        <p>
+          This vault generates and holds its note secrets itself. This page only
+          reads its state, and never sees a plaintext secret unless you export
+          one on the device, which requires a physical button press there.
+        </p>
+      </Show>
       <Show
         when={connectionState() === 'connected'}
         fallback={
