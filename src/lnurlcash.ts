@@ -25,7 +25,13 @@ import {msatToSats} from './helpers'
 //
 // Minting: a LUD-06 payRequest may advertise `withdrawLink` (raw LUD-17 URL
 // of the withdraw endpoint) - the payment preimage of its paid invoice
-// becomes a valid k1 there.
+// becomes a valid k1 there. A Lightning payment preimage isn't delivered
+// payee-to-payer directly, so every routing node between WALLET and
+// SERVICE legitimately learns it before WALLET does - if SERVICE
+// advertises enough `commentAllowed` (LUD-12, see canUseMintComment),
+// WALLET closes that instead: it generates its own `secret`, sends only
+// `comment=hashK1(secret)` on the invoice request (requestInvoice), and
+// SERVICE credits the note as k1=secret once paid, never k1=P.
 //
 // A melt's {"status":"OK"} only means the payment is now in flight - the
 // note isn't confirmed spent until it settles, and is restored to
@@ -410,15 +416,22 @@ export const noteEndpointOf = (url: string): string => {
 //   digest  = sha256(sha256("Lightning Signed Message:" || message))
 const LIGHTNING_SIGNED_MESSAGE_PREFIX = utf8ToBytes('Lightning Signed Message:')
 
-const hashK1 = (k1: string): string => bytesToHex(sha256(hexToBytes(k1)))
-
 // LUD-25: for a rotate/split/merge, WALLET - not SERVICE - generates the
 // replacement note's secret and discloses only its hash (h/h2 on the
 // callback) - a fresh 32-byte value, the same size an actual Lightning
 // payment preimage already is, though nothing is ever paid for it, it's
-// just drawn at random. SERVICE never sees, generates, or persists it.
-const generateNoteSecret = (): string =>
+// just drawn at random. SERVICE never sees, generates, or persists it. The
+// same function also produces the `secret` behind a comment-protected mint
+// (see MIN_COMMENT_LENGTH_FOR_SECRET below) - both are the same kind of
+// thing, an opaque 32-byte value only WALLET ever needs to produce.
+export const generateNoteSecret = (): string =>
   bytesToHex(crypto.getRandomValues(new Uint8Array(32)))
+
+// exported so callers can hash the mint secret behind a LUD-12 `comment`
+// the same way (see MIN_COMMENT_LENGTH_FOR_SECRET) - it's the same
+// hex-in/hex-out sha256 either way, just applied to a not-yet-disclosed
+// secret instead of an existing k1
+export const hashK1 = (k1: string): string => bytesToHex(sha256(hexToBytes(k1)))
 
 const noteSignatureDigest = (k1: string, amountMsat: number): Uint8Array => {
   const message = utf8ToBytes(`LNURLcash:${amountMsat}:${hashK1(k1)}`)
@@ -1057,7 +1070,28 @@ export type PayRequestInfo = {
   // means SERVICE didn't advertise one, which the spec says to read as
   // fee-free, not "unknown"
   mintFee?: MintFee
+  // LUD-12 (optional): number of characters SERVICE accepts in a `comment`
+  // on the callback - see canUseMintComment/MIN_COMMENT_LENGTH_FOR_SECRET
+  // for how this wallet uses it to protect a mint against the preimage
+  // race (Protecting a freshly minted note from a preimage race)
+  commentAllowed?: number
 }
+
+// LUD-25: "A mint payLink intending to support this SHOULD advertise a
+// commentAllowed of at least 64, enough for a hex-encoded 32-byte hash" -
+// exactly what generateNoteSecret + hashK1 produce
+export const MIN_COMMENT_LENGTH_FOR_SECRET = 64
+
+// true only if SERVICE's payRequest advertised enough `commentAllowed`
+// (LUD-12) to carry a hex-encoded 32-byte hash - the precondition for
+// minting with comment protection (see requestInvoice's `comment` param
+// and Mint.tsx). A SERVICE that omits commentAllowed, or advertises less
+// than this, can't be protected this way: WALLET falls back to the plain
+// no-comment mint, where the payment preimage P is the entire bearer
+// secret and LUD-21 `verify` MUST NOT be relied on (see Mint.tsx).
+export const canUseMintComment = (info: PayRequestInfo): boolean =>
+  typeof info.commentAllowed === 'number' &&
+  info.commentAllowed >= MIN_COMMENT_LENGTH_FOR_SECRET
 
 // LUD-25 mint fees (optional): SERVICE signals what it withholds on minting
 // via an extra ["text/plain", "Mint fees: <base_fee_msat>,<fee_percent_ppm>"]
@@ -1182,12 +1216,22 @@ export type InvoiceResult = {
   disposable: boolean
 }
 
+// `comment` (LUD-12): when present, this is LUD-25's mint-time preimage-race
+// protection (Protecting a freshly minted note from a preimage race) -
+// callers pass `hashK1(secret)` for a wallet-generated secret, never the
+// secret itself over the wire before payment. Only meaningful when
+// canUseMintComment(payRequestInfo) is true; passing one to a SERVICE that
+// doesn't support LUD-12 is harmless (an ad-hoc field it will simply
+// ignore), but nothing here enforces that precondition - the caller (see
+// Mint.tsx) decides whether to protect a given mint this way.
 export const requestInvoice = async (
   payCallback: string,
-  amountMsat: number
+  amountMsat: number,
+  comment?: string
 ): Promise<InvoiceResult> => {
   const cbUrl = new URL(payCallback)
   cbUrl.searchParams.set('amount', String(amountMsat))
+  if (comment !== undefined) cbUrl.searchParams.set('comment', comment)
   const body = await lnurlFetch(cbUrl)
   if (typeof body?.pr !== 'string') {
     throw new Error('Service did not return an invoice.')
@@ -1218,11 +1262,12 @@ export type VerifyResult = {
 // LUD-21: polls whether an invoice from requestInvoice has settled, via the
 // URL it optionally returned as `verify`. `preimage` is only ever populated
 // by a service that chooses to return it - for lnurlcash specifically, the
-// preimage IS the bearer secret, so a service SHOULD withhold it here (a
-// verify GET proves nothing about who's asking, just that they know the
-// payment hash embedded in the URL) and let the payer's own wallet be the
-// only source of it. Treat a returned preimage as a convenience, never a
-// guarantee that any given service provides one.
+// preimage IS the bearer secret whenever no comment protection was used,
+// so a service SHOULD withhold it here (a verify GET proves nothing about
+// who's asking, just that they know the payment hash embedded in the URL)
+// and let the payer's own wallet be the only source of it. Treat a
+// returned preimage as a convenience, never a guarantee that any given
+// service provides one.
 export const fetchInvoiceVerification = async (
   verifyUrl: string
 ): Promise<VerifyResult> => {
