@@ -13,6 +13,7 @@ import {
   settleNote,
   probeBurnedNote,
   toBech32Lnurl,
+  toLightningUri,
   serverOf,
   AmbiguousMutationError
 } from '../lnurlcash'
@@ -560,7 +561,10 @@ const SendDialog: Component<SendDialogProps> = props => {
             {url => (
               <>
                 <div class="qr-wrapper">
-                  <Qr value={toBech32Lnurl(url())} />
+                  <Qr
+                    value={toLightningUri(toBech32Lnurl(url()))}
+                    href={toLightningUri(toBech32Lnurl(url()))}
+                  />
                   <Show when={!qrRevealed()}>
                     <button
                       class="qr-overlay"

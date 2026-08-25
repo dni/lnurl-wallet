@@ -12,7 +12,7 @@ import {
 import type {Bearer} from '../storage'
 import {useWallet} from '../WalletContext'
 import {useDevice} from '../DeviceContext'
-import {toBech32Lnurl, serverOf} from '../lnurlcash'
+import {toBech32Lnurl, toLightningUri, serverOf} from '../lnurlcash'
 import {
   deviceExportForHandoff,
   markDeviceNoteSpent
@@ -140,7 +140,7 @@ const SendNoteCard: Component<SendNoteCardProps> = props => {
         <Show when={token()}>
           {url => (
             <div class="qr-wrapper">
-              <Qr value={url()} />
+              <Qr value={toLightningUri(url())} href={toLightningUri(url())} />
               <Show when={!revealed()}>
                 <button
                   class="qr-overlay"
