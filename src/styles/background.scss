@@ -1,25 +1,25 @@
-// Calm, mint-toned backdrop: soft glows of the wallet's own accent color
-// (#5fc) drifting over a dark teal base (#002222, matching style.scss's
+// Calm, amber-toned backdrop: soft glows of the wallet's own accent color
+// (#ff9d3f) drifting over a dark ink base (#0a0c10, matching style.scss's
 // $bg/$font-color) - low-contrast and static, unlike a busy repeating
 // pattern, so it reads as ambient depth rather than something to look at.
 body {
   background:
     radial-gradient(
       ellipse 70% 50% at 15% -10%,
-      rgba(#5fc, 0.1),
+      rgba(#ff9d3f, 0.1),
       transparent 60%
     ),
     radial-gradient(
       ellipse 60% 45% at 100% 15%,
-      rgba(#5fc, 0.07),
+      rgba(#ff9d3f, 0.07),
       transparent 60%
     ),
     radial-gradient(
       ellipse 80% 60% at 50% 115%,
-      rgba(#5fc, 0.08),
+      rgba(#ff9d3f, 0.08),
       transparent 65%
     ),
-    linear-gradient(160deg, #001616 0%, #002222 55%, #001a1a 100%);
+    linear-gradient(160deg, #08090c 0%, #0a0c10 55%, #060708 100%);
   // pin the gradient to the viewport at all times, sized to fill it exactly,
   // instead of scrolling with (and being sized to) the page's content box
   background-attachment: fixed;

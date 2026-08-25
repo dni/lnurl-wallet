@@ -1,11 +1,11 @@
 @use 'sass:color';
 
-// same design language as lnurl_server's frontend, shifted to a mint/teal
-// palette so wallet and server are instantly distinguishable
-$bg: #002222;
-$accent-base: #044;
+// same ink base as lnurlcash.com, shifted to the wallet's own amber/orange
+// accent so mint, wallet and vault are instantly distinguishable
+$bg: #0a0c10;
+$accent-base: #3d2408;
 $transparency: 0.6;
-$font-color: #5fc;
+$font-color: #ff9d3f;
 $font-size: 16px;
 $font: 'Noto Sans', sans-serif;
 
@@ -306,15 +306,17 @@ a:where(.icon-btn, .link-btn) {
   margin: 10px 0;
 }
 
+// gold, not the wallet's own amber accent, so a warning still reads as
+// "notice" instead of blending into ordinary brand-colored UI
 .warning {
-  color: #f80;
+  color: #e4c567;
   padding: 10px 14px;
   margin: 10px 0;
   border-radius: 5px;
-  background: rgba(#f80, 0.12);
-  border: 1px solid rgba(#f80, 0.5);
+  background: rgba(#e4c567, 0.12);
+  border: 1px solid rgba(#e4c567, 0.5);
   a {
-    color: #f80;
+    color: #e4c567;
   }
 }
 
@@ -1072,7 +1074,7 @@ body.dragging-note {
 }
 
 .bearer-pending {
-  color: #f80;
+  color: #e4c567;
   font-size: 0.8em;
 }
 
