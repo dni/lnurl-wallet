@@ -264,6 +264,16 @@ describe('DeviceClient', () => {
     expect(handler).toHaveBeenCalledOnce()
   })
 
+  it('reports the disconnect, not the closed port, on a later command', async () => {
+    const transport = new FakeTransport()
+    const client = new DeviceClient(transport)
+    await transport.disconnect()
+    await expect(client.getInfo()).rejects.toMatchObject({
+      code: 'disconnected'
+    })
+    expect(transport.sent.length).toBe(0)
+  })
+
   it('times out and disconnects a command that never gets a response', async () => {
     vi.useFakeTimers()
     try {
@@ -298,7 +308,7 @@ describe('DeviceClient', () => {
     }
   })
 
-  it('does not start the next queued command until the timed-out session has finished disconnecting', async () => {
+  it('fails a command queued behind a timeout with the timeout, not the closed port', async () => {
     vi.useFakeTimers()
     try {
       const transport = new FakeTransport()
@@ -320,6 +330,13 @@ describe('DeviceClient', () => {
       const firstAssertion = expect(first).rejects.toMatchObject({
         code: 'timeout'
       })
+      // the session is one-shot, so the queued command never reaches the
+      // now-closed port and reports what killed it rather than the port's
+      // own "not writable"
+      const secondAssertion = expect(second).rejects.toMatchObject({
+        code: 'disconnected',
+        message: 'Device did not respond in time.'
+      })
 
       await vi.advanceTimersByTimeAsync(10_000)
       // the timeout fired and teardown started, but until disconnect() has
@@ -330,14 +347,8 @@ describe('DeviceClient', () => {
       releaseDisconnect()
       await firstAssertion
       await vi.advanceTimersByTimeAsync(0)
-      await vi.waitFor(() => expect(transport.sent.length).toBe(2))
-      transport.respond({ok: true, notes: []})
-      await expect(second).resolves.toEqual({
-        total: undefined,
-        offset: undefined,
-        notes: [],
-        nextOffset: null
-      })
+      await secondAssertion
+      expect(transport.sent.length).toBe(1)
     } finally {
       vi.useRealTimers()
     }

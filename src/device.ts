@@ -726,6 +726,7 @@ export class DeviceClient {
   private queue: Promise<any> = Promise.resolve()
   private externalDisconnectHandler: (() => void) | null = null
   private disconnectNotified = false
+  private deadReason: string | null = null
 
   constructor(transport: DeviceTransport) {
     this.transport = transport
@@ -784,6 +785,11 @@ export class DeviceClient {
   }
 
   private handleDisconnect(reason?: string): void {
+    // a session is one-shot, so remember why it died - sendOne reports this
+    // instead of whatever the closed port says
+    if (this.deadReason === null) {
+      this.deadReason = reason ?? 'Device disconnected.'
+    }
     if (this.pending) {
       this.pending.reject(
         new DeviceError('disconnected', reason ?? 'Device disconnected.')
@@ -810,12 +816,20 @@ export class DeviceClient {
   }
 
   private sendOne(cmd: object, timeoutMs: number): Promise<any> {
+    // the transport is already closed by now; sending would fail with its own
+    // "not writable" and bury the disconnect that actually caused it
+    if (this.deadReason !== null) {
+      return Promise.reject(new DeviceError('disconnected', this.deadReason))
+    }
     return new Promise<any>((resolve, reject) => {
       let settled = false
       const timer = setTimeout(() => {
         if (settled) return
         settled = true
         this.pending = null
+        // claimed before teardown so a transport that raises its own
+        // disconnect event can't overwrite it with a vaguer reason
+        this.deadReason = 'Device did not respond in time.'
         // a late response to this command may still be on its way in -
         // reject only once the teardown has actually settled, since
         // rejecting is what lets the queue start the next command (see
