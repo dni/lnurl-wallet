@@ -7,7 +7,6 @@ import {
   toBech32Lnurl,
   fromBech32Lnurl,
   isBech32Lnurl,
-  toLightningUri,
   fromLud17,
   toLud17w,
   resolveLnurlInput,
@@ -105,9 +104,9 @@ describe('input resolution', () => {
     )
     expect(resolveLnurlInput(NOTE_URL)).toBe(NOTE_URL)
     expect(resolveLnurlInput('nonsense')).toBeNull()
-    // a scanner hands back the scheme with the payload, and our own QRs now
-    // carry it - a bare LNURL1 is what wallets fail to route
-    expect(resolveLnurlInput(toLightningUri(toBech32Lnurl(NOTE_URL)))).toBe(
+    // wallets hand LNURLs over behind the scheme (LUD-01); only the
+    // clipboard path stripped it, so a scanned one was rejected
+    expect(resolveLnurlInput(`lightning:${toBech32Lnurl(NOTE_URL)}`)).toBe(
       NOTE_URL
     )
     expect(resolveLnurlInput(`LIGHTNING:${toBech32Lnurl(NOTE_URL)}`)).toBe(
@@ -117,7 +116,7 @@ describe('input resolution', () => {
 
   it('only accepts a note when a k1 is present', () => {
     expect(resolveNoteInput(toBech32Lnurl(NOTE_URL))).toBe(NOTE_URL)
-    expect(resolveNoteInput(toLightningUri(toBech32Lnurl(NOTE_URL)))).toBe(
+    expect(resolveNoteInput(`lightning:${toBech32Lnurl(NOTE_URL)}`)).toBe(
       NOTE_URL
     )
     expect(resolveNoteInput('https://mint.example.com/withdraw')).toBeNull()

@@ -51,14 +51,6 @@ export const toBech32Lnurl = (url: string): string => {
   return bech32.encode('lnurl', bech32.toWords(bytes), 2048).toUpperCase()
 }
 
-// LUD-01: a bech32 LNURL goes in a QR behind the `lightning:` scheme. With
-// no scheme a scanner has nothing to route on and falls through to bolt11
-// parsing - Wallet of Satoshi answers a bare LNURL1 with "failed to decode
-// invoice". The scheme is lowercase and the bech32 uppercase, matching how
-// Mint.tsx already renders bolt11.
-export const toLightningUri = (bech32Lnurl: string): string =>
-  `lightning:${bech32Lnurl}`
-
 export const fromBech32Lnurl = (data: string): string | null => {
   const safe = data.trim().toUpperCase()
   if (!safe.startsWith('LNURL1')) return null
