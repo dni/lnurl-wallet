@@ -1,6 +1,5 @@
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest'
-import {sha256} from '@noble/hashes/sha2.js'
-import {bytesToHex, hexToBytes} from '@noble/hashes/utils.js'
+import {bytesToHex} from '@noble/hashes/utils.js'
 
 import {
   fetchPayRequest,
@@ -16,6 +15,9 @@ import {
   settleNote,
   toBech32Lnurl,
   probeBurnedNote,
+  canUseMintComment,
+  generateNoteSecret,
+  hashK1,
   PendingNoteError,
   NoteSpentError,
   NoteUnknownError,
@@ -37,6 +39,11 @@ import {receiveNote} from './receive'
 const BASE = 'https://mock-mint.test'
 const PAY_URL = `${BASE}/pay`
 const PAY_CALLBACK = `${BASE}/pay/cb`
+// same mint, a payLink that additionally advertises LUD-12 commentAllowed
+// (see canUseMintComment) - separate from PAY_URL so the plain no-comment
+// tests below stay exactly as they were
+const PAY_COMMENT_URL = `${BASE}/pay-comment`
+const PAY_COMMENT_CALLBACK = `${BASE}/pay-comment/cb`
 const WITHDRAW_URL = `${BASE}/w`
 const WITHDRAW_CALLBACK = `${BASE}/w/cb`
 const MINT_ADDRESS_URL = `${BASE}/mintaddress`
@@ -46,13 +53,18 @@ const MINT_ADDRESS_UNKNOWN_URL = `${BASE}/mintaddress-unknown`
 const randomHex = (bytes: number): string =>
   bytesToHex(crypto.getRandomValues(new Uint8Array(bytes)))
 
-// same digest lnurlcash.ts's own hashK1 uses - k1 is hex bytes, hashed raw
-const hashK1 = (k1: string): string => bytesToHex(sha256(hexToBytes(k1)))
-
 const idFromVerifyUrl = (url: string): string => url.split('/').pop()!
 
 type Note = {amountMsat: number; pending: boolean}
-type Invoice = {amountMsat: number; preimage: string; settled: boolean}
+// `comment`: LUD-12 comment sent alongside this invoice request, if any -
+// per LUD-25, once settled a valid one makes the note keyed by that hash
+// instead of by the payment preimage (see MockMint.settleInvoice)
+type Invoice = {
+  amountMsat: number
+  preimage: string
+  settled: boolean
+  comment?: string
+}
 type Melt = {noteHash: string; settled: boolean}
 
 // A minimal in-memory LUD-25 SERVICE: just enough of LUD-03/06/17/21/25 to
@@ -91,13 +103,21 @@ class MockMint {
   }
 
   // simulates the wallet's own Lightning node paying an invoice this mock
-  // issued: settles it and credits the preimage as an outstanding note,
-  // per LUD-25's minting flow
+  // issued: settles it and credits an outstanding note, per LUD-25's
+  // minting flow. Keyed by the preimage's hash normally - but if a valid
+  // LUD-12 comment (a bare hex sha256) came with the invoice request, the
+  // note is keyed by that hash instead (Protecting a freshly minted note
+  // from a preimage race): SERVICE never learns the wallet-side secret
+  // behind it, only the hash the comment already was.
   settleInvoice(invoiceId: string): void {
     const invoice = this.invoices.get(invoiceId)
     if (!invoice) throw new Error('no such invoice')
     invoice.settled = true
-    this.notes.set(hashK1(invoice.preimage), {
+    const noteHash =
+      invoice.comment && /^[0-9a-f]{64}$/i.test(invoice.comment)
+        ? invoice.comment.toLowerCase()
+        : hashK1(invoice.preimage)
+    this.notes.set(noteHash, {
       amountMsat: invoice.amountMsat,
       pending: false
     })
@@ -155,13 +175,28 @@ class MockMint {
       })
     }
 
-    if (url.pathname === '/pay/cb') {
+    // same mint, additionally LUD-12-capable (see PAY_COMMENT_URL above)
+    if (url.pathname === '/pay-comment') {
+      return this.respond({
+        tag: 'payRequest',
+        callback: PAY_COMMENT_CALLBACK,
+        minSendable: 1000,
+        maxSendable: 100_000_000,
+        metadata: JSON.stringify([['text/plain', 'mock mint (comment)']]),
+        withdrawLink: WITHDRAW_URL,
+        commentAllowed: 64
+      })
+    }
+
+    if (url.pathname === '/pay/cb' || url.pathname === '/pay-comment/cb') {
       const amountMsat = Number(params.get('amount'))
+      const comment = params.get('comment') ?? undefined
       const id = String(this.invoiceCounter++)
       this.invoices.set(id, {
         amountMsat,
         preimage: randomHex(32),
-        settled: false
+        settled: false,
+        comment
       })
       return this.respond({
         pr: `lnbcmock${id}`,
@@ -440,6 +475,53 @@ describe('mint -> rotate -> split -> merge -> melt', () => {
       (await fetchNoteInfo(buildNoteUrl(WITHDRAW_URL, parts.change, 6000)))
         .maxWithdrawable
     ).toBe(6000)
+  })
+})
+
+describe('LUD-12 comment protection (LUD-25 preimage-race mitigation)', () => {
+  it('mints a note keyed by the wallet secret, never by the payment preimage', async () => {
+    const payInfo = await fetchPayRequest(PAY_COMMENT_URL)
+    expect(canUseMintComment(payInfo)).toBe(true)
+
+    // this is exactly what Mint.tsx's getInvoice does: generate the note's
+    // real secret up front, disclose only its hash as `comment`
+    const secret = generateNoteSecret()
+    const invoice = await requestInvoice(
+      payInfo.callback,
+      21000,
+      hashK1(secret)
+    )
+    expect(invoice.verify).toBeDefined()
+
+    mint.settleInvoice(idFromVerifyUrl(invoice.verify!))
+    const verification = await fetchInvoiceVerification(invoice.verify!)
+    expect(verification.settled).toBe(true)
+    const preimage = verification.preimage!
+
+    // the note is outstanding under the wallet-chosen secret, and the
+    // payment preimage the mint happens to disclose via verify is NOT a
+    // valid k1 for it - safe to hand out anywhere, including via verify,
+    // per LUD-25's Security considerations
+    expect(mint.isOutstanding(secret)).toBe(true)
+    expect(mint.isOutstanding(preimage)).toBe(false)
+
+    const noteUrl = buildNoteUrl(payInfo.withdrawLink!, secret, 21000)
+    const info = await fetchNoteInfo(noteUrl)
+    expect(info.maxWithdrawable).toBe(21000)
+    expect(info.k1).toBe(secret)
+  })
+
+  it('a mint with no commentAllowed leaves the preimage as the only secret', async () => {
+    const payInfo = await fetchPayRequest(PAY_URL)
+    expect(canUseMintComment(payInfo)).toBe(false)
+
+    const invoice = await requestInvoice(payInfo.callback, 21000)
+    mint.settleInvoice(idFromVerifyUrl(invoice.verify!))
+    const preimage = (await fetchInvoiceVerification(invoice.verify!)).preimage!
+
+    // no comment was sent, so - per LUD-25's fallback - the note is keyed
+    // by the preimage itself, exactly as the pre-LUD-12 flow always was
+    expect(mint.isOutstanding(preimage)).toBe(true)
   })
 })
 

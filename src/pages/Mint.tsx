@@ -41,6 +41,9 @@ import {
   lightningAddressUsername,
   probeBurnedNote,
   sameInvoice,
+  generateNoteSecret,
+  hashK1,
+  canUseMintComment,
   AmbiguousMutationError
 } from '../lnurlcash'
 import {deviceMint, DeviceImportLeftBehindError} from '../deviceOrchestration'
@@ -124,6 +127,12 @@ const Mint: Component = () => {
   // than what was expected, the latter to work out the fee actually paid
   const [invoicedMsat, setInvoicedMsat] = createSignal(0)
   const [invoicedGrossMsat, setInvoicedGrossMsat] = createSignal(0)
+  // LUD-25 comment protection (see lnurlcash.ts's canUseMintComment): set
+  // only when the current invoice was requested with `comment=hashK1(this)`
+  // - the note's real k1 once paid, never the payment preimage. null means
+  // this mint didn't support it (or wasn't offered enough commentAllowed),
+  // the legacy no-comment fallback where the preimage itself is the secret.
+  const [mintSecret, setMintSecret] = createSignal<string | null>(null)
   const [preimage, setPreimage] = createSignal('')
   const [directPreimage, setDirectPreimage] = createSignal('')
   const [busy, setBusy] = createSignal(false)
@@ -180,7 +189,17 @@ const Mint: Component = () => {
       }
       if (result.settled) {
         stopPolling()
-        if (result.preimage && isPreimage(result.preimage)) {
+        // if this mint was paid with comment protection (see getInvoice),
+        // the note's real k1 is the wallet-held secret, not whatever
+        // preimage the service discloses here - prefer it when present
+        const secret = mintSecret()
+        if (secret) {
+          notify(
+            'Payment settled - claiming automatically...',
+            NotifyKind.LOADING
+          )
+          await claim(secret, invoicedMsat(), invoicedGrossMsat())
+        } else if (result.preimage && isPreimage(result.preimage)) {
           // pre-fill the manual input too, so a failed auto-claim still
           // leaves the holder one click away from retrying by hand
           setPreimage(result.preimage)
@@ -239,6 +258,7 @@ const Mint: Component = () => {
     setInvoice(null)
     setPreimage('')
     setDirectPreimage('')
+    setMintSecret(null)
     stopPolling()
     setVerifyUrl(null)
   }
@@ -405,10 +425,22 @@ const Mint: Component = () => {
     if (amount === null) return
     setBusy(true)
     try {
-      const result = await requestInvoice(info.callback, amount.grossMsat)
+      // LUD-25 comment protection: if this mint advertises enough
+      // commentAllowed (LUD-12), generate the note's real secret now and
+      // send only its hash as `comment` - the payment preimage never
+      // becomes the bearer secret, so it's safe to disclose (including via
+      // LUD-21 verify below). Otherwise this mint gets the plain no-comment
+      // mint, and the preimage IS the secret - see claim()'s preimage path.
+      const secret = canUseMintComment(info) ? generateNoteSecret() : null
+      const result = await requestInvoice(
+        info.callback,
+        amount.grossMsat,
+        secret ? hashK1(secret) : undefined
+      )
       setInvoice(result.pr)
       setInvoicedMsat(amount.netMsat)
       setInvoicedGrossMsat(amount.grossMsat)
+      setMintSecret(secret)
       // LUD-11: this mint says its own payRequest link (what's typed into
       // mintInput, not this one-shot invoice) is meant to be reused -
       // save it for a one-click return trip next time
@@ -935,36 +967,76 @@ const Mint: Component = () => {
                     </button>
                   </Show>
                 </div>
-                <label>
-                  2. Paste the payment preimage your wallet reveals after paying
-                  - it IS the bearer secret
-                  <Show when={verifyUrl()}>
-                    {' '}
-                    (or wait - this mint supports checking automatically)
-                  </Show>
-                </label>
-                <input
-                  type="text"
-                  placeholder="payment preimage (64 hex characters)"
-                  value={preimage()}
-                  onInput={e => setPreimage(e.currentTarget.value)}
-                />
-                <div class="btns">
-                  <button
-                    disabled={
-                      busy() || !isPreimage(preimage()) || offlineMode()
-                    }
-                    onClick={() =>
-                      claim(preimage(), invoicedMsat(), invoicedGrossMsat())
-                    }
-                  >
-                    <Show when={busy()}>
-                      <IoRefreshSharp class="spin" />
-                      &nbsp;
-                    </Show>
-                    Claim note
-                  </button>
-                </div>
+                <Show
+                  when={mintSecret()}
+                  fallback={
+                    <>
+                      <label>
+                        2. Paste the payment preimage your wallet reveals after
+                        paying - it IS the bearer secret
+                        <Show when={verifyUrl()}>
+                          {' '}
+                          (or wait - this mint supports checking automatically)
+                        </Show>
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="payment preimage (64 hex characters)"
+                        value={preimage()}
+                        onInput={e => setPreimage(e.currentTarget.value)}
+                      />
+                      <div class="btns">
+                        <button
+                          disabled={
+                            busy() || !isPreimage(preimage()) || offlineMode()
+                          }
+                          onClick={() =>
+                            claim(
+                              preimage(),
+                              invoicedMsat(),
+                              invoicedGrossMsat()
+                            )
+                          }
+                        >
+                          <Show when={busy()}>
+                            <IoRefreshSharp class="spin" />
+                            &nbsp;
+                          </Show>
+                          Claim note
+                        </button>
+                      </div>
+                    </>
+                  }
+                >
+                  {secret => (
+                    <>
+                      <label>
+                        2. This mint supports comment-protected minting -
+                        nothing to paste, the note's secret never left this
+                        wallet. Claim it below once paid
+                        <Show when={verifyUrl()}>
+                          {' '}
+                          (or wait - this mint checks automatically)
+                        </Show>
+                        .
+                      </label>
+                      <div class="btns">
+                        <button
+                          disabled={busy() || offlineMode()}
+                          onClick={() =>
+                            claim(secret(), invoicedMsat(), invoicedGrossMsat())
+                          }
+                        >
+                          <Show when={busy()}>
+                            <IoRefreshSharp class="spin" />
+                            &nbsp;
+                          </Show>
+                          Claim note
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </Show>
               </figure>
             </Show>
           </div>

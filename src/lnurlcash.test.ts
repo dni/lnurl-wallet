@@ -31,7 +31,12 @@ import {
   mintAddressUrl,
   lightningAddressUsername,
   isAllowedServiceUrl,
-  sameInvoice
+  sameInvoice,
+  canUseMintComment,
+  generateNoteSecret,
+  hashK1,
+  MIN_COMMENT_LENGTH_FOR_SECRET,
+  type PayRequestInfo
 } from './lnurlcash'
 
 const K1 = 'a'.repeat(64)
@@ -452,6 +457,44 @@ describe('LUD-25 mint fees', () => {
       parseMintFee(JSON.stringify([['text/plain', 'Mint fees: 0,999999']]))
     ).toEqual(fee)
     expect(applyMintFee(grossUpForMintFee(1000, fee), fee)).toBe(1000)
+  })
+})
+
+describe('LUD-12 comment protection (LUD-25 preimage-race mitigation)', () => {
+  const payInfo = (commentAllowed?: number): PayRequestInfo => ({
+    tag: 'payRequest',
+    callback: 'https://mint.example.com/pay/cb',
+    minSendable: 1000,
+    maxSendable: 100_000_000,
+    metadata: '[]',
+    withdrawLink: 'https://mint.example.com/w',
+    commentAllowed
+  })
+
+  it('requires commentAllowed to fit a hex-encoded 32-byte hash', () => {
+    expect(MIN_COMMENT_LENGTH_FOR_SECRET).toBe(64)
+    expect(canUseMintComment(payInfo(64))).toBe(true)
+    expect(canUseMintComment(payInfo(128))).toBe(true)
+    expect(canUseMintComment(payInfo(63))).toBe(false)
+    expect(canUseMintComment(payInfo(0))).toBe(false)
+    expect(canUseMintComment(payInfo(undefined))).toBe(false)
+  })
+
+  it('ignores a malformed commentAllowed rather than trusting it', () => {
+    expect(canUseMintComment({...payInfo(), commentAllowed: '64' as any})).toBe(
+      false
+    )
+  })
+
+  it('generateNoteSecret + hashK1 produce exactly a 64-char hex comment', () => {
+    const secret = generateNoteSecret()
+    expect(isPreimage(secret)).toBe(true)
+    const comment = hashK1(secret)
+    expect(comment).toMatch(/^[0-9a-f]{64}$/)
+    expect(comment.length).toBe(MIN_COMMENT_LENGTH_FOR_SECRET)
+    // deterministic - SERVICE must be able to key its note by the same
+    // hash WALLET discloses up front
+    expect(hashK1(secret)).toBe(comment)
   })
 })
 
