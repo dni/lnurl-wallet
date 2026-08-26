@@ -10,6 +10,10 @@ export const withStorageLock = <T>(
   fn: () => T | Promise<T>
 ): Promise<T> => {
   const locks = typeof navigator !== 'undefined' ? navigator.locks : undefined
-  if (locks) return locks.request(name, fn)
+  // the installed lib.dom.d.ts types LockGrantedCallback's return as plain
+  // T, not T | PromiseLike<T> - stricter than the actual Web Locks API,
+  // which (per spec) waits out a returned promise before releasing the
+  // lock, exactly what fn's own T | Promise<T> return relies on
+  if (locks) return locks.request(name, fn as unknown as (lock: Lock | null) => T)
   return Promise.resolve(fn())
 }

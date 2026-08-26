@@ -622,7 +622,9 @@ const BearerCard: Component<BearerCardProps> = props => {
       style={cardStyle()}
       ref={props.setRef}
       tabIndex={isSpent() ? undefined : 0}
-      title={isSpent() ? undefined : 'Click to select for combine/split/transfer'}
+      title={
+        isSpent() ? undefined : 'Click to select for combine/split/transfer'
+      }
       onClick={onCardClick}
       onKeyDown={onCardKeyDown}
     >
@@ -639,7 +641,9 @@ const BearerCard: Component<BearerCardProps> = props => {
           )}
         </Show>
         <div class="bearer-title">
-          <span class="bearer-amount">{msatToSats(props.bearer.amount)} sats</span>
+          <span class="bearer-amount">
+            {msatToSats(props.bearer.amount)} sats
+          </span>
           <Show when={props.bearer.label}>
             <span class="bearer-label">{props.bearer.label}</span>
           </Show>

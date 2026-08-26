@@ -96,7 +96,9 @@ const Wallet: Component = () => {
   // notes no longer live in per-mint sections - one flat, orderable list
   // for the whole wallet. compareBearerOrder falls back to newest-first,
   // same as before; drag-to-reorder (below) now spans every mint at once
-  const orderedBearers = createMemo(() => [...bearers()].sort(compareBearerOrder))
+  const orderedBearers = createMemo(() =>
+    [...bearers()].sort(compareBearerOrder)
+  )
   const visibleBearers = createMemo(() =>
     showSpent() ? orderedBearers() : orderedBearers().filter(b => !b.spent)
   )
@@ -879,9 +881,9 @@ const Wallet: Component = () => {
               </div>
               <Show when={canCombine()}>
                 <p class="bearer-hint">
-                  If this mint charges a fee, combining refunds part of what
-                  was already withheld when these notes were minted - you get
-                  back all but one base fee.
+                  If this mint charges a fee, combining refunds part of what was
+                  already withheld when these notes were minted - you get back
+                  all but one base fee.
                 </p>
               </Show>
               <Show when={showSplitInput() && canCombine()}>
@@ -904,8 +906,8 @@ const Wallet: Component = () => {
                   <p class="bearer-hint">
                     Burns the {selectedEligible().length} selected notes and
                     mints two: this amount, and a change note for the rest. If
-                    this mint charges a fee, it's deducted from the change,
-                    not the amount split off.
+                    this mint charges a fee, it's deducted from the change, not
+                    the amount split off.
                   </p>
                   <div class="btns">
                     <button
