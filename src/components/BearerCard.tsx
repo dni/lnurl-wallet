@@ -56,8 +56,8 @@ export type BearerCardProps = {
   bearer: Bearer
   selected: boolean
   onSelect: (selected: boolean) => void
-  // drag-to-reorder (see MintGroupCard) - the handle only renders when a
-  // handler is given, which MintGroupCard withholds for a spent note.
+  // drag-to-reorder (see Wallet.tsx) - the handle only renders when a
+  // handler is given, which Wallet.tsx withholds for a spent note.
   // dragStyle is only ever set while dragging is true - it floats this
   // card to follow the pointer (position: fixed) instead of it being just
   // another grid tile reflowing under a static cursor
@@ -96,11 +96,24 @@ const BearerCard: Component<BearerCardProps> = props => {
     ...props.dragStyle,
     ...(noteColor() ? {'--note-tint': noteColor()!} : {})
   }))
-  // the amount and server text are also click targets for select-to-combine
-  // - a bigger, more obvious target than the small checkbox alone, which
-  // stays as the visible indicator of the current state either way
   const toggleSelect = () => {
     if (!isSpent()) props.onSelect(!props.selected)
+  }
+
+  // the whole card is the click target for select-to-combine - except any
+  // interactive control inside it (refresh/split/label/mark-spent buttons,
+  // the drag handle, form inputs for label/split), which should do their
+  // own thing rather than also flip selection
+  const onCardClick = (e: MouseEvent) => {
+    if ((e.target as HTMLElement).closest('button, input, textarea, a')) return
+    toggleSelect()
+  }
+  const onCardKeyDown = (e: KeyboardEvent) => {
+    if (e.target !== e.currentTarget) return
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault()
+      toggleSelect()
+    }
   }
 
   // offline-verifiable iff the note carries a signature AND this wallet
@@ -600,9 +613,18 @@ const BearerCard: Component<BearerCardProps> = props => {
   return (
     <figure
       class="bearer-card"
-      classList={{dragging: props.dragging, tinted: !!noteColor()}}
+      classList={{
+        dragging: props.dragging,
+        tinted: !!noteColor(),
+        selected: props.selected,
+        selectable: !isSpent()
+      }}
       style={cardStyle()}
       ref={props.setRef}
+      tabIndex={isSpent() ? undefined : 0}
+      title={isSpent() ? undefined : 'Click to select for combine/split/transfer'}
+      onClick={onCardClick}
+      onKeyDown={onCardKeyDown}
     >
       <div class="bearer-head">
         <Show when={props.onDragHandleDown}>
@@ -616,22 +638,8 @@ const BearerCard: Component<BearerCardProps> = props => {
             </button>
           )}
         </Show>
-        <label class="bearer-select" title="Select for combine">
-          <input
-            type="checkbox"
-            checked={props.selected}
-            disabled={isSpent()}
-            onChange={e => props.onSelect(e.currentTarget.checked)}
-          />
-        </label>
         <div class="bearer-title">
-          <span
-            class="bearer-amount"
-            classList={{clickable: !isSpent()}}
-            onClick={toggleSelect}
-          >
-            {msatToSats(props.bearer.amount)} sats
-          </span>
+          <span class="bearer-amount">{msatToSats(props.bearer.amount)} sats</span>
           <Show when={props.bearer.label}>
             <span class="bearer-label">{props.bearer.label}</span>
           </Show>
@@ -662,13 +670,7 @@ const BearerCard: Component<BearerCardProps> = props => {
               &nbsp;spent
             </span>
           </Show>
-          <span
-            class="bearer-server"
-            classList={{clickable: !isSpent()}}
-            onClick={toggleSelect}
-          >
-            {serverOf(props.bearer.url)}
-          </span>
+          <span class="bearer-server">{serverOf(props.bearer.url)}</span>
         </div>
       </div>
       <Show when={editingLabel()}>
