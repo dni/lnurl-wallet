@@ -719,91 +719,6 @@ const Mint: Component = () => {
                 </button>
               </div>
             </figure>
-            <Show when={trustedMints().length > 0}>
-              <h4>Your trusted mints</h4>
-              <div class="mint-list">
-                <For each={trustedMints()}>
-                  {mint => (
-                    <figure class="mint-card">
-                      <h4>
-                        <Show when={mint.nodeColor}>
-                          <span
-                            class="mint-color-dot"
-                            style={{'background-color': mint.nodeColor!}}
-                          />
-                        </Show>
-                        {mint.nodeAlias || mint.server}
-                      </h4>
-                      <Show when={mint.nodeAlias || mint.username}>
-                        <p class="mint-date">
-                          {mint.username
-                            ? `${mint.username}@${mint.server}`
-                            : mint.server}
-                        </p>
-                      </Show>
-                      <Show when={mint.nodeCapacityMsat !== undefined}>
-                        <p class="mint-date">
-                          Channel capacity: {msatToSats(mint.nodeCapacityMsat!)}{' '}
-                          sats
-                        </p>
-                      </Show>
-                      <Show
-                        when={
-                          mint.nodeNumChannels !== undefined ||
-                          mint.nodeNumPeers !== undefined
-                        }
-                      >
-                        <p class="mint-date">
-                          <Show when={mint.nodeNumChannels !== undefined}>
-                            {mint.nodeNumChannels} channels
-                          </Show>
-                          <Show
-                            when={
-                              mint.nodeNumChannels !== undefined &&
-                              mint.nodeNumPeers !== undefined
-                            }
-                          >
-                            &nbsp;·&nbsp;
-                          </Show>
-                          <Show when={mint.nodeNumPeers !== undefined}>
-                            {mint.nodeNumPeers} peers
-                          </Show>
-                        </p>
-                      </Show>
-                      <p class="mint-pubkey">{mint.mintPubkey}</p>
-                      <div class="btns">
-                        <button
-                          disabled={busy() || offlineMode()}
-                          onClick={() =>
-                            selectMint(mintAddressFor(mint.server))
-                          }
-                        >
-                          Mint here
-                        </button>
-                        <a
-                          class="icon-btn"
-                          title="Open this mint"
-                          href={`https://${mint.server}`}
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          <IoGlobeSharp />
-                        </a>
-                        <a
-                          class="icon-btn icon-btn-gap"
-                          title="Look up this Lightning node on mempool.space"
-                          href={mempoolNodeUrl(mint.mintPubkey)}
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          <IoOpenSharp />
-                        </a>
-                      </div>
-                    </figure>
-                  )}
-                </For>
-              </div>
-            </Show>
             <Show when={mintNodeInfo()}>
               {node => (
                 <figure class="setup-card">
@@ -1131,6 +1046,91 @@ const Mint: Component = () => {
                   )}
                 </Show>
               </figure>
+            </Show>
+            <Show when={trustedMints().length > 0}>
+              <h4>Your trusted mints</h4>
+              <div class="mint-list">
+                <For each={trustedMints()}>
+                  {mint => (
+                    <figure class="mint-card">
+                      <h4>
+                        <Show when={mint.nodeColor}>
+                          <span
+                            class="mint-color-dot"
+                            style={{'background-color': mint.nodeColor!}}
+                          />
+                        </Show>
+                        {mint.nodeAlias || mint.server}
+                      </h4>
+                      <Show when={mint.nodeAlias || mint.username}>
+                        <p class="mint-date">
+                          {mint.username
+                            ? `${mint.username}@${mint.server}`
+                            : mint.server}
+                        </p>
+                      </Show>
+                      <Show when={mint.nodeCapacityMsat !== undefined}>
+                        <p class="mint-date">
+                          Channel capacity: {msatToSats(mint.nodeCapacityMsat!)}{' '}
+                          sats
+                        </p>
+                      </Show>
+                      <Show
+                        when={
+                          mint.nodeNumChannels !== undefined ||
+                          mint.nodeNumPeers !== undefined
+                        }
+                      >
+                        <p class="mint-date">
+                          <Show when={mint.nodeNumChannels !== undefined}>
+                            {mint.nodeNumChannels} channels
+                          </Show>
+                          <Show
+                            when={
+                              mint.nodeNumChannels !== undefined &&
+                              mint.nodeNumPeers !== undefined
+                            }
+                          >
+                            &nbsp;·&nbsp;
+                          </Show>
+                          <Show when={mint.nodeNumPeers !== undefined}>
+                            {mint.nodeNumPeers} peers
+                          </Show>
+                        </p>
+                      </Show>
+                      <p class="mint-pubkey">{mint.mintPubkey}</p>
+                      <div class="btns">
+                        <button
+                          disabled={busy() || offlineMode()}
+                          onClick={() =>
+                            selectMint(mintAddressFor(mint.server))
+                          }
+                        >
+                          Mint here
+                        </button>
+                        <a
+                          class="icon-btn"
+                          title="Open this mint"
+                          href={`https://${mint.server}`}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          <IoGlobeSharp />
+                        </a>
+                        <a
+                          class="icon-btn icon-btn-gap"
+                          title="Look up this Lightning node on mempool.space"
+                          href={mempoolNodeUrl(mint.mintPubkey)}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          <IoOpenSharp />
+                        </a>
+                      </div>
+                    </figure>
+                  )}
+                </For>
+              </div>
             </Show>
           </div>
           <div class="two-col">
