@@ -10,7 +10,7 @@ import {
 } from 'solid-icons/io'
 
 import type {Bearer} from '../storage'
-import {useWallet, groupByServer} from '../WalletContext'
+import {useWallet} from '../WalletContext'
 import {useDevice} from '../DeviceContext'
 import type {PayRequestInfo, MeltResult} from '../lnurlcash'
 import {
@@ -997,69 +997,65 @@ const Melt: Component = () => {
                 when={unspentBearers().length > 0}
                 fallback={<p>No bearer notes to pay with yet.</p>}
               >
-                <For each={groupByServer(unspentBearers())}>
-                  {([server, group]) => {
-                    // same mint for the whole group, so the same node color
-                    // (if any's cached) applies to every note in it - see
-                    // BearerCard's own noteColor for the tinting itself
-                    const noteColor = () => getTrustedMintNodeColor(server)
-                    return (
-                      <div class="form-item">
-                        <label>{server}</label>
-                        <div class="bearer-list">
-                          <For each={group}>
-                            {bearer => (
-                              <figure
-                                class="bearer-card"
-                                classList={{tinted: !!noteColor()}}
-                                style={
-                                  noteColor()
-                                    ? {'--note-tint': noteColor()!}
-                                    : undefined
+                <div class="bearer-list">
+                  <For each={unspentBearers()}>
+                    {bearer => {
+                      // not grouped by mint here (unlike the wallet page) -
+                      // each card already names its own mint below the
+                      // amount, so the tint (see BearerCard's own noteColor)
+                      // is looked up per-note instead of once per group
+                      const noteColor = () =>
+                        getTrustedMintNodeColor(serverOf(bearer.url))
+                      return (
+                        <figure
+                          class="bearer-card"
+                          classList={{tinted: !!noteColor()}}
+                          style={
+                            noteColor()
+                              ? {'--note-tint': noteColor()!}
+                              : undefined
+                          }
+                        >
+                          <div class="bearer-head">
+                            <label class="bearer-select">
+                              <input
+                                type="checkbox"
+                                checked={selectedIds().has(bearer.id)}
+                                disabled={!bearer.callback}
+                                onChange={e =>
+                                  toggleSelect(
+                                    bearer.id,
+                                    e.currentTarget.checked
+                                  )
                                 }
-                              >
-                                <div class="bearer-head">
-                                  <label class="bearer-select">
-                                    <input
-                                      type="checkbox"
-                                      checked={selectedIds().has(bearer.id)}
-                                      disabled={!bearer.callback}
-                                      onChange={e =>
-                                        toggleSelect(
-                                          bearer.id,
-                                          e.currentTarget.checked
-                                        )
-                                      }
-                                    />
-                                  </label>
-                                  <div
-                                    class="bearer-title clickable"
-                                    onClick={() =>
-                                      bearer.callback &&
-                                      toggleSelect(
-                                        bearer.id,
-                                        !selectedIds().has(bearer.id)
-                                      )
-                                    }
-                                  >
-                                    <span class="bearer-amount">
-                                      {msatToSats(bearer.amount)} sats
-                                    </span>
-                                    <Show when={!bearer.callback}>
-                                      <span class="bearer-pending">
-                                        unverified
-                                      </span>
-                                    </Show>
-                                  </div>
-                                </div>
-                              </figure>
-                            )}
-                          </For>
-                        </div>
-                      </div>
-                    )
-                  }}
-                </For>
+                              />
+                            </label>
+                            <div
+                              class="bearer-title clickable"
+                              onClick={() =>
+                                bearer.callback &&
+                                toggleSelect(
+                                  bearer.id,
+                                  !selectedIds().has(bearer.id)
+                                )
+                              }
+                            >
+                              <span class="bearer-amount">
+                                {msatToSats(bearer.amount)} sats
+                              </span>
+                              <Show when={!bearer.callback}>
+                                <span class="bearer-pending">unverified</span>
+                              </Show>
+                              <span class="bearer-server">
+                                {serverOf(bearer.url)}
+                              </span>
+                            </div>
+                          </div>
+                        </figure>
+                      )
+                    }}
+                  </For>
+                </div>
               </Show>
               <Show when={selectedBearers().length > 0}>
                 <p class="bearer-hint">
@@ -1135,18 +1131,11 @@ const Melt: Component = () => {
           when={unspentBearers().length > 0}
           fallback={<p>No bearer notes to send yet.</p>}
         >
-          <For each={groupByServer(unspentBearers())}>
-            {([server, group]) => (
-              <div class="form-item">
-                <label>{server}</label>
-                <div class="bearer-list">
-                  <For each={group}>
-                    {bearer => <SendNoteCard bearer={bearer} />}
-                  </For>
-                </div>
-              </div>
-            )}
-          </For>
+          <div class="bearer-list">
+            <For each={unspentBearers()}>
+              {bearer => <SendNoteCard bearer={bearer} />}
+            </For>
+          </div>
         </Show>
       </div>
     </RequireWallet>
