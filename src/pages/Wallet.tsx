@@ -13,7 +13,12 @@ import {
   IoGitBranchSharp,
   IoSwapHorizontalSharp,
   IoBanSharp,
-  IoCloseCircleSharp
+  IoCloseCircleSharp,
+  IoSearchSharp,
+  IoCloseSharp,
+  IoArrowUpSharp,
+  IoArrowDownSharp,
+  IoLayersSharp
 } from 'solid-icons/io'
 
 import {useWallet, groupByServer} from '../WalletContext'
@@ -57,6 +62,12 @@ const Wallet: Component = () => {
   // mint - now a single wallet-wide toggle since notes no longer live in
   // separate per-mint sections
   const [showSpent, setShowSpent] = createSignal(false)
+  const [searchQuery, setSearchQuery] = createSignal('')
+  const [sortKey, setSortKey] = createSignal<'default' | 'amount' | 'updated'>(
+    'default'
+  )
+  const [sortDesc, setSortDesc] = createSignal(true)
+  const [groupByMint, setGroupByMint] = createSignal(false)
   const [combining, setCombining] = createSignal(false)
   const [showSplitInput, setShowSplitInput] = createSignal(false)
   const [splitSats, setSplitSats] = createSignal('')
@@ -103,11 +114,89 @@ const Wallet: Component = () => {
     showSpent() ? orderedBearers() : orderedBearers().filter(b => !b.spent)
   )
 
+  // matches either the issuing mint's hostname or the note's sat amount -
+  // msatToSats formats with locale thousands separators (e.g. "1,000"),
+  // which would never match a plain typed "1000", so amount matching goes
+  // straight off the raw sats value instead
+  const filteredBearers = createMemo(() => {
+    const q = searchQuery().trim().toLowerCase()
+    if (!q) return visibleBearers()
+    return visibleBearers().filter(
+      b =>
+        serverOf(b.url).toLowerCase().includes(q) ||
+        String(Math.floor(b.amount / 1000)).includes(q)
+    )
+  })
+
+  // 'default' keeps compareBearerOrder (manual drag rank / newest-first)
+  // from above untouched - amount/updated re-sort on top of it. Only
+  // 'default' can be drag-reordered (see dragEnabled below): dragging a
+  // view that's currently sorted or grouped would have nothing sane to
+  // write back as each card's sortIndex
+  const sortedBearers = createMemo(() => {
+    const key = sortKey()
+    if (key === 'default') return filteredBearers()
+    const factor = sortDesc() ? -1 : 1
+    return [...filteredBearers()].sort((a, b) => {
+      const diff = key === 'amount' ? a.amount - b.amount : a.updatedAt - b.updatedAt
+      return diff * factor
+    })
+  })
+
+  // clicking the same sort button again flips direction instead of doing
+  // nothing; switching to a different key starts it off descending
+  // (highest amount / most recently updated first - the more common ask)
+  const toggleSort = (key: 'amount' | 'updated') => {
+    if (sortKey() === key) setSortDesc(d => !d)
+    else {
+      setSortKey(key)
+      setSortDesc(true)
+    }
+  }
+
+  // every mint present in the currently filtered/sorted view, in the order
+  // they first appear there - the grouping Show below renders one heading
+  // + sub-list per entry instead of one flat grid
+  const groupedBearers = createMemo(() => {
+    const groups = new Map<string, Bearer[]>()
+    for (const b of sortedBearers()) {
+      const server = serverOf(b.url)
+      const list = groups.get(server)
+      if (list) list.push(b)
+      else groups.set(server, [b])
+    }
+    return [...groups.entries()]
+  })
+
+  // dragging only makes sense against the plain manual/newest-first order -
+  // a search filter, an amount/updated sort, or mint grouping all reorder
+  // or narrow the view in ways a drag's sortIndex write can't reflect
+  const dragEnabled = createMemo(
+    () =>
+      sortKey() === 'default' && !groupByMint() && searchQuery().trim() === ''
+  )
+
+  // combine/split/transfer only ever act on notes from one mint, so the
+  // selection itself enforces that instead of just silently disabling the
+  // buttons once it's already mixed: picking a note from a different mint
+  // than what's currently selected starts a fresh selection with just that
+  // note, rather than adding to a mix that could never do anything anyway
   const toggleSelect = (id: string, isSelected: boolean) => {
+    if (!isSelected) {
+      setSelected(prev => {
+        const next = new Set(prev)
+        next.delete(id)
+        return next
+      })
+      return
+    }
+    const bearer = bearers().find(b => b.id === id)
+    const server = bearer && serverOf(bearer.url)
+    const current = selectedServer()
     setSelected(prev => {
+      if (server && current && server !== current) return new Set([id])
       const next = new Set(prev)
-      if (isSelected) next.add(id)
-      else next.delete(id)
+      next.add(id)
       return next
     })
   }
@@ -137,19 +226,19 @@ const Wallet: Component = () => {
   }
 
   // combine/split/transfer all require every selected note to share one
-  // issuing mint - selectedEligible collapses to empty the moment the
-  // selection spans more than one, which disables all three actions below
+  // issuing mint - toggleSelect above is what actually enforces that as
+  // notes are picked, this just reads back the mint that's currently
+  // selected (if any) so toggleSelect knows when a click should start a
+  // fresh selection instead of extending the current one
   const selectedBearers = createMemo(() =>
     bearers().filter(b => selected().has(b.id))
   )
-  const eligibleSelected = createMemo(() =>
-    selectedBearers().filter(b => b.callback !== '' && !b.spent)
-  )
-  const eligibleServers = createMemo(
-    () => new Set(eligibleSelected().map(b => serverOf(b.url)))
-  )
+  const selectedServer = createMemo(() => {
+    const servers = new Set(selectedBearers().map(b => serverOf(b.url)))
+    return servers.size === 1 ? [...servers][0] : null
+  })
   const selectedEligible = createMemo(() =>
-    eligibleServers().size === 1 ? eligibleSelected() : []
+    selectedBearers().filter(b => b.callback !== '' && !b.spent)
   )
   const canCombine = createMemo(() => selectedEligible().length >= 2)
   const canTransfer = createMemo(() => selectedEligible().length === 1)
@@ -173,7 +262,9 @@ const Wallet: Component = () => {
   let pendingMoveEvent: PointerEvent | null = null
   let rafScheduled = false
 
-  const displayedBearers = createMemo(() => dragPreview() ?? visibleBearers())
+  const displayedBearers = createMemo(() =>
+    dragEnabled() ? (dragPreview() ?? sortedBearers()) : sortedBearers()
+  )
 
   const dragStyle = (bearerId: string) => {
     if (draggingId() !== bearerId) return undefined
@@ -259,7 +350,7 @@ const Wallet: Component = () => {
   }
 
   const startDrag = (bearer: Bearer, e: PointerEvent) => {
-    if (bearer.spent) return
+    if (bearer.spent || !dragEnabled()) return
     e.preventDefault()
     const el = itemRefs.get(bearer.id)
     const rect = el?.getBoundingClientRect()
@@ -269,7 +360,7 @@ const Wallet: Component = () => {
     dragPointerId = e.pointerId
     setDraggingId(bearer.id)
     setDragPointerPos({x: e.clientX, y: e.clientY})
-    setDragPreview(visibleBearers().slice())
+    setDragPreview(sortedBearers().slice())
     document.body.classList.add('dragging-note')
     window.addEventListener('pointermove', onDragMove)
     window.addEventListener('pointerup', endDrag)
@@ -773,21 +864,20 @@ const Wallet: Component = () => {
 
             <section class="selection-toolbar">
               <div class="selection-toolbar-row">
-                <select
-                  class="mint-select-all"
-                  value=""
-                  onChange={e => {
-                    selectAllFromServer(e.currentTarget.value)
-                    e.currentTarget.value = ''
-                  }}
-                >
-                  <option value="" disabled>
-                    Select all from a mint...
-                  </option>
+                <span class="selection-toolbar-label">Select all from:</span>
+                <div class="mint-picker">
                   <For each={serverNames()}>
-                    {server => <option value={server}>{server}</option>}
+                    {server => (
+                      <button
+                        type="button"
+                        classList={{active: selectedServer() === server}}
+                        onClick={() => selectAllFromServer(server)}
+                      >
+                        {server}
+                      </button>
+                    )}
                   </For>
-                </select>
+                </div>
                 <Show when={selected().size > 0}>
                   <span class="selection-count">
                     {selected().size} selected
@@ -933,23 +1023,128 @@ const Wallet: Component = () => {
               </Show>
             </section>
 
-            <div class="bearer-list">
-              <For each={displayedBearers()}>
-                {bearer => (
-                  <BearerCard
-                    bearer={bearer}
-                    selected={selected().has(bearer.id)}
-                    onSelect={isSelected => toggleSelect(bearer.id, isSelected)}
-                    dragging={draggingId() === bearer.id}
-                    dragStyle={dragStyle(bearer.id)}
-                    onDragHandleDown={
-                      bearer.spent ? undefined : e => startDrag(bearer, e)
-                    }
-                    setRef={el => itemRefs.set(bearer.id, el)}
+            <section class="list-controls">
+              <div class="list-controls-row">
+                <div class="search-input-wrapper">
+                  <IoSearchSharp />
+                  <input
+                    type="text"
+                    class="search-input"
+                    placeholder="Search by mint or amount..."
+                    value={searchQuery()}
+                    onInput={e => setSearchQuery(e.currentTarget.value)}
                   />
+                  <Show when={searchQuery() !== ''}>
+                    <button
+                      type="button"
+                      class="icon-btn"
+                      title="Clear search"
+                      onClick={() => setSearchQuery('')}
+                    >
+                      <IoCloseSharp />
+                    </button>
+                  </Show>
+                </div>
+                <span class="list-controls-label">Sort:</span>
+                <button
+                  type="button"
+                  classList={{active: sortKey() === 'default'}}
+                  onClick={() => setSortKey('default')}
+                >
+                  Default
+                </button>
+                <button
+                  type="button"
+                  classList={{active: sortKey() === 'amount'}}
+                  onClick={() => toggleSort('amount')}
+                >
+                  Amount
+                  <Show when={sortKey() === 'amount'}>
+                    &nbsp;
+                    <Show when={sortDesc()} fallback={<IoArrowUpSharp />}>
+                      <IoArrowDownSharp />
+                    </Show>
+                  </Show>
+                </button>
+                <button
+                  type="button"
+                  classList={{active: sortKey() === 'updated'}}
+                  onClick={() => toggleSort('updated')}
+                >
+                  Updated
+                  <Show when={sortKey() === 'updated'}>
+                    &nbsp;
+                    <Show when={sortDesc()} fallback={<IoArrowUpSharp />}>
+                      <IoArrowDownSharp />
+                    </Show>
+                  </Show>
+                </button>
+                <label
+                  class="switch-control"
+                  title="Show notes grouped under their issuing mint instead of one flat list"
+                >
+                  <IoLayersSharp />
+                  <span>Group by mint</span>
+                  <span class="switch">
+                    <input
+                      type="checkbox"
+                      checked={groupByMint()}
+                      onChange={e => setGroupByMint(e.currentTarget.checked)}
+                    />
+                    <span class="switch-track"></span>
+                  </span>
+                </label>
+              </div>
+            </section>
+
+            <Show
+              when={groupByMint()}
+              fallback={
+                <div class="bearer-list">
+                  <For each={displayedBearers()}>
+                    {bearer => (
+                      <BearerCard
+                        bearer={bearer}
+                        selected={selected().has(bearer.id)}
+                        onSelect={isSelected =>
+                          toggleSelect(bearer.id, isSelected)
+                        }
+                        dragging={draggingId() === bearer.id}
+                        dragStyle={dragStyle(bearer.id)}
+                        onDragStart={
+                          bearer.spent || !dragEnabled()
+                            ? undefined
+                            : e => startDrag(bearer, e)
+                        }
+                        setRef={el => itemRefs.set(bearer.id, el)}
+                      />
+                    )}
+                  </For>
+                </div>
+              }
+            >
+              <For each={groupedBearers()}>
+                {([server, group]) => (
+                  <section class="mint-group-section">
+                    <h4 class="mint-group-heading">{server}</h4>
+                    <div class="bearer-list">
+                      <For each={group}>
+                        {bearer => (
+                          <BearerCard
+                            bearer={bearer}
+                            selected={selected().has(bearer.id)}
+                            onSelect={isSelected =>
+                              toggleSelect(bearer.id, isSelected)
+                            }
+                            setRef={el => itemRefs.set(bearer.id, el)}
+                          />
+                        )}
+                      </For>
+                    </div>
+                  </section>
                 )}
               </For>
-            </div>
+            </Show>
           </div>
         </Show>
       </Show>

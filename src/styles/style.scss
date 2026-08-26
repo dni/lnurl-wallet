@@ -891,8 +891,22 @@ nav {
   margin-bottom: 8px;
 }
 
-.mint-select-all {
-  width: auto;
+.selection-toolbar-label {
+  opacity: 0.85;
+  font-size: 0.9em;
+}
+
+// picking a mint here fully replaces the selection (see Wallet.tsx's
+// selectAllFromServer) rather than adding to it - .active marks whichever
+// mint the current selection actually belongs to, same on/off affordance
+// .tabs already uses for its own single-choice buttons
+.selection-toolbar .mint-picker button.active {
+  opacity: 1;
+  box-shadow: inset 0 0 0 1px $font-color;
+  background-color: rgba(
+    color.adjust($accent-base, $lightness: -10%),
+    $transparency
+  );
 }
 
 .selection-count {
@@ -912,6 +926,81 @@ nav {
 .split-btn,
 .transfer-btn {
   margin-left: 8px;
+}
+
+// search/sort/group controls for the flat note list below - viewing
+// concerns, kept as its own row rather than folded into .selection-toolbar
+// (which is about acting on whatever's selected, not how the list looks)
+.list-controls {
+  margin-bottom: 16px;
+}
+
+.list-controls-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  > button.active {
+    opacity: 1;
+    box-shadow: inset 0 0 0 1px $font-color;
+    background-color: rgba(
+      color.adjust($accent-base, $lightness: -10%),
+      $transparency
+    );
+  }
+}
+
+.list-controls-label {
+  opacity: 0.85;
+  font-size: 0.9em;
+}
+
+.search-input-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background-color: rgba(color.adjust($accent-base, $lightness: -30%), $transparency);
+  border: 1px solid $font-color;
+  border-radius: 5px;
+  padding: 0 8px;
+  &:focus-within {
+    border-color: color.adjust($font-color, $lightness: 20%);
+  }
+  svg {
+    opacity: 0.7;
+    flex-shrink: 0;
+  }
+}
+
+// same visual language as the global text-input rule, but unstyled here
+// (no border/background of its own) since .search-input-wrapper already
+// draws both around the whole group, icon included. The extra specificity
+// (input.search-input, not just .search-input) is needed to actually beat
+// the global input[type='text'] rule's own hover/focus background/border
+.search-input-wrapper input.search-input {
+  border: none;
+  background: none;
+  padding: 6px 0;
+  width: 220px;
+  &:hover,
+  &:active,
+  &:focus {
+    background: none;
+    border: none;
+    outline: none;
+  }
+}
+
+// one heading + its own sub-grid per mint (Wallet.tsx's "Group by mint"
+// toggle) - a lighter-weight grouping than the old MintGroupCard, just a
+// label over an otherwise ordinary .bearer-list
+.mint-group-section {
+  margin-bottom: 21px;
+}
+
+.mint-group-heading {
+  opacity: 0.85;
+  margin: 0 0 8px 0;
 }
 
 .bearer-list {
@@ -956,11 +1045,15 @@ nav {
 
 // the sole selection indicator, replacing the old per-card checkbox - an
 // outline (not a background swap) so it composes with untinted and
-// .tinted cards alike without a separate rule for every combination
+// .tinted cards alike without a separate rule for every combination.
+// $font-color, not $accent-base - the latter is the near-black brown the
+// cards' own background gradient is built from, so a $accent-base outline
+// was blending straight into the card instead of standing out from it
 .bearer-card.selected {
-  outline: 2px solid $accent-base;
+  outline: 2px solid $font-color;
   outline-offset: -1px;
-  border-color: $accent-base;
+  border-color: $font-color;
+  box-shadow: 0 0 10px rgba($font-color, 0.5);
 }
 
 // per-note background tint from the issuing mint's own self-reported node
@@ -997,15 +1090,6 @@ nav {
   gap: 8px;
   width: 100%;
   margin-bottom: 8px;
-}
-
-// grabbable rank handle - touch-action:none stops touch dragging from also
-// scrolling the page, since pointer-based reorder (Wallet.tsx) handles
-// the move itself instead of relying on native HTML5 drag-and-drop
-.drag-handle {
-  cursor: grab;
-  touch-action: none;
-  margin-right: 0;
 }
 
 // the card being dragged floats with the pointer (position: fixed, see

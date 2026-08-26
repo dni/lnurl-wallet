@@ -7,7 +7,6 @@ import {
   IoShieldCheckmarkSharp,
   IoBanSharp,
   IoArrowUndoSharp,
-  IoReorderThreeSharp,
   IoPencilSharp,
   IoHardwareChipSharp
 } from 'solid-icons/io'
@@ -56,14 +55,18 @@ export type BearerCardProps = {
   bearer: Bearer
   selected: boolean
   onSelect: (selected: boolean) => void
-  // drag-to-reorder (see Wallet.tsx) - the handle only renders when a
-  // handler is given, which Wallet.tsx withholds for a spent note.
-  // dragStyle is only ever set while dragging is true - it floats this
-  // card to follow the pointer (position: fixed) instead of it being just
-  // another grid tile reflowing under a static cursor
+  // drag-to-reorder (see Wallet.tsx) - given only when dragging is
+  // possible right now (withheld for a spent note, or when the wallet's
+  // view is sorted/filtered/grouped - see Wallet.tsx's dragEnabled).
+  // There's no separate handle: onCardPointerDown below calls this once a
+  // press on the card has moved past the click threshold, so the same
+  // press-and-hold either selects (a plain click) or reorders (a drag),
+  // never both. dragStyle is only ever set while dragging is true - it
+  // floats this card to follow the pointer (position: fixed) instead of
+  // it being just another grid tile reflowing under a static cursor
   dragging?: boolean
   dragStyle?: JSX.CSSProperties
-  onDragHandleDown?: (e: PointerEvent) => void
+  onDragStart?: (e: PointerEvent) => void
   setRef?: (el: HTMLElement) => void
 }
 
@@ -102,9 +105,14 @@ const BearerCard: Component<BearerCardProps> = props => {
 
   // the whole card is the click target for select-to-combine - except any
   // interactive control inside it (refresh/split/label/mark-spent buttons,
-  // the drag handle, form inputs for label/split), which should do their
-  // own thing rather than also flip selection
+  // form inputs for label/split), which should do their own thing rather
+  // than also flip selection. didDrag (below) covers the other exception -
+  // a press that turned into a drag skips the click it also generates
   const onCardClick = (e: MouseEvent) => {
+    if (didDrag) {
+      didDrag = false
+      return
+    }
     if ((e.target as HTMLElement).closest('button, input, textarea, a')) return
     toggleSelect()
   }
@@ -114,6 +122,42 @@ const BearerCard: Component<BearerCardProps> = props => {
       e.preventDefault()
       toggleSelect()
     }
+  }
+
+  // there's no separate drag handle - a press-and-hold on the card itself
+  // either drags (moved past DRAG_THRESHOLD before release) or clicks (see
+  // onCardClick above, which selects). Not started until that threshold is
+  // crossed, so Wallet.tsx's startDrag still gets the original pointerdown
+  // event for its own grab-offset math, just invoked a beat later - an
+  // ordinary click never crosses the threshold, so it's never touched
+  const DRAG_THRESHOLD = 6
+  let didDrag = false
+  const onCardPointerDown = (e: PointerEvent) => {
+    if (isSpent() || !props.onDragStart) return
+    if ((e.target as HTMLElement).closest('button, input, textarea, a')) return
+    const startX = e.clientX
+    const startY = e.clientY
+    const onMove = (moveEvent: PointerEvent) => {
+      if (moveEvent.pointerId !== e.pointerId) return
+      const dx = moveEvent.clientX - startX
+      const dy = moveEvent.clientY - startY
+      if (Math.hypot(dx, dy) < DRAG_THRESHOLD) return
+      cleanup()
+      didDrag = true
+      props.onDragStart!(e)
+    }
+    const onUp = (upEvent: PointerEvent) => {
+      if (upEvent.pointerId !== e.pointerId) return
+      cleanup()
+    }
+    const cleanup = () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      window.removeEventListener('pointercancel', onUp)
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+    window.addEventListener('pointercancel', onUp)
   }
 
   // offline-verifiable iff the note carries a signature AND this wallet
@@ -623,23 +667,17 @@ const BearerCard: Component<BearerCardProps> = props => {
       ref={props.setRef}
       tabIndex={isSpent() ? undefined : 0}
       title={
-        isSpent() ? undefined : 'Click to select for combine/split/transfer'
+        isSpent()
+          ? undefined
+          : props.onDragStart
+            ? 'Click to select for combine/split/transfer - press and drag to reorder'
+            : 'Click to select for combine/split/transfer'
       }
       onClick={onCardClick}
       onKeyDown={onCardKeyDown}
+      onPointerDown={onCardPointerDown}
     >
       <div class="bearer-head">
-        <Show when={props.onDragHandleDown}>
-          {onDragHandleDown => (
-            <button
-              class="icon-btn drag-handle"
-              title="Drag to reorder"
-              onPointerDown={onDragHandleDown()}
-            >
-              <IoReorderThreeSharp />
-            </button>
-          )}
-        </Show>
         <div class="bearer-title">
           <span class="bearer-amount">
             {msatToSats(props.bearer.amount)} sats
@@ -838,6 +876,15 @@ const BearerCard: Component<BearerCardProps> = props => {
                 &nbsp;
               </Show>
               Split
+            </button>
+            <button
+              onClick={() => {
+                setAction(null)
+                setSplitSats('')
+                setSplitTimes('1')
+              }}
+            >
+              Cancel
             </button>
           </div>
         </div>
