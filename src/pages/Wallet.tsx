@@ -20,7 +20,8 @@ import {
   IoArrowUpSharp,
   IoArrowDownSharp,
   IoLayersSharp,
-  IoDownloadSharp
+  IoDownloadSharp,
+  IoPencilSharp
 } from 'solid-icons/io'
 
 import {useWallet, groupByServer} from '../WalletContext'
@@ -42,6 +43,7 @@ import {
 import {
   deviceRefresh,
   migrateNoteToDevice,
+  markDeviceNoteSpent,
   deviceMerge,
   deviceSplit,
   deviceSettle
@@ -81,14 +83,18 @@ const Wallet: Component = () => {
   const [showSplitInput, setShowSplitInput] = createSignal(false)
   const [splitSats, setSplitSats] = createSignal('')
   const [splitting, setSplitting] = createSignal(false)
-  // single-note refresh/split - moved here from BearerCard so they live in
-  // the same action bar as Combine/Combine & split/Transfer, instead of
-  // each note carrying its own copy of these buttons
-  const [refreshingSingle, setRefreshingSingle] = createSignal(false)
+  // refresh/label/mark-spent act on every selected note at once; split
+  // (still one note in, two out) stays limited to exactly one - all moved
+  // here from BearerCard so they live in the same action bar as
+  // Combine/Combine & split/Transfer, instead of each note carrying its own
+  // copy of these buttons
+  const [refreshing, setRefreshing] = createSignal(false)
   const [showSplitSingleInput, setShowSplitSingleInput] = createSignal(false)
   const [splitSingleSats, setSplitSingleSats] = createSignal('')
   const [splitSingleTimes, setSplitSingleTimes] = createSignal('1')
   const [splittingSingle, setSplittingSingle] = createSignal(false)
+  const [showLabelInput, setShowLabelInput] = createSignal(false)
+  const [labelInputValue, setLabelInputValue] = createSignal('')
   // captured once Transfer is clicked, independent of live selection -
   // starting a transfer immediately marks the source spent, which would
   // otherwise drop it out of selectedEligible() and yank the dialog out
@@ -242,12 +248,16 @@ const Wallet: Component = () => {
   )
   const canCombine = createMemo(() => selectedEligible().length >= 2)
   const canTransfer = createMemo(() => selectedEligible().length === 1)
-  // refresh works on any single unspent note regardless of verification
-  // (it's how a note becomes verified in the first place) - split needs
-  // the stricter selectedEligible (verified + a callback), same as before
-  const canRefreshSingle = createMemo(
-    () => selectedBearers().length === 1 && !selectedBearers()[0].spent
-  )
+  // refresh/label/mark-spent all work on any number of selected notes
+  // regardless of verification (refresh is how a note becomes verified in
+  // the first place) - selectedBearers is always all-unspent already,
+  // since BearerCard's own click-to-select refuses a spent note to begin
+  // with, so these just need at least one selected. Split needs the
+  // stricter selectedEligible (verified + a callback) and stays limited to
+  // exactly one, same as before
+  const canRefreshSelected = createMemo(() => selectedBearers().length > 0)
+  const canMarkSpentSelected = createMemo(() => selectedBearers().length > 0)
+  const canLabelSelected = createMemo(() => selectedBearers().length > 0)
   const canSplitSingle = createMemo(() => selectedEligible().length === 1)
 
   const unlockWallet = async (e: Event) => {
@@ -303,11 +313,14 @@ const Wallet: Component = () => {
   // browser - for an already device-backed note that's deviceRefresh
   // (export, then GET+rotate with the same secret); for a browser-only
   // note it's a one-way migration onto the device (see
-  // deviceOrchestration.ts's header comment).
-  const refreshSingleSelected = async () => {
-    if (!canRefreshSingle()) return
-    const bearer = selectedBearers()[0]
-    setRefreshingSingle(true)
+  // deviceOrchestration.ts's header comment). One note at a time - each
+  // call already ends in its own notify()/logActivity() (unchanged from
+  // the single-note version this was lifted from), so refreshing several
+  // selected notes just reads as that many refreshes back to back, same as
+  // clicking Refresh on each individually. Sequential, not Promise.all:
+  // persistBearer reads localStorage fresh after its own encrypt step, so
+  // concurrent writes here could race and clobber each other's records
+  const refreshOneBearer = async (bearer: Bearer) => {
     try {
       const client = deviceClient()
       const deviceId = bearer.deviceId
@@ -434,9 +447,72 @@ const Wallet: Component = () => {
         )
       }
       notify((err as Error).message, NotifyKind.ERROR)
-    } finally {
-      setRefreshingSingle(false)
     }
+  }
+
+  const refreshSelected = async () => {
+    const picked = selectedBearers()
+    if (picked.length === 0) return
+    setRefreshing(true)
+    try {
+      for (const bearer of picked) {
+        await refreshOneBearer(bearer)
+      }
+    } finally {
+      setRefreshing(false)
+    }
+  }
+
+  // a local-only lock (see storage.ts's Bearer.spent) - no network call,
+  // just stops this wallet from acting on notes it considers given away.
+  // A device-backed note's on-device copy is retired alongside (queued for
+  // the next connect if the vault isn't attached right now), so the vault
+  // doesn't keep listing as spendable a note this wallet considers gone
+  const markSpentSelected = async () => {
+    const picked = selectedBearers()
+    if (picked.length === 0) return
+    for (const bearer of picked) {
+      updateBearer(bearer.id, {spent: true})
+      if (bearer.deviceId) {
+        await markDeviceNoteSpent(deviceClient(), bearer.deviceId)
+      }
+      logActivity(
+        'spent',
+        `Marked ${msatToSats(bearer.amount)} sats from ${serverOf(bearer.url)} as spent.`
+      )
+    }
+    setSelected(new Set<string>())
+    notify(
+      `Marked ${picked.length} note${picked.length === 1 ? '' : 's'} as spent - split and refresh are locked until unspent.`,
+      NotifyKind.SUCCESS
+    )
+  }
+
+  // purely local, for the holder's own reference - not part of the note
+  // itself, never sent anywhere. Applies the same text to every selected
+  // note at once; prefilled with their shared label when they already all
+  // carry the same one, otherwise blank rather than guessing which to show
+  const openLabelInput = () => {
+    const picked = selectedBearers()
+    if (picked.length === 0) return
+    const labels = new Set(picked.map(b => b.label ?? ''))
+    setLabelInputValue(labels.size === 1 ? [...labels][0]! : '')
+    setShowLabelInput(true)
+  }
+
+  const saveLabelSelected = () => {
+    const picked = selectedBearers()
+    if (picked.length === 0) return
+    const trimmed = labelInputValue().trim()
+    for (const bearer of picked) {
+      updateBearer(bearer.id, {label: trimmed || undefined})
+    }
+    setShowLabelInput(false)
+    setLabelInputValue('')
+    notify(
+      `Labeled ${picked.length} note${picked.length === 1 ? '' : 's'}.`,
+      NotifyKind.SUCCESS
+    )
   }
 
   // splitNote is only ever a 2-way split (one piece + a change note), so
@@ -1323,40 +1399,60 @@ const Wallet: Component = () => {
             </section>
 
             <section class="selection-toolbar">
-              <Show when={selected().size > 0}>
-                <div class="selection-toolbar-row">
-                  <span class="selection-count">
-                    {selected().size} selected
-                  </span>
-                  <button
-                    type="button"
-                    class="icon-btn"
-                    title="Clear selection"
-                    onClick={() => setSelected(new Set<string>())}
-                  >
-                    <IoCloseCircleSharp />
-                  </button>
-                </div>
-              </Show>
               <div class="btns">
                 <button
                   class="icon-btn refresh-btn"
                   disabled={
-                    !canRefreshSingle() || refreshingSingle() || offlineMode()
+                    !canRefreshSelected() || refreshing() || offlineMode()
                   }
                   title={
                     offlineMode()
                       ? 'Offline mode is on'
-                      : canRefreshSingle()
-                        ? 'Refresh value from the service, then rotate (the GET necessarily exposes k1)'
-                        : 'Select exactly 1 unspent note to refresh'
+                      : canRefreshSelected()
+                        ? 'Refresh value from the service, then rotate (the GET necessarily exposes k1) - one at a time for every selected note'
+                        : 'Select notes to refresh'
                   }
-                  onClick={refreshSingleSelected}
+                  onClick={refreshSelected}
                 >
-                  <Show when={refreshingSingle()} fallback={<IoRefreshSharp />}>
+                  <Show when={refreshing()} fallback={<IoRefreshSharp />}>
                     <IoRefreshSharp class="spin" />
                   </Show>
                   &nbsp;Refresh
+                  <Show when={selectedBearers().length > 1}>
+                    &nbsp;({selectedBearers().length})
+                  </Show>
+                </button>
+                <button
+                  class="icon-btn label-btn"
+                  disabled={!canLabelSelected()}
+                  title={
+                    canLabelSelected()
+                      ? 'Set a label on every selected note (private, for your own reference)'
+                      : 'Select notes to label'
+                  }
+                  onClick={openLabelInput}
+                >
+                  <IoPencilSharp />
+                  &nbsp;Label
+                  <Show when={selectedBearers().length > 1}>
+                    &nbsp;({selectedBearers().length})
+                  </Show>
+                </button>
+                <button
+                  class="icon-btn mark-spent-btn"
+                  disabled={!canMarkSpentSelected()}
+                  title={
+                    canMarkSpentSelected()
+                      ? 'Mark every selected note as spent - locks them without removing them, e.g. if you already handed them out some other way'
+                      : 'Select notes to mark as spent'
+                  }
+                  onClick={markSpentSelected}
+                >
+                  <IoBanSharp />
+                  &nbsp;Mark spent
+                  <Show when={selectedBearers().length > 1}>
+                    &nbsp;({selectedBearers().length})
+                  </Show>
                 </button>
                 <button
                   class="icon-btn split-single-btn"
@@ -1444,6 +1540,19 @@ const Wallet: Component = () => {
                     &nbsp;({selected().size})
                   </Show>
                 </button>
+                <Show when={selected().size > 0}>
+                  <span class="selection-count">
+                    {selected().size} selected
+                  </span>
+                  <button
+                    type="button"
+                    class="icon-btn"
+                    title="Clear selection"
+                    onClick={() => setSelected(new Set<string>())}
+                  >
+                    <IoCloseCircleSharp />
+                  </button>
+                </Show>
               </div>
               <Show when={canCombine()}>
                 <p class="bearer-hint">
@@ -1490,6 +1599,33 @@ const Wallet: Component = () => {
                       onClick={() => {
                         setShowSplitInput(false)
                         setSplitSats('')
+                      }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              </Show>
+              <Show when={showLabelInput() && canLabelSelected()}>
+                <div class="form-item">
+                  <label>
+                    Label {selectedBearers().length} note
+                    {selectedBearers().length === 1 ? '' : 's'} (private, for
+                    your own reference)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. rent, gift for Alex"
+                    value={labelInputValue()}
+                    onInput={e => setLabelInputValue(e.currentTarget.value)}
+                    onKeyDown={e => e.key === 'Enter' && saveLabelSelected()}
+                  />
+                  <div class="btns">
+                    <button onClick={saveLabelSelected}>Save</button>
+                    <button
+                      onClick={() => {
+                        setShowLabelInput(false)
+                        setLabelInputValue('')
                       }}
                     >
                       Cancel
