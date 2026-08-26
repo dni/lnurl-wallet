@@ -1,5 +1,5 @@
 import type {Component} from 'solid-js'
-import {Show, createSignal} from 'solid-js'
+import {Show, createMemo, createSignal} from 'solid-js'
 import {
   IoCopySharp,
   IoQrCodeSharp,
@@ -18,6 +18,7 @@ import {
   markDeviceNoteSpent
 } from '../deviceOrchestration'
 import {copyToClipboard, msatToSats, notify, NotifyKind} from '../helpers'
+import {getTrustedMintNodeColor} from '../trustedMints'
 import Qr from './Qr'
 
 export type SendNoteCardProps = {
@@ -46,6 +47,17 @@ const SendNoteCard: Component<SendNoteCardProps> = props => {
   // it in hand (props.bearer.url IS the note), nothing to wait for
   const [exportedUrl, setExportedUrl] = createSignal<string | null>(null)
   const [exporting, setExporting] = createSignal(false)
+
+  // this note's issuing mint's self-reported node color, same tint
+  // BearerCard applies on the wallet page (see its own noteColor/cardStyle
+  // and the .tinted rule in style.scss) - purely cosmetic, so a mint with
+  // no color ever cached just keeps the plain .bearer-card gradient
+  const noteColor = createMemo(() =>
+    getTrustedMintNodeColor(serverOf(props.bearer.url))
+  )
+  const cardStyle = createMemo(() =>
+    noteColor() ? {'--note-tint': noteColor()!} : undefined
+  )
 
   const realUrl = () =>
     props.bearer.deviceId ? exportedUrl() : props.bearer.url
@@ -127,7 +139,11 @@ const SendNoteCard: Component<SendNoteCardProps> = props => {
   }
 
   return (
-    <figure class="bearer-card">
+    <figure
+      class="bearer-card"
+      classList={{tinted: !!noteColor()}}
+      style={cardStyle()}
+    >
       <div class="bearer-head">
         <div class="bearer-title">
           <span class="bearer-amount">
