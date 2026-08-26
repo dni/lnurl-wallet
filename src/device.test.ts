@@ -264,6 +264,37 @@ describe('DeviceClient', () => {
     expect(handler).toHaveBeenCalledOnce()
   })
 
+  // A rotate leaves its parent behind as a spent record, so a vault in use
+  // fills with dead weight. The firmware clears the lot in one press; the
+  // trash icon on each note is one press per note.
+  it('prunes spent notes on the physical-confirm timeout, not the short one', async () => {
+    vi.useFakeTimers()
+    try {
+      const transport = new FakeTransport()
+      const client = new DeviceClient(transport)
+      const promise = client.pruneSpent()
+      // past the default 10s a gated command would have died on, and the
+      // on-device prompt has not even timed out yet
+      await vi.advanceTimersByTimeAsync(10_000)
+      expect(transport.disconnected).toBe(false)
+      transport.respond({ok: true, removed: 3, remaining: 1})
+      await expect(promise).resolves.toEqual({removed: 3, remaining: 1})
+      expect(transport.sent).toEqual([{cmd: 'prune_spent'}])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('reports the disconnect, not the closed port, on a later command', async () => {
+    const transport = new FakeTransport()
+    const client = new DeviceClient(transport)
+    await transport.disconnect()
+    await expect(client.getInfo()).rejects.toMatchObject({
+      code: 'disconnected'
+    })
+    expect(transport.sent.length).toBe(0)
+  })
+
   it('times out and disconnects a command that never gets a response', async () => {
     vi.useFakeTimers()
     try {
@@ -298,7 +329,7 @@ describe('DeviceClient', () => {
     }
   })
 
-  it('does not start the next queued command until the timed-out session has finished disconnecting', async () => {
+  it('fails a command queued behind a timeout with the timeout, not the closed port', async () => {
     vi.useFakeTimers()
     try {
       const transport = new FakeTransport()
@@ -320,6 +351,13 @@ describe('DeviceClient', () => {
       const firstAssertion = expect(first).rejects.toMatchObject({
         code: 'timeout'
       })
+      // the session is one-shot, so the queued command never reaches the
+      // now-closed port and reports what killed it rather than the port's
+      // own "not writable"
+      const secondAssertion = expect(second).rejects.toMatchObject({
+        code: 'disconnected',
+        message: 'Device did not respond in time.'
+      })
 
       await vi.advanceTimersByTimeAsync(10_000)
       // the timeout fired and teardown started, but until disconnect() has
@@ -330,14 +368,8 @@ describe('DeviceClient', () => {
       releaseDisconnect()
       await firstAssertion
       await vi.advanceTimersByTimeAsync(0)
-      await vi.waitFor(() => expect(transport.sent.length).toBe(2))
-      transport.respond({ok: true, notes: []})
-      await expect(second).resolves.toEqual({
-        total: undefined,
-        offset: undefined,
-        notes: [],
-        nextOffset: null
-      })
+      await secondAssertion
+      expect(transport.sent.length).toBe(1)
     } finally {
       vi.useRealTimers()
     }

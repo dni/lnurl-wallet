@@ -234,7 +234,9 @@ export const lightningAddressUsername = (payUrl: string): string | null => {
 // clearnet host - and the LUD-17 branch's result is re-validated with the
 // URL parser rather than trusted from fromLud17's regex host split
 export const resolveLnurlInput = (value: string): string | null => {
-  const trimmed = value.trim()
+  // scanners hand the scheme back with the payload, and the conventional QR
+  // carries it (toLightningUri) - so this has to read our own codes too
+  const trimmed = value.trim().replace(/^lightning:/i, '')
   if (!trimmed) return null
   if (isBech32Lnurl(trimmed)) {
     const url = fromBech32Lnurl(trimmed)

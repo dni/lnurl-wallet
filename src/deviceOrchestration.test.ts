@@ -14,6 +14,7 @@ import {
   deviceMeltRequest,
   deviceMarkSpent,
   markDeviceNoteSpent,
+  adoptDeviceNote,
   DeviceImportLeftBehindError
 } from './deviceOrchestration'
 import {
@@ -134,6 +135,20 @@ class MockMint {
         return this.respond({status: 'OK'})
       }
       return this.respond({status: 'ERROR', reason: 'bad request'})
+    }
+
+    // LUD-16 payRequest, the only place a mint says where its withdraw
+    // endpoint is - what adoptDeviceNote falls back to when a note's stored
+    // host has lost the path
+    if (url.pathname === '/.well-known/lnurlp/mint') {
+      return this.respond({
+        tag: 'payRequest',
+        callback: 'https://mock-mint.test/p/cb',
+        minSendable: 1000,
+        maxSendable: 1_000_000,
+        metadata: '[["text/plain", "mock"]]',
+        withdrawLink: WITHDRAW_URL
+      })
     }
 
     return this.respond({status: 'ERROR', reason: 'not found'})
@@ -371,6 +386,155 @@ describe('deviceRotate / migrateNoteToDevice', () => {
       expect(firmware.get(result.deviceId)?.state).toBe('confirmed')
       // nothing to burn on-device - the note never lived there
       expect(firmware.get(result.deviceId)?.parent_ids).toEqual([])
+    })
+  })
+})
+
+// A note's host is what the device rebuilds `https://<host>?k1=...` from,
+// so it has to be the withdraw endpoint. Derived from the callback it came
+// out as the bare hostname, which resolves to the mint's landing page: the
+// QR scanned into a real wallet, which reported it could not decode what it
+// got back. Every path that commits a note is checked, because the mint path
+// was fixed on its own once already and these were left behind.
+describe('the host committed with a note', () => {
+  const hostOf = (firmware: MockDeviceFirmware, id: string) =>
+    firmware.get(id)?.host
+
+  it('carries the withdraw path through rotate, split and merge', async () => {
+    const mint = new MockMint()
+    const firmware = new MockDeviceFirmware()
+    const client = new DeviceClient(firmware)
+    const k1 = randomHex(32)
+    mint.seed(k1, 21000)
+
+    await withMint(mint, async () => {
+      const importedId = await client.importSecret(k1, HOST, 21000)
+      const rotated = await deviceRotate(client, {
+        deviceId: importedId,
+        url: noteTemplateUrl(k1, 21000),
+        callback: WITHDRAW_CALLBACK,
+        amount: 21000
+      })
+      expect(hostOf(firmware, rotated.deviceId)).toBe('mock-mint.test/w')
+
+      const rotatedK1 = await client.exportSecret(rotated.deviceId)
+      const parts = await deviceSplit(
+        client,
+        [{deviceId: rotated.deviceId, url: noteTemplateUrl(rotatedK1, 21000)}],
+        WITHDRAW_CALLBACK,
+        6000,
+        21000
+      )
+      expect(hostOf(firmware, parts.target.deviceId)).toBe('mock-mint.test/w')
+      expect(hostOf(firmware, parts.change.deviceId)).toBe('mock-mint.test/w')
+
+      const targetK1 = await client.exportSecret(parts.target.deviceId)
+      const changeK1 = await client.exportSecret(parts.change.deviceId)
+      const merged = await deviceMerge(
+        client,
+        [
+          {
+            deviceId: parts.target.deviceId,
+            url: noteTemplateUrl(targetK1, 6000)
+          },
+          {
+            deviceId: parts.change.deviceId,
+            url: noteTemplateUrl(changeK1, 15000)
+          }
+        ],
+        WITHDRAW_CALLBACK,
+        21000
+      )
+      expect(hostOf(firmware, merged.deviceId)).toBe('mock-mint.test/w')
+    })
+  })
+
+  it('keeps a mint whose withdraw endpoint is at the root free of a stray slash', async () => {
+    const mint = new MockMint()
+    const firmware = new MockDeviceFirmware()
+    const client = new DeviceClient(firmware)
+    const k1 = randomHex(32)
+    mint.seed(k1, 21000)
+
+    await withMint(mint, async () => {
+      const importedId = await client.importSecret(k1, HOST, 21000)
+      const rotated = await deviceRotate(client, {
+        deviceId: importedId,
+        url: buildNoteUrl('https://mock-mint.test/', k1, 21000),
+        callback: WITHDRAW_CALLBACK,
+        amount: 21000
+      })
+      expect(hostOf(firmware, rotated.deviceId)).toBe('mock-mint.test')
+    })
+  })
+})
+
+// A note on the vault that this browser has no record of has no card
+// anywhere else in the wallet, so without this it cannot be spent, refreshed
+// or handed over at all - it is stranded on the device.
+describe('adoptDeviceNote', () => {
+  it('recovers a note whose stored host lost the withdraw path', async () => {
+    const mint = new MockMint()
+    const firmware = new MockDeviceFirmware()
+    const client = new DeviceClient(firmware)
+    const k1 = randomHex(32)
+    mint.seed(k1, 21000)
+
+    await withMint(mint, async () => {
+      // HOST is the bare hostname a pre-fix build wrote: rebuilt into a note
+      // URL it is the mint's landing page, not its withdraw endpoint
+      const id = await client.importSecret(k1, HOST, 21000)
+      const adopted = await adoptDeviceNote(client, {
+        id,
+        host: HOST,
+        amountMsat: 21000
+      })
+
+      expect(adopted.url.startsWith(`${WITHDRAW_URL}?`)).toBe(true)
+      expect(adopted.url).not.toContain('k1=')
+      expect(adopted.callback).toBe(WITHDRAW_CALLBACK)
+      expect(adopted.deviceId).toBe(id)
+      // the mint's figure, never the device's - only the mint knows what is
+      // outstanding now
+      expect(adopted.amountMsat).toBe(21000)
+      // adopting is not a rotate: the note stays outstanding under the same
+      // secret, and the device keeps holding it
+      expect(mint.isOutstanding(k1)).toBe(true)
+      expect(firmware.get(id)?.state).toBe('confirmed')
+    })
+  })
+
+  it('uses a stored host that already carries the path without asking the mint', async () => {
+    const mint = new MockMint()
+    const firmware = new MockDeviceFirmware()
+    const client = new DeviceClient(firmware)
+    const k1 = randomHex(32)
+    mint.seed(k1, 5000)
+
+    await withMint(mint, async () => {
+      const id = await client.importSecret(k1, 'mock-mint.test/w', 5000)
+      const adopted = await adoptDeviceNote(client, {
+        id,
+        host: 'mock-mint.test/w',
+        amountMsat: 5000
+      })
+      expect(adopted.url.startsWith(`${WITHDRAW_URL}?`)).toBe(true)
+      expect(adopted.amountMsat).toBe(5000)
+    })
+  })
+
+  it('fails rather than inventing a note the mint does not know', async () => {
+    const mint = new MockMint()
+    const firmware = new MockDeviceFirmware()
+    const client = new DeviceClient(firmware)
+    const k1 = randomHex(32)
+    // deliberately not seeded at the mint
+
+    await withMint(mint, async () => {
+      const id = await client.importSecret(k1, HOST, 21000)
+      await expect(
+        adoptDeviceNote(client, {id, host: HOST, amountMsat: 21000})
+      ).rejects.toThrow()
     })
   })
 })

@@ -1,13 +1,21 @@
 import type {Component} from 'solid-js'
 import {For, Show, createSignal} from 'solid-js'
-import {IoBanSharp, IoPencilSharp, IoTrashSharp} from 'solid-icons/io'
+import {
+  IoBanSharp,
+  IoDownloadSharp,
+  IoPencilSharp,
+  IoTrashSharp
+} from 'solid-icons/io'
 
 import {useDevice} from '../DeviceContext'
+import {useWallet} from '../WalletContext'
+import {adoptDeviceNote} from '../deviceOrchestration'
 import type {DeviceNote, DeviceStorageState} from '../device'
 import {
   approvalInstruction,
   inputWarning,
-  canShowQrHandoff
+  canShowQrHandoff,
+  gatedCommandsUnavailable
 } from '../deviceGuidance'
 import {identityWarning} from '../devicePinning'
 import {msatToSats, notify, NotifyKind} from '../helpers'
@@ -56,13 +64,63 @@ const Vault: Component = () => {
     trustCurrentIdentity,
     refresh,
     rename,
-    deleteNote
+    deleteNote,
+    pruneSpent,
+    client
   } = useDevice()
+  const {bearers, addBearer, logActivity} = useWallet()
+
+  // A note the vault holds that this browser has no record of: paired to a
+  // different browser, storage cleared, a restore that predates it. Without
+  // a bearer it has no card anywhere else in the wallet, so this page is the
+  // only place it can be acted on at all.
+  const isOrphan = (note: DeviceNote) =>
+    note.state === 'confirmed' && !bearers().some(b => b.deviceId === note.id)
+
+  const adopt = async (note: DeviceNote) => {
+    const current = client()
+    if (!current) return
+    const adopted = await adoptDeviceNote(current, {
+      id: note.id,
+      host: note.host,
+      amountMsat: note.amount_msat
+    })
+    await addBearer({
+      url: adopted.url,
+      callback: adopted.callback,
+      amount: adopted.amountMsat,
+      verified: true,
+      mintPubkey: adopted.mintPubkey,
+      deviceId: adopted.deviceId
+    })
+    logActivity(
+      'transfer',
+      `Adopted ${msatToSats(adopted.amountMsat)} sats from the vault into this wallet.`
+    )
+    notify(
+      `Adopted ${msatToSats(adopted.amountMsat)} sats - it has a card on the wallet page now.`,
+      NotifyKind.SUCCESS
+    )
+    await refresh()
+  }
 
   const [busy, setBusy] = createSignal(false)
   const [showOtherWays, setShowOtherWays] = createSignal(false)
   const [editingId, setEditingId] = createSignal<string | null>(null)
   const [labelInput, setLabelInput] = createSignal('')
+
+  const spentCount = () => notes().filter(n => n.state === 'spent').length
+
+  // one press for the lot, against one per note through the trash icons.
+  // A rotate leaves its parent behind as a spent record by design, so these
+  // pile up fast on a vault in use
+  const clearSpent = async () => {
+    const removed = await pruneSpent()
+    notify(
+      `Cleared ${removed} spent note${removed === 1 ? '' : 's'} from the device.`,
+      NotifyKind.SUCCESS
+    )
+  }
 
   const withBusy = async (action: () => Promise<void>) => {
     setBusy(true)
@@ -89,12 +147,26 @@ const Vault: Component = () => {
   return (
     <div id="vault" class="page">
       <h2>LNURLvault</h2>
-      <p>
-        Pair an LNURLvault hardware device over USB or Bluetooth. The device
-        generates and holds note secrets itself - this page only reads its
-        state, it never sees a plaintext secret unless you explicitly export one
-        on the device (which requires a physical button press there).
-      </p>
+      {/* the pairing call to action has to go once a vault is paired -
+          left standing next to "No notes on this device yet" it reads as
+          "you still have not paired", on a page that just did */}
+      <Show
+        when={connectionState() === 'connected'}
+        fallback={
+          <p>
+            Pair an LNURLvault hardware device over USB or Bluetooth. The device
+            generates and holds note secrets itself - this page only reads its
+            state, it never sees a plaintext secret unless you explicitly export
+            one on the device (which requires a physical button press there).
+          </p>
+        }
+      >
+        <p>
+          This vault generates and holds its note secrets itself. This page only
+          reads its state, and never sees a plaintext secret unless you export
+          one on the device, which requires a physical button press there.
+        </p>
+      </Show>
       <Show
         when={connectionState() === 'connected'}
         fallback={
@@ -209,6 +281,11 @@ const Vault: Component = () => {
             <button disabled={busy()} onClick={() => withBusy(refresh)}>
               Refresh
             </button>
+            <Show when={spentCount() > 0 && !gatedCommandsUnavailable(info())}>
+              <button disabled={busy()} onClick={() => withBusy(clearSpent)}>
+                Clear {spentCount()} spent
+              </button>
+            </Show>
             <button disabled={busy()} onClick={() => withBusy(disconnect)}>
               Disconnect
             </button>
@@ -259,6 +336,16 @@ const Vault: Component = () => {
                         >
                           <IoPencilSharp />
                         </button>
+                        <Show when={isOrphan(note)}>
+                          <button
+                            class="icon-btn"
+                            title="Adopt into this wallet - this browser has no record of this note, so it has no card on the wallet page"
+                            disabled={busy()}
+                            onClick={() => withBusy(() => adopt(note))}
+                          >
+                            <IoDownloadSharp />
+                          </button>
+                        </Show>
                         <Show when={note.state === 'spent'}>
                           <button
                             class="icon-btn"

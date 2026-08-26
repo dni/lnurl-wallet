@@ -104,10 +104,21 @@ describe('input resolution', () => {
     )
     expect(resolveLnurlInput(NOTE_URL)).toBe(NOTE_URL)
     expect(resolveLnurlInput('nonsense')).toBeNull()
+    // wallets hand LNURLs over behind the scheme (LUD-01); only the
+    // clipboard path stripped it, so a scanned one was rejected
+    expect(resolveLnurlInput(`lightning:${toBech32Lnurl(NOTE_URL)}`)).toBe(
+      NOTE_URL
+    )
+    expect(resolveLnurlInput(`LIGHTNING:${toBech32Lnurl(NOTE_URL)}`)).toBe(
+      NOTE_URL
+    )
   })
 
   it('only accepts a note when a k1 is present', () => {
     expect(resolveNoteInput(toBech32Lnurl(NOTE_URL))).toBe(NOTE_URL)
+    expect(resolveNoteInput(`lightning:${toBech32Lnurl(NOTE_URL)}`)).toBe(
+      NOTE_URL
+    )
     expect(resolveNoteInput('https://mint.example.com/withdraw')).toBeNull()
     expect(isValidNoteInput(NOTE_URL)).toBe(true)
     expect(isValidNoteInput('you@example.com')).toBe(false)
