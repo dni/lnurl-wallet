@@ -19,8 +19,18 @@ import {
   getPlainLinkingKey,
   decryptSavedLinkingKey,
   clearSavedLinkingKey,
-  linkingPubKeyHex
+  linkingPubKeyHex,
+  deriveLud25CashRootNode,
+  cashRootToHex,
+  cashRootFromHex,
+  saveCashRootKey,
+  savedCashRootKeyExists,
+  savedCashRootKeyIsEncrypted,
+  getPlainCashRootKeyHex,
+  decryptSavedCashRootKeyHex,
+  clearSavedCashRootKey
 } from './keys'
+import {setCashRoot, clearCashSecretIndices} from './cashSecrets'
 import type {Bearer, ActivityEvent, ActivityKind} from './storage'
 import {
   loadBearers,
@@ -157,9 +167,17 @@ export const WalletProvider = (props: {children: JSX.Element}) => {
     )
   }
 
-  const activate = async (linkingKey: Uint8Array) => {
+  const activate = async (
+    linkingKey: Uint8Array,
+    cashRootHex: string | null
+  ) => {
     aesKey = await deriveBearerAesKey(linkingKey)
     setPubkey(linkingPubKeyHex(linkingKey))
+    // LUD-25 (see cashSecrets.ts): null whenever this wallet has no cash
+    // root saved yet (set up before this feature existed, and hasn't
+    // re-entered its seed since) - note generation just falls back to
+    // plain randomness until then, nothing else here depends on it
+    setCashRoot(cashRootHex ? cashRootFromHex(cashRootHex) : null)
     const loaded = await loadBearers(aesKey)
     setBearers(loaded)
     setActivity(await loadActivity(aesKey))
@@ -183,7 +201,14 @@ export const WalletProvider = (props: {children: JSX.Element}) => {
   const setup = async (seedPhrase: string, password?: string) => {
     const linkingKey = deriveWalletLinkingKey(seedPhrase)
     await saveLinkingKey(linkingKey, password)
-    await activate(linkingKey)
+    // LUD-25: derived and saved alongside the linking key, under the same
+    // password - there's no separate password to ask for, and both "Create
+    // new" and "Restore from seed" (Setup.tsx) already route through this
+    // same function, so either one backfills a wallet that predates this
+    // feature the moment its seed is entered again
+    const cashRootHex = cashRootToHex(deriveLud25CashRootNode(seedPhrase))
+    await saveCashRootKey(cashRootHex, password)
+    await activate(linkingKey, cashRootHex)
   }
 
   const unlock = async (password?: string) => {
@@ -191,7 +216,12 @@ export const WalletProvider = (props: {children: JSX.Element}) => {
       ? await decryptSavedLinkingKey(password || '')
       : getPlainLinkingKey()
     if (!linkingKey) throw new Error('No wallet on this device.')
-    await activate(linkingKey)
+    const cashRootHex = savedCashRootKeyExists()
+      ? savedCashRootKeyIsEncrypted()
+        ? await decryptSavedCashRootKeyHex(password || '')
+        : getPlainCashRootKeyHex()
+      : null
+    await activate(linkingKey, cashRootHex)
   }
 
   // only meaningful for a password-encrypted key - a plaintext one would
@@ -200,6 +230,7 @@ export const WalletProvider = (props: {children: JSX.Element}) => {
     if (!savedKeyIsEncrypted()) return
     dismissWarning()
     aesKey = null
+    setCashRoot(null)
     setPubkey(null)
     setBearers([])
     setActivity([])
@@ -210,17 +241,21 @@ export const WalletProvider = (props: {children: JSX.Element}) => {
   // bearer record, the activity log, and the non-secret registries that
   // would otherwise linger as a fingerprint of it (trusted mints incl.
   // otherwise-irremovable locked pins, storeable links, pending device
-  // ops). Not recoverable by restoring the same seed afterward (the
-  // ciphertexts themselves are gone); only a backup downloaded before this
-  // runs can bring the notes back - the UI should prompt for one
+  // ops, LUD-25's cash root key and per-SERVICE indices). Not recoverable
+  // by restoring the same seed afterward (the ciphertexts themselves are
+  // gone); only a backup downloaded before this runs can bring the notes
+  // back - the UI should prompt for one
   const forgetWallet = () => {
     clearSavedLinkingKey()
+    clearSavedCashRootKey()
+    clearCashSecretIndices()
     clearAllBearers()
     clearAllActivity()
     clearTrustedMints()
     clearStoreableLinks()
     clearPendingDeviceOps()
     aesKey = null
+    setCashRoot(null)
     setPubkey(null)
     setBearers([])
     setActivity([])

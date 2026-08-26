@@ -431,7 +431,15 @@ const Mint: Component = () => {
       // becomes the bearer secret, so it's safe to disclose (including via
       // LUD-21 verify below). Otherwise this mint gets the plain no-comment
       // mint, and the preimage IS the secret - see claim()'s preimage path.
-      const secret = canUseMintComment(info) ? generateNoteSecret() : null
+      // domain the secret is derived/indexed under (see lnurlcash.ts's
+      // generateNoteSecret) is the note's actual home, the withdraw
+      // endpoint - not the payRequest callback, in the unlikely case a mint
+      // ever splits those across hosts. withdrawLink is always present here
+      // (this page never reaches getInvoice without it - see lookup), the
+      // fallback is just to keep this call site type-safe without asserting
+      const secret = canUseMintComment(info)
+        ? generateNoteSecret(serverOf(info.withdrawLink || info.callback))
+        : null
       const result = await requestInvoice(
         info.callback,
         amount.grossMsat,

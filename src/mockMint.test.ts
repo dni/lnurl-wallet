@@ -485,7 +485,7 @@ describe('LUD-12 comment protection (LUD-25 preimage-race mitigation)', () => {
 
     // this is exactly what Mint.tsx's getInvoice does: generate the note's
     // real secret up front, disclose only its hash as `comment`
-    const secret = generateNoteSecret()
+    const secret = generateNoteSecret('mock-mint.test')
     const invoice = await requestInvoice(
       payInfo.callback,
       21000,

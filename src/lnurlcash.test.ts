@@ -498,7 +498,7 @@ describe('LUD-12 comment protection (LUD-25 preimage-race mitigation)', () => {
   })
 
   it('generateNoteSecret + hashK1 produce exactly a 64-char hex comment', () => {
-    const secret = generateNoteSecret()
+    const secret = generateNoteSecret('mint.example.com')
     expect(isPreimage(secret)).toBe(true)
     const comment = hashK1(secret)
     expect(comment).toMatch(/^[0-9a-f]{64}$/)

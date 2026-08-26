@@ -18,15 +18,18 @@ vi.stubGlobal('localStorage', {
 const KEY_A = `02${'a'.repeat(64)}`
 const LINKING_HEX_A = 'aa'.repeat(32)
 const LINKING_HEX_B = 'bb'.repeat(32)
+const CASH_ROOT_HEX_A = 'cc'.repeat(64) // 128 hex chars: privkey || chaincode
 
 let storage: typeof import('./storage')
 let keys: typeof import('./keys')
+let cashSecrets: typeof import('./cashSecrets')
 
 beforeEach(async () => {
   store.clear()
   vi.resetModules()
   storage = await import('./storage')
   keys = await import('./keys')
+  cashSecrets = await import('./cashSecrets')
 })
 
 const validBackup = (overrides: Record<string, unknown> = {}) => ({
@@ -170,6 +173,79 @@ describe('buildBackup', () => {
     const result = storage.applyBackup(backup)
     expect(result.linkingKeyRestored).toBe(true)
     expect(keys.savedKeyIsEncrypted()).toBe(true)
+  })
+
+  it('always includes the (non-secret) per-SERVICE cash indices', () => {
+    cashSecrets.mergeCashSecretIndices({'mint.example': 3})
+    const backup = storage.buildBackup()
+    expect(backup.cashIndices).toEqual({'mint.example': 3})
+  })
+
+  it('never exports a plaintext-stored cash root key', async () => {
+    await keys.saveCashRootKey(CASH_ROOT_HEX_A)
+    const backup = storage.buildBackup()
+    expect(backup.cashRootKey).toBeUndefined()
+  })
+
+  it('exports the cash root key only when it is password-encrypted', async () => {
+    await keys.saveCashRootKey(CASH_ROOT_HEX_A, 'correct horse')
+    const backup = storage.buildBackup()
+    expect(backup.cashRootKey?.enc).toBe(true)
+  })
+})
+
+describe('applyBackup cash root key handling (LUD-25)', () => {
+  it('installs the cash root key alongside the linking key on a fresh device', () => {
+    const result = storage.applyBackup(
+      validBackup({
+        linkingKey: {enc: false, value: LINKING_HEX_A},
+        cashRootKey: {enc: false, value: CASH_ROOT_HEX_A}
+      })
+    )
+    expect(result.linkingKeyRestored).toBe(true)
+    expect(keys.savedCashRootKeyExists()).toBe(true)
+    expect(keys.getPlainCashRootKeyHex()).toBe(CASH_ROOT_HEX_A)
+  })
+
+  it('never installs a cash root key on its own, without a linking key', () => {
+    storage.applyBackup(
+      validBackup({cashRootKey: {enc: false, value: CASH_ROOT_HEX_A}})
+    )
+    expect(keys.savedCashRootKeyExists()).toBe(false)
+  })
+
+  it('skips a malformed cash root key without touching the linking key', () => {
+    const result = storage.applyBackup(
+      validBackup({
+        linkingKey: {enc: false, value: LINKING_HEX_A},
+        cashRootKey: {enc: false, value: 'aa'.repeat(32)} // 64 hex, needs 128
+      })
+    )
+    expect(result.linkingKeyRestored).toBe(true)
+    expect(keys.savedCashRootKeyExists()).toBe(false)
+  })
+
+  it('never overwrites a cash root key this device already has', async () => {
+    await keys.saveLinkingKey(new Uint8Array(32).fill(1))
+    await keys.saveCashRootKey('dd'.repeat(64))
+    storage.applyBackup(
+      validBackup({
+        linkingKey: {enc: false, value: LINKING_HEX_B},
+        cashRootKey: {enc: false, value: CASH_ROOT_HEX_A}
+      })
+    )
+    expect(keys.getPlainCashRootKeyHex()).toBe('dd'.repeat(64))
+  })
+
+  it('merges cash indices regardless of whether the linking key was skipped', async () => {
+    await keys.saveLinkingKey(new Uint8Array(32).fill(1))
+    storage.applyBackup(
+      validBackup({
+        linkingKey: {enc: false, value: LINKING_HEX_B},
+        cashIndices: {'mint.example': 4}
+      })
+    )
+    expect(cashSecrets.nextCashSecretIndex('mint.example')).toBe(4)
   })
 })
 

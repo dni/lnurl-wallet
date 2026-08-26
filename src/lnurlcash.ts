@@ -3,6 +3,7 @@ import {sha256} from '@noble/hashes/sha2.js'
 import {secp256k1} from '@noble/curves/secp256k1.js'
 import {bytesToHex, hexToBytes, utf8ToBytes} from '@noble/hashes/utils.js'
 import {offlineMode} from './offlineMode'
+import {nextCashSecret} from './cashSecrets'
 import {msatToSats} from './helpers'
 
 // LUD-25 LNURLcash - bearer assets. Draft spec:
@@ -421,12 +422,21 @@ const LIGHTNING_SIGNED_MESSAGE_PREFIX = utf8ToBytes('Lightning Signed Message:')
 // LUD-25: for a rotate/split/merge, WALLET - not SERVICE - generates the
 // replacement note's secret and discloses only its hash (h/h2 on the
 // callback) - a fresh 32-byte value, the same size an actual Lightning
-// payment preimage already is, though nothing is ever paid for it, it's
-// just drawn at random. SERVICE never sees, generates, or persists it. The
+// payment preimage already is, though nothing is ever paid for it. The
 // same function also produces the `secret` behind a comment-protected mint
 // (see MIN_COMMENT_LENGTH_FOR_SECRET below) - both are the same kind of
 // thing, an opaque 32-byte value only WALLET ever needs to produce.
-export const generateNoteSecret = (): string =>
+//
+// `domain` is the issuing SERVICE's own host (see serverOf) - every call
+// site below already has it in scope from the callback/payRequest URL it's
+// about to use. Seed-recoverable note secrets (LUD-25): prefers a
+// deterministic secret derived from this wallet's seed (see cashSecrets.ts)
+// so a lost/reinstalled wallet can reconstruct it from nothing but the seed
+// phrase plus a small per-domain index, falling back to plain randomness
+// only when no seed-derived root is loaded (locked, or a wallet that hasn't
+// re-entered its seed since this feature shipped).
+export const generateNoteSecret = (domain: string): string =>
+  nextCashSecret(domain) ??
   bytesToHex(crypto.getRandomValues(new Uint8Array(32)))
 
 // exported so callers can hash the mint secret behind a LUD-12 `comment`
@@ -919,7 +929,7 @@ export const rotateNote = async (
   callback: string,
   k1: string
 ): Promise<RotateResult> => {
-  const newK1 = generateNoteSecret()
+  const newK1 = generateNoteSecret(serverOf(callback))
   try {
     const result = await rotateNoteWithHash(callback, k1, hashK1(newK1))
     return {k1: newK1, signature: result.signature}
@@ -950,8 +960,9 @@ export const splitNote = async (
   k1s: string[],
   amountMsat: number
 ): Promise<SplitResult> => {
-  const newK1 = generateNoteSecret()
-  const changeK1 = generateNoteSecret()
+  const domain = serverOf(callback)
+  const newK1 = generateNoteSecret(domain)
+  const changeK1 = generateNoteSecret(domain)
   try {
     const result = await splitNoteWithHash(
       callback,
@@ -985,7 +996,7 @@ export const mergeNotes = async (
   callback: string,
   k1s: string[]
 ): Promise<RotateResult> => {
-  const newK1 = generateNoteSecret()
+  const newK1 = generateNoteSecret(serverOf(callback))
   try {
     const result = await mergeNotesWithHash(callback, k1s, hashK1(newK1))
     return {k1: newK1, signature: result.signature}
