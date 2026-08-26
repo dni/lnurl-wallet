@@ -875,55 +875,33 @@ nav {
 
 // ---- wallet page ----
 
-.server-group {
-  margin-bottom: 21px;
+// the wallet-wide selection bar (mint picker, selection count/clear, show
+// spent toggle, combine/split/transfer) that replaced the old per-mint
+// MintGroupCard header - one flat control surface above the single note
+// grid below, instead of one of these per mint
+.selection-toolbar {
+  margin-bottom: 16px;
 }
 
-// .setup-card.mint-group-card (not .mint-group-card alone) so this wins
-// over .setup-card's own max-width regardless of stylesheet order
-.setup-card.mint-group-card {
-  max-width: none;
-  margin-bottom: 10px;
-  // .btns has no row-gap, so on narrow screens - where its buttons (show
-  // notes, select all, combine, transfer) wrap onto more than one line -
-  // they'd otherwise touch with no vertical space between rows, or against
-  // whatever follows once collapsed back down
-  .btns button {
-    margin-bottom: 8px;
-  }
-}
-
-.mint-pubkey code {
-  overflow-wrap: anywhere;
-}
-
-// server name + balance on the left, the mint's own external links (open
-// mint, mempool.space) grouped on the right - figcaption is a plain block
-// by default, so this is what actually lets the icon-btns sit inline with
-// the text instead of dropping to their own line
-.mint-group-caption {
+.selection-toolbar-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 10px;
+  margin-bottom: 8px;
 }
 
-// the link icons themselves stay close together as a group - without this,
-// justify-content:space-between on the figcaption above would spread all
-// three children (text + two icons) evenly instead of keeping the icons
-// paired
-.mint-group-caption-links {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+.mint-select-all {
+  width: auto;
 }
 
-// the mint-group card's action row (Copy pubkey, Show notes, Select all,
-// Combine, Combine & Split, Transfer) - smaller than the app's default
-// buttons so a row of six doesn't dominate the card
-.show-notes-btn,
-.select-all-btn,
+.selection-count {
+  opacity: 0.85;
+  font-size: 0.9em;
+}
+
+// Combine, Combine & split, Transfer - smaller than the app's default
+// buttons so the row doesn't dominate the page
 .combine-btn,
 .split-btn,
 .transfer-btn {
@@ -931,14 +909,6 @@ nav {
   font-size: 0.9em;
 }
 
-.show-notes-btn {
-  margin-left: 8px;
-}
-
-// .combine-btn sits right after .select-all-btn (a regular button, whose
-// own margin-right already spaces it out), but .split-btn/.transfer-btn
-// each follow another .icon-btn - those have margin-right:0, so without
-// this the two would touch with no gap between them
 .split-btn,
 .transfer-btn {
   margin-left: 8px;
@@ -977,6 +947,22 @@ nav {
   }
 }
 
+// the whole card is the click target for select-to-combine (see
+// BearerCard's onCardClick) - .selectable just signals that with a pointer
+// cursor; spent notes never get it, since they're never selectable
+.bearer-card.selectable {
+  cursor: pointer;
+}
+
+// the sole selection indicator, replacing the old per-card checkbox - an
+// outline (not a background swap) so it composes with untinted and
+// .tinted cards alike without a separate rule for every combination
+.bearer-card.selected {
+  outline: 2px solid $accent-base;
+  outline-offset: -1px;
+  border-color: $accent-base;
+}
+
 // per-note background tint from the issuing mint's own self-reported node
 // color (see BearerCard's noteColor / trustedMints.ts's
 // getTrustedMintNodeColor), swapped in via the --note-tint custom property
@@ -1013,15 +999,8 @@ nav {
   margin-bottom: 8px;
 }
 
-.bearer-select {
-  margin-top: 0;
-  input {
-    margin-right: 0;
-  }
-}
-
 // grabbable rank handle - touch-action:none stops touch dragging from also
-// scrolling the page, since pointer-based reorder (MintGroupCard) handles
+// scrolling the page, since pointer-based reorder (Wallet.tsx) handles
 // the move itself instead of relying on native HTML5 drag-and-drop
 .drag-handle {
   cursor: grab;
@@ -1035,7 +1014,7 @@ nav {
 // as "picked up" instead of just a card that stopped responding to layout.
 // transition: none overrides the generic `figure` rule's transition: all
 // 0.5s - left/top get rewritten every animation frame while dragging (see
-// MintGroupCard's dragStyle), and easing each of those over half a second
+// Wallet.tsx's dragStyle), and easing each of those over half a second
 // is what made the card visibly lag behind the pointer instead of
 // tracking it directly
 .bearer-card.dragging {
@@ -1045,7 +1024,7 @@ nav {
   transition: none;
 }
 
-// set on <body> for the duration of a drag (see MintGroupCard's startDrag/
+// set on <body> for the duration of a drag (see Wallet.tsx's startDrag/
 // endDrag) - stops the pointer's travel from selecting card text along the
 // way, and keeps the cursor showing a grab in progress even over children
 // that don't set their own cursor
@@ -1063,14 +1042,6 @@ body.dragging-note {
 .bearer-amount {
   font-weight: bold;
   font-size: 1.1em;
-}
-
-// bigger select-to-combine hit targets than the checkbox alone (see
-// BearerCard's toggleSelect) - not a global utility class, scoped here
-.bearer-amount.clickable,
-.bearer-server.clickable,
-.bearer-title.clickable {
-  cursor: pointer;
 }
 
 .bearer-pending {
