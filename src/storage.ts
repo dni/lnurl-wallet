@@ -36,11 +36,6 @@ export type Bearer = {
   // reused by accident - it says nothing about whether the service has
   // actually burned it yet
   spent?: boolean
-  // manual display order in the wallet's note list (see Wallet.tsx's drag
-  // reorder) - absent means "never manually placed", which sorts by
-  // -createdAt instead (see compareBearerOrder), i.e. newest first, same as
-  // the default order before this field existed
-  sortIndex?: number
   // a free-text note the holder can attach for their own reference (e.g.
   // "rent", "gift for Alex") - purely local, never sent anywhere, no
   // protocol meaning at all
@@ -54,12 +49,6 @@ export type Bearer = {
   createdAt: number
   updatedAt: number
 }
-
-// the wallet's default note order (newest first) with manually dragged
-// notes taking priority once they have an explicit rank - see Wallet.tsx,
-// the only place sortIndex is ever written
-export const compareBearerOrder = (a: Bearer, b: Bearer): number =>
-  (a.sortIndex ?? -a.createdAt) - (b.sortIndex ?? -b.createdAt)
 
 export type EncryptedBearerRecord = {id: string} & EncryptedRecordParts
 
