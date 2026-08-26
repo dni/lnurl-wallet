@@ -6,10 +6,14 @@ import {
   savedKeyExists,
   savedKeyIsEncrypted,
   restoreLinkingKeyStored,
-  isValidStoredSecret
+  isValidStoredSecret,
+  getSavedCashRootKeyStored,
+  savedCashRootKeyIsEncrypted,
+  restoreCashRootKeyStored
 } from './keys'
 import type {TrustedMint} from './trustedMints'
 import {trustedMints, mergeTrustedMints} from './trustedMints'
+import {readCashSecretIndices, mergeCashSecretIndices} from './cashSecrets'
 import {withStorageLock} from './storageLock'
 
 // One bearer note held by this wallet - the decrypted, in-memory shape.
@@ -218,15 +222,25 @@ export const clearAllActivity = (): void => {
 }
 
 // Backup file: everything exactly as it sits in localStorage - bearer
-// ciphertexts always, the linking-key record only when it is itself
-// password-encrypted. A plaintext linking key never leaves the device in a
-// backup; the seed phrase is the recovery path for it instead. Trusted
-// mints are plain (not secret - a mintPubkey is public), included as-is.
+// ciphertexts always, the linking-key and LUD-25 cash-root-key records only
+// when each is itself password-encrypted (a plaintext one never leaves the
+// device in a backup; the seed phrase is the recovery path for it instead -
+// both keys are always saved under the same password, see WalletContext's
+// setup, so there's never a case where one qualifies and the other
+// doesn't). Trusted mints are plain (not secret - a mintPubkey is public),
+// included as-is. `cashIndices` (LUD-25, see cashSecrets.ts) are the
+// per-SERVICE "next index" counters behind every seed-derived note secret
+// this wallet has generated - also plain (an index alone is worthless
+// without the cash root key), and, unlike a bearer's own secret, small
+// enough that backing up every note this wallet will ever hold never grows
+// this beyond one integer per mint ever used.
 export type BackupFile = {
   type: 'lnurlwallet-backup'
   version: 1
   createdAt: number
   linkingKey?: StoredSecret
+  cashRootKey?: StoredSecret
+  cashIndices?: Record<string, number>
   bearers: EncryptedBearerRecord[]
   trustedMints?: TrustedMint[]
 }
@@ -237,10 +251,14 @@ export const buildBackup = (): BackupFile => {
     version: 1,
     createdAt: Date.now(),
     bearers: readEncryptedBearers(),
-    trustedMints: trustedMints()
+    trustedMints: trustedMints(),
+    cashIndices: readCashSecretIndices()
   }
   if (savedKeyIsEncrypted()) {
     backup.linkingKey = getSavedLinkingKeyStored()!
+  }
+  if (savedCashRootKeyIsEncrypted()) {
+    backup.cashRootKey = getSavedCashRootKeyStored()!
   }
   return backup
 }
@@ -333,12 +351,24 @@ export const applyBackup = (data: unknown): RestoreResult => {
     } else {
       restoreLinkingKeyStored(backup.linkingKey)
       linkingKeyRestored = true
+      // LUD-25: the cash root key always travels with the linking key
+      // (same password, same lifecycle - see WalletContext's setup), so it
+      // installs under the exact same gate, silently - nothing here needs
+      // its own restored/skipped flags, it's just along for the ride
+      if (backup.cashRootKey && isValidStoredSecret(backup.cashRootKey, 128)) {
+        restoreCashRootKeyStored(backup.cashRootKey)
+      }
     }
   }
 
   const trustedMintsAdded = Array.isArray(backup.trustedMints)
     ? mergeTrustedMints(backup.trustedMints)
     : 0
+
+  // per-SERVICE indices (LUD-25) merge in regardless of the linking-key
+  // outcome above - they're non-secret bookkeeping, safe to raise even for
+  // a device keeping its own existing wallet (see mergeCashSecretIndices)
+  mergeCashSecretIndices(backup.cashIndices)
 
   return {
     added,

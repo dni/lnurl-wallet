@@ -122,7 +122,10 @@ const Backup: Component = () => {
             secret and so travel in plain. Notes marked "on device" are only a
             blank mirror here (amount/host/label) - their real secret lives on
             your paired vault, not in this file, so recovering them needs the
-            vault itself, not this backup.
+            vault itself, not this backup. Also included: the small per-mint
+            counters (LUD-25) behind every note secret this wallet derives from
+            your seed rather than drawing at random - not secret on their own,
+            just bookkeeping that keeps a restored wallet from ever reusing one.
             <Show
               when={savedKeyIsEncrypted()}
               fallback={

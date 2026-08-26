@@ -13,7 +13,11 @@ import {
   deriveBearerAesKey,
   encryptRecord,
   decryptRecord,
-  WALLET_DOMAIN
+  WALLET_DOMAIN,
+  deriveLud25CashRootNode,
+  cashRootToHex,
+  cashRootFromHex,
+  isValidStoredSecret
 } from './keys'
 
 // fixed reference vector - the BIP39 test mnemonic
@@ -64,6 +68,76 @@ describe('linking key derivation', () => {
     expect(bytesToHex(deriveLud05LinkingKey(SEED, 'a.example'))).not.toBe(
       bytesToHex(deriveLud05LinkingKey(SEED, 'b.example'))
     )
+  })
+})
+
+describe('LUD-25 cash root key derivation', () => {
+  it('is deterministic for the same seed, and independent of the linking key', () => {
+    const a = deriveLud25CashRootNode(SEED)
+    const b = deriveLud25CashRootNode(SEED)
+    expect(a.privateKey).toEqual(b.privateKey)
+    expect(a.chainCode).toEqual(b.chainCode)
+    // own purpose (m/139') - never the same scalar as the LUD-05 linking
+    // key's own branch (m/138'), even off the same seed
+    expect(bytesToHex(a.privateKey!)).not.toBe(
+      bytesToHex(deriveWalletLinkingKey(SEED))
+    )
+  })
+
+  it('differs for a different seed', () => {
+    const other = generateSeedPhrase()
+    expect(bytesToHex(deriveLud25CashRootNode(SEED).privateKey!)).not.toBe(
+      bytesToHex(deriveLud25CashRootNode(other).privateKey!)
+    )
+  })
+
+  it('round-trips through the compact hex serialization', () => {
+    const node = deriveLud25CashRootNode(SEED)
+    const hex = cashRootToHex(node)
+    expect(hex).toMatch(/^[0-9a-f]{128}$/)
+    const restored = cashRootFromHex(hex)
+    expect(restored.privateKey).toEqual(node.privateKey)
+    expect(restored.chainCode).toEqual(node.chainCode)
+    // the reconstructed node can still derive children - the whole point of
+    // keeping the chain code around instead of just the bare private key
+    // (see cashSecrets.ts, which is what actually needs this)
+    expect(restored.deriveChild(0).privateKey).toEqual(
+      node.deriveChild(0).privateKey
+    )
+  })
+
+  it('rejects a malformed hex blob', () => {
+    expect(() => cashRootFromHex('not hex')).toThrow()
+    expect(() => cashRootFromHex('aa'.repeat(32))).toThrow() // 32 bytes, needs 64
+  })
+})
+
+describe('isValidStoredSecret hex length', () => {
+  it('defaults to 64 hex chars (linking key)', () => {
+    expect(isValidStoredSecret({enc: false, value: 'aa'.repeat(32)})).toBe(true)
+    expect(isValidStoredSecret({enc: false, value: 'aa'.repeat(64)})).toBe(
+      false
+    )
+  })
+
+  it('accepts a wider plaintext form when asked (cash root key)', () => {
+    expect(isValidStoredSecret({enc: false, value: 'aa'.repeat(64)}, 128)).toBe(
+      true
+    )
+    expect(isValidStoredSecret({enc: false, value: 'aa'.repeat(32)}, 128)).toBe(
+      false
+    )
+  })
+
+  it('the encrypted form is unaffected by hexLength either way', () => {
+    const encrypted = {
+      enc: true,
+      salt: 'aa'.repeat(16),
+      iv: 'bb'.repeat(12),
+      ciphertext: 'cc'.repeat(32)
+    }
+    expect(isValidStoredSecret(encrypted)).toBe(true)
+    expect(isValidStoredSecret(encrypted, 128)).toBe(true)
   })
 })
 

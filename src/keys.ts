@@ -69,6 +69,43 @@ export const deriveWalletLinkingKey = (seedPhrase: string): Uint8Array =>
 export const linkingPubKeyHex = (linkingPrivKey: Uint8Array): string =>
   bytesToHex(secp256k1.getPublicKey(linkingPrivKey, true))
 
+// LUD-25 Seed-recoverable note secrets: the m/139' node - this wallet's own
+// root for deterministic bearer-note secrets (mint-time comment protection,
+// and every rotate/split/merge output), under its own purpose so it never
+// shares key material with the m/138' LUD-05 branch above. Unlike
+// linkingPrivKey (a single domain-bound leaf, never derived further),
+// callers need to keep deriving fresh children from this node for as long
+// as the wallet exists - one per SERVICE, then one per secret within it -
+// so the node itself (private key + chain code) is what gets persisted, not
+// just a bare scalar (see cashRootToHex/cashRootFromHex).
+export const deriveLud25CashRootNode = (seedPhrase: string): HDKey => {
+  const seed = mnemonicToSeedSync(seedPhrase.trim().toLowerCase())
+  const master = HDKey.fromMasterSeed(seed)
+  return master.deriveChild(139 + HARDENED_OFFSET)
+}
+
+// this wallet's own compact serialization of an HDKey node - privateKey (32
+// bytes) || chainCode (32 bytes), not a real BIP32 extended key (no
+// version/depth/parent-fingerprint bytes, no base58check framing): nothing
+// here is ever meant to leave this wallet as a portable xprv, it only has to
+// round-trip through this module's own storage. HDKey's constructor asks for
+// nothing else to keep deriving children (see cashRootFromHex).
+export const cashRootToHex = (node: HDKey): string => {
+  if (!node.privateKey || !node.chainCode) {
+    throw new Error('Could not derive cash root key')
+  }
+  return bytesToHex(node.privateKey) + bytesToHex(node.chainCode)
+}
+
+export const cashRootFromHex = (hex: string): HDKey => {
+  const bytes = hexToBytes(hex)
+  if (bytes.length !== 64) throw new Error('Malformed cash root key')
+  return new HDKey({
+    privateKey: bytes.slice(0, 32),
+    chainCode: bytes.slice(32)
+  })
+}
+
 // Encrypted-at-rest localStorage secret, same shape as lnurl_server's: the
 // stored value is either plaintext or, if the holder opted in with a
 // password, AES-GCM ciphertext keyed by a PBKDF2 stretch of that password -
@@ -79,18 +116,25 @@ export type StoredSecret =
   | {enc: false; value: string}
   | {enc: true; salt: string; iv: string; ciphertext: string}
 
-// strict shape check on a StoredSecret - a plaintext form must be exactly a
-// 32-byte hex key, an encrypted form must carry hex salt/iv/ciphertext of
-// the sizes encryptSecretParts produces. Guards the backup-restore path
-// (storage.ts's applyBackup), where a crafted file would otherwise get an
-// arbitrary "linking key" installed verbatim.
+// strict shape check on a StoredSecret - a plaintext form must be exactly
+// `hexLength` hex characters (32-byte linkingPrivKey by default; the LUD-25
+// cash root node's privateKey||chainCode pair is twice that, see
+// cashRootToHex), an encrypted form must carry hex salt/iv/ciphertext of the
+// sizes encryptSecretParts produces (unconstrained by the plaintext's own
+// length, so `hexLength` only matters for the plaintext branch). Guards the
+// backup-restore path (storage.ts's applyBackup), where a crafted file would
+// otherwise get an arbitrary secret installed verbatim.
 export const isValidStoredSecret = (
-  stored: unknown
+  stored: unknown,
+  hexLength = 64
 ): stored is StoredSecret => {
   if (typeof stored !== 'object' || stored === null) return false
   const s = stored as Record<string, unknown>
   if (s.enc === false) {
-    return typeof s.value === 'string' && /^[0-9a-f]{64}$/i.test(s.value)
+    return (
+      typeof s.value === 'string' &&
+      new RegExp(`^[0-9a-f]{${hexLength}}$`, 'i').test(s.value)
+    )
   }
   if (s.enc === true) {
     return (
@@ -107,12 +151,15 @@ export const isValidStoredSecret = (
   return false
 }
 
-const readSecret = (storageKey: string): StoredSecret | null => {
+const readSecret = (
+  storageKey: string,
+  hexLength = 64
+): StoredSecret | null => {
   const raw = localStorage.getItem(storageKey)
   if (!raw) return null
   try {
     const parsed: unknown = JSON.parse(raw)
-    return isValidStoredSecret(parsed) ? parsed : null
+    return isValidStoredSecret(parsed, hexLength) ? parsed : null
   } catch {
     return null
   }
@@ -238,6 +285,68 @@ export const decryptSavedLinkingKey = async (
 
 export const clearSavedLinkingKey = (): void => {
   localStorage.removeItem(LINKING_KEY_STORAGE_KEY)
+}
+
+// LUD-25 cash root node (see deriveLud25CashRootNode), stored the same way
+// and under the same password as the linking key above - it's always
+// derived and saved alongside it (WalletContext's setup), so there's no
+// separate password to ask for. Absent on a wallet set up before this
+// feature existed until its seed phrase is entered again (Setup.tsx's
+// "Restore from seed" already calls the same setup() path); every note
+// secret this wallet generates falls back to plain randomness until then
+// (see lnurlcash.ts's generateNoteSecret).
+const CASH_ROOT_KEY_STORAGE_KEY = 'lnurlwallet_cash_root_key'
+const CASH_ROOT_KEY_HEX_LENGTH = 128 // privateKey (32B) || chainCode (32B)
+
+export const savedCashRootKeyExists = (): boolean =>
+  readSecret(CASH_ROOT_KEY_STORAGE_KEY, CASH_ROOT_KEY_HEX_LENGTH) !== null
+
+export const savedCashRootKeyIsEncrypted = (): boolean =>
+  readSecret(CASH_ROOT_KEY_STORAGE_KEY, CASH_ROOT_KEY_HEX_LENGTH)?.enc === true
+
+export const getSavedCashRootKeyStored = (): StoredSecret | null =>
+  readSecret(CASH_ROOT_KEY_STORAGE_KEY, CASH_ROOT_KEY_HEX_LENGTH)
+
+export const getPlainCashRootKeyHex = (): string | null => {
+  const stored = readSecret(CASH_ROOT_KEY_STORAGE_KEY, CASH_ROOT_KEY_HEX_LENGTH)
+  if (stored === null || stored.enc === true) return null
+  return stored.value
+}
+
+export const saveCashRootKey = async (
+  cashRootHex: string,
+  password?: string
+): Promise<void> => {
+  if (!password) {
+    localStorage.setItem(
+      CASH_ROOT_KEY_STORAGE_KEY,
+      JSON.stringify({enc: false, value: cashRootHex})
+    )
+    return
+  }
+  const parts = await encryptSecretParts(cashRootHex, password)
+  localStorage.setItem(
+    CASH_ROOT_KEY_STORAGE_KEY,
+    JSON.stringify({enc: true, ...parts})
+  )
+}
+
+export const restoreCashRootKeyStored = (stored: StoredSecret): void => {
+  localStorage.setItem(CASH_ROOT_KEY_STORAGE_KEY, JSON.stringify(stored))
+}
+
+export const decryptSavedCashRootKeyHex = async (
+  password: string
+): Promise<string> => {
+  const stored = readSecret(CASH_ROOT_KEY_STORAGE_KEY, CASH_ROOT_KEY_HEX_LENGTH)
+  if (!stored || !stored.enc) {
+    throw new Error('No encrypted cash root key saved.')
+  }
+  return decryptSecretParts(stored, password)
+}
+
+export const clearSavedCashRootKey = (): void => {
+  localStorage.removeItem(CASH_ROOT_KEY_STORAGE_KEY)
 }
 
 // The bearer-encryption key is derived (not random): sha256 over the linking
