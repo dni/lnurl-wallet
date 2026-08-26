@@ -931,27 +931,28 @@ nav {
   margin-bottom: 16px;
 }
 
-.selection-toolbar-row {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin-bottom: 8px;
-}
-
+// sits at the right edge of .selection-toolbar's own .btns row (which is
+// display:flex - margin-left:auto on the first of this trailing pair pushes
+// both it and the clear button all the way over, same trick
+// .wallet-hero-actions/.bearer-actions use), instead of its own row above
+// the action buttons
 .selection-count {
   opacity: 0.85;
   font-size: 0.9em;
+  margin-left: auto;
 }
 
-// Refresh, Split, Combine, Combine & split, Transfer, Export - a size up
-// from the app's default buttons, since this is the primary action row for
-// whatever's selected. Refresh/Split act on a single selected note (moved
-// here from BearerCard so every note-level action lives in one bar
+// Refresh, Label, Mark spent, Split, Combine, Combine & split, Transfer,
+// Export - a size up from the app's default buttons, since this is the
+// primary action row for whatever's selected. Refresh/Label/Mark spent act
+// on every selected note at once; Split stays limited to exactly one (all
+// moved here from BearerCard so every note-level action lives in one bar
 // alongside Combine/Combine & split/Transfer, instead of being split
-// between each card and this toolbar) and lead the row; Export (download
-// the selection as a text file) trails it, after Transfer
+// between each card and this toolbar) - Export (download the selection as
+// a text file) trails the row, after Transfer
 .refresh-btn,
+.label-btn,
+.mark-spent-btn,
 .split-single-btn,
 .combine-btn,
 .split-btn,
@@ -961,6 +962,8 @@ nav {
   font-size: 1.05em;
 }
 
+.label-btn,
+.mark-spent-btn,
 .split-single-btn,
 .combine-btn,
 .split-btn,

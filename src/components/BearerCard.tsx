@@ -5,20 +5,17 @@ import {
   IoShieldCheckmarkSharp,
   IoBanSharp,
   IoArrowUndoSharp,
-  IoPencilSharp,
   IoHardwareChipSharp
 } from 'solid-icons/io'
 
 import type {Bearer} from '../storage'
 import {useWallet} from '../WalletContext'
-import {useDevice} from '../DeviceContext'
 import {
   noteK1,
   noteSignature,
   serverOf,
   verifyNoteSignature
 } from '../lnurlcash'
-import {markDeviceNoteSpent} from '../deviceOrchestration'
 import {
   msatToSats,
   formatDate,
@@ -40,11 +37,8 @@ export type BearerCardProps = {
 
 const BearerCard: Component<BearerCardProps> = props => {
   const {updateBearer, removeBearer, logActivity} = useWallet()
-  const {client: deviceClient} = useDevice()
   const [confirmDelete, setConfirmDelete] = createSignal(false)
   const [confirmUnspend, setConfirmUnspend] = createSignal(false)
-  const [editingLabel, setEditingLabel] = createSignal(false)
-  const [labelInput, setLabelInput] = createSignal('')
 
   const k1 = () => noteK1(props.bearer.url) || ''
   const isSpent = () => !!props.bearer.spent
@@ -66,8 +60,9 @@ const BearerCard: Component<BearerCardProps> = props => {
   }
 
   // the whole card is the click target for select-to-combine - except any
-  // interactive control inside it (label/mark-spent buttons, the label form
-  // input), which should do their own thing rather than also flip selection
+  // interactive control inside it (a spent note's own Unspend/Clear
+  // buttons), which should do their own thing rather than also flip
+  // selection
   const onCardClick = (e: MouseEvent) => {
     if ((e.target as HTMLElement).closest('button, input, textarea, a')) return
     toggleSelect()
@@ -99,26 +94,6 @@ const BearerCard: Component<BearerCardProps> = props => {
     return verifyNoteSignature(k1(), props.bearer.amount, sig, mintPubkey)
   })
 
-  // a local-only lock (see storage.ts's Bearer.spent) - no network call,
-  // just stops this wallet from acting on a note it considers given away.
-  // A device-backed note's on-device copy is retired alongside (queued for
-  // the next connect if the vault isn't attached right now), so the vault
-  // doesn't keep listing as spendable a note this wallet considers gone
-  const markSpent = async () => {
-    updateBearer(props.bearer.id, {spent: true})
-    if (props.bearer.deviceId) {
-      await markDeviceNoteSpent(deviceClient(), props.bearer.deviceId)
-    }
-    logActivity(
-      'spent',
-      `Marked ${msatToSats(props.bearer.amount)} sats from ${serverOf(props.bearer.url)} as spent.`
-    )
-    notify(
-      'Marked as spent - split and refresh are locked until unspent.',
-      NotifyKind.SUCCESS
-    )
-  }
-
   const unspend = () => {
     updateBearer(props.bearer.id, {spent: false})
     setConfirmUnspend(false)
@@ -127,20 +102,6 @@ const BearerCard: Component<BearerCardProps> = props => {
       `Unspent ${msatToSats(props.bearer.amount)} sats from ${serverOf(props.bearer.url)}.`
     )
     notify('Unspent - actions are available again.', NotifyKind.SUCCESS)
-  }
-
-  // purely local, for the holder's own reference - not part of the note
-  // itself, never sent anywhere. Available even on a spent note (unlike the
-  // protocol actions above), since it's just a memo, not a mutation of it
-  const startEditLabel = () => {
-    setLabelInput(props.bearer.label ?? '')
-    setEditingLabel(true)
-  }
-
-  const saveLabel = () => {
-    const trimmed = labelInput().trim()
-    updateBearer(props.bearer.id, {label: trimmed || undefined})
-    setEditingLabel(false)
   }
 
   return (
@@ -197,43 +158,9 @@ const BearerCard: Component<BearerCardProps> = props => {
           <span class="bearer-server">{serverOf(props.bearer.url)}</span>
         </div>
       </div>
-      <Show when={editingLabel()}>
-        <div class="form-item">
-          <label>Label (private, for your own reference)</label>
-          <input
-            type="text"
-            placeholder="e.g. rent, gift for Alex"
-            value={labelInput()}
-            onInput={e => setLabelInput(e.currentTarget.value)}
-            onKeyDown={e => e.key === 'Enter' && saveLabel()}
-          />
-          <div class="btns">
-            <button onClick={saveLabel}>Save</button>
-            <button onClick={() => setEditingLabel(false)}>Cancel</button>
-          </div>
-        </div>
-      </Show>
-      <div class="btns">
-        <button
-          class="icon-btn"
-          title={props.bearer.label ? 'Edit label' : 'Add a label'}
-          onClick={startEditLabel}
-        >
-          <IoPencilSharp />
-        </button>
-        <div class="bearer-actions">
-          <Show
-            when={isSpent()}
-            fallback={
-              <button
-                class="icon-btn"
-                title="Mark as spent - lock this note without removing it, e.g. if you already handed it out some other way"
-                onClick={markSpent}
-              >
-                <IoBanSharp />
-              </button>
-            }
-          >
+      <Show when={isSpent()}>
+        <div class="btns">
+          <div class="bearer-actions">
             <button
               class="icon-btn"
               title="Unspend - unlock this note again"
@@ -241,8 +168,6 @@ const BearerCard: Component<BearerCardProps> = props => {
             >
               <IoArrowUndoSharp />
             </button>
-          </Show>
-          <Show when={isSpent()}>
             <button
               class="icon-btn"
               title="Clear spent note from wallet"
@@ -250,9 +175,9 @@ const BearerCard: Component<BearerCardProps> = props => {
             >
               <IoTrashSharp />
             </button>
-          </Show>
+          </div>
         </div>
-      </div>
+      </Show>
       <Show when={isSpent() && !confirmUnspend()}>
         <p class="bearer-hint">
           Locked as spent - refresh and split (in the toolbar above) are
