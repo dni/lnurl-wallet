@@ -14,6 +14,7 @@ export const withStorageLock = <T>(
   // T, not T | PromiseLike<T> - stricter than the actual Web Locks API,
   // which (per spec) waits out a returned promise before releasing the
   // lock, exactly what fn's own T | Promise<T> return relies on
-  if (locks) return locks.request(name, fn as unknown as (lock: Lock | null) => T)
+  if (locks)
+    return locks.request(name, fn as unknown as (lock: Lock | null) => T)
   return Promise.resolve(fn())
 }
