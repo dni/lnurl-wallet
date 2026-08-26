@@ -1,6 +1,8 @@
 import type {Component} from 'solid-js'
 import {Show, For, createSignal, createMemo} from 'solid-js'
+import {render} from 'solid-js/web'
 import {A} from '@solidjs/router'
+import {QRCodeSVG, ErrorCorrectionLevel} from 'solid-qr-code'
 import {
   IoAddCircleSharp,
   IoPaperPlaneSharp,
@@ -21,12 +23,13 @@ import {
   IoArrowDownSharp,
   IoLayersSharp,
   IoDownloadSharp,
-  IoPencilSharp
+  IoPencilSharp,
+  IoQrCodeSharp
 } from 'solid-icons/io'
 
 import {useWallet, groupByServer} from '../WalletContext'
 import type {Bearer} from '../storage'
-import {serverOf} from '../lnurlcash'
+import {serverOf, toBech32Lnurl} from '../lnurlcash'
 import {
   noteK1,
   requireNoteK1,
@@ -286,12 +289,15 @@ const Wallet: Component = () => {
   // a note's own url IS the bearer asset (see storage.ts) - one per line is
   // exactly what's needed to hand each off elsewhere (paste into another
   // wallet's Receive field, redeem directly, ...), no extra formatting to
-  // strip first. Client-side only, same download-a-Blob approach Backup.tsx
-  // already uses for the full-wallet backup file.
+  // strip first. bech32 (the "LNURL1..." form, same encoding Qr.tsx/Scan use
+  // elsewhere in this wallet) rather than the raw https:// URL, since that's
+  // the form other LNURL wallets actually expect pasted or scanned. Client-
+  // side only, same download-a-Blob approach Backup.tsx already uses for the
+  // full-wallet backup file.
   const exportSelected = () => {
     const picked = selectedBearers()
     if (picked.length === 0) return
-    const text = picked.map(b => b.url).join('\n') + '\n'
+    const text = picked.map(b => toBech32Lnurl(b.url)).join('\n') + '\n'
     const blob = new Blob([text], {type: 'text/plain'})
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -301,6 +307,60 @@ const Wallet: Component = () => {
     URL.revokeObjectURL(url)
     notify(
       `Exported ${picked.length} note${picked.length === 1 ? '' : 's'} to a text file.`,
+      NotifyKind.SUCCESS
+    )
+  }
+
+  // renders QRCodeSVG into a detached container just long enough to pull
+  // its rendered <svg> back out - same trick Qr.tsx's own download button
+  // uses (see its comment), just without ever attaching the container to
+  // the visible page. render() (solid-js/web) mounts synchronously for
+  // plain content like this, so the <svg> is there as soon as it returns.
+  const svgForNote = (bearer: Bearer): string | null => {
+    const container = document.createElement('div')
+    const dispose = render(
+      () => (
+        <QRCodeSVG
+          backgroundColor="white"
+          backgroundAlpha={1}
+          foregroundColor="black"
+          foregroundAlpha={1}
+          width={512}
+          height={512}
+          value={toBech32Lnurl(bearer.url)}
+          level={ErrorCorrectionLevel.LOW}
+        />
+      ),
+      container
+    )
+    const svg = container.querySelector('svg')
+    const source = svg ? new XMLSerializer().serializeToString(svg) : null
+    dispose()
+    return source
+  }
+
+  // one .svg download per selected note - a single QR can only carry one
+  // note's worth of data, so there's no meaningful "combined" file the way
+  // the text export has; multiple notes just means multiple downloads,
+  // triggered back to back the same way Export's own click already is
+  const downloadQrSelected = () => {
+    const picked = selectedBearers()
+    if (picked.length === 0) return
+    let downloaded = 0
+    for (const bearer of picked) {
+      const source = svgForNote(bearer)
+      if (!source) continue
+      const blob = new Blob([source], {type: 'image/svg+xml'})
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `lnurlwallet-note-${Math.floor(bearer.amount / 1000)}sats-${bearer.id.slice(0, 6)}.svg`
+      a.click()
+      URL.revokeObjectURL(url)
+      downloaded++
+    }
+    notify(
+      `Downloaded ${downloaded} QR code${downloaded === 1 ? '' : 's'} as SVG.`,
       NotifyKind.SUCCESS
     )
   }
@@ -1204,7 +1264,6 @@ const Wallet: Component = () => {
           <div id="wallet" class="page">
             <section class="wallet-hero">
               <div class="wallet-hero-header">
-                <h2>Your LNURLcash</h2>
                 <div class="wallet-hero-actions">
                   <A
                     href="/activity"
@@ -1244,6 +1303,14 @@ const Wallet: Component = () => {
                     {msatToSats(spendableTotal())} sats
                   </span>
                   <span class="wallet-stat-label">Total balance</span>
+                </div>
+                <div class="wallet-stat">
+                  <span class="wallet-stat-value">
+                    {spendableBearers().length}
+                  </span>
+                  <span class="wallet-stat-label">
+                    {spendableBearers().length === 1 ? 'Note' : 'Notes'}
+                  </span>
                 </div>
                 <div class="wallet-stat">
                   <span class="wallet-stat-value">{mintCount()}</span>
@@ -1530,12 +1597,28 @@ const Wallet: Component = () => {
                   title={
                     selected().size === 0
                       ? 'Select notes to export'
-                      : 'Download the selected notes as a text file, one per line'
+                      : 'Download the selected notes as a text file (bech32-encoded, one per line)'
                   }
                   onClick={exportSelected}
                 >
                   <IoDownloadSharp />
                   &nbsp;Export
+                  <Show when={selected().size > 0}>
+                    &nbsp;({selected().size})
+                  </Show>
+                </button>
+                <button
+                  class="icon-btn qr-export-btn"
+                  disabled={selected().size === 0}
+                  title={
+                    selected().size === 0
+                      ? 'Select notes to download as QR codes'
+                      : 'Download an SVG QR code for each selected note'
+                  }
+                  onClick={downloadQrSelected}
+                >
+                  <IoQrCodeSharp />
+                  &nbsp;QR
                   <Show when={selected().size > 0}>
                     &nbsp;({selected().size})
                   </Show>

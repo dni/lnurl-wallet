@@ -69,6 +69,18 @@ const Nav = () => {
               &nbsp;Melt
             </A>
           </Show>
+          <A href="/mints" class="nav-link" title="Trusted mints">
+            <IoShieldCheckmarkSharp />
+            &nbsp;Mints
+          </A>
+          {/* not gated on state() === 'unlocked' - restoring a backup is
+          exactly what a device with no wallet yet (state() === 'none') needs
+          this link for, and hiding it there was the whole bug: after
+          "Forget this wallet" there was no way back to /backup at all */}
+          <A href="/backup" class="nav-link" title="Backup &amp; restore">
+            <IoSaveSharp />
+            &nbsp;Backup
+          </A>
         </div>
         <div class="nav-persistent">
           <button
@@ -85,10 +97,6 @@ const Nav = () => {
             <IoCloudOfflineSharp />
             <span class="nav-label">&nbsp;Offline mode</span>
           </button>
-          <A href="/mints" title="Trusted mints">
-            <IoShieldCheckmarkSharp />
-            <span class="nav-label">&nbsp;Mints</span>
-          </A>
           <A
             href="/vault"
             title={
@@ -103,14 +111,6 @@ const Nav = () => {
           <A href="/docs" title="Documentation">
             <IoBookSharp />
             <span class="nav-label">&nbsp;Docs</span>
-          </A>
-          {/* not gated on state() === 'unlocked' - restoring a backup is
-          exactly what a device with no wallet yet (state() === 'none') needs
-          this link for, and hiding it there was the whole bug: after
-          "Forget this wallet" there was no way back to /backup at all */}
-          <A href="/backup" title="Backup &amp; restore">
-            <IoSaveSharp />
-            <span class="nav-label">&nbsp;Backup</span>
           </A>
           <Show when={state() === 'unlocked' && encrypted()}>
             <a href="#lock" title="Lock wallet" onClick={lock_action}>
