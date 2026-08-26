@@ -105,25 +105,17 @@ h2 {
 // below it, none of which are boxed either
 .wallet-hero {
   margin: 0 0 24px 0;
-  h2 {
-    margin: 0 0 14px 0;
-  }
 }
 
+// no heading of its own anymore (dropped the redundant "Your LNURLcash") -
+// just the row that keeps the icon buttons (activity log, clear spent)
+// pinned to the right edge above .wallet-stats
 .wallet-hero-header {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
+  justify-content: flex-end;
   margin-bottom: 14px;
-  h2 {
-    margin: 0;
-  }
 }
 
-// groups the header's own icon buttons (activity log, clear spent) so they
-// stay clustered at the row's end regardless of how many are shown -
-// .wallet-hero-header's own space-between is only ever between this and h2
 .wallet-hero-actions {
   display: flex;
   align-items: center;
@@ -948,8 +940,8 @@ nav {
 // on every selected note at once; Split stays limited to exactly one (all
 // moved here from BearerCard so every note-level action lives in one bar
 // alongside Combine/Combine & split/Transfer, instead of being split
-// between each card and this toolbar) - Export (download the selection as
-// a text file) trails the row, after Transfer
+// between each card and this toolbar) - Export/QR (download the selection
+// as a text file, or one SVG QR code per note) trail the row, after Transfer
 .refresh-btn,
 .label-btn,
 .mark-spent-btn,
@@ -957,7 +949,8 @@ nav {
 .combine-btn,
 .split-btn,
 .transfer-btn,
-.export-btn {
+.export-btn,
+.qr-export-btn {
   padding: 10px 18px;
   font-size: 1.05em;
 }
@@ -968,7 +961,8 @@ nav {
 .combine-btn,
 .split-btn,
 .transfer-btn,
-.export-btn {
+.export-btn,
+.qr-export-btn {
   margin-left: 8px;
 }
 
