@@ -1,6 +1,6 @@
 import {For} from 'solid-js'
 import {AiFillGithub} from 'solid-icons/ai'
-import {IoLockClosedSharp} from 'solid-icons/io'
+import {IoLockClosedSharp, IoGlobeSharp} from 'solid-icons/io'
 import {A} from '@solidjs/router'
 
 // the LUDs this wallet actually speaks: bech32 encoding, withdrawRequest,
@@ -40,6 +40,15 @@ const Footer = () => {
   return (
     <footer class="footer">
       <span class="footer-item">LNURLwallet {__APP_VERSION__}</span>
+      <a
+        class="footer-item"
+        href="https://lnurlcash.com"
+        target="_blank"
+        rel="noreferrer"
+      >
+        <IoGlobeSharp />
+        &nbsp;Website
+      </a>
       <a
         class="footer-item"
         href="https://github.com/dni/lnurl-wallet"
