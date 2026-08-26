@@ -774,7 +774,9 @@ const Mint: Component = () => {
                       <div class="btns">
                         <button
                           disabled={busy() || offlineMode()}
-                          onClick={() => selectMint(mintAddressFor(mint.server))}
+                          onClick={() =>
+                            selectMint(mintAddressFor(mint.server))
+                          }
                         >
                           Mint here
                         </button>
