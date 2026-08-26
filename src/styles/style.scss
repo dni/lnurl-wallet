@@ -959,7 +959,10 @@ nav {
   display: flex;
   align-items: center;
   gap: 6px;
-  background-color: rgba(color.adjust($accent-base, $lightness: -30%), $transparency);
+  background-color: rgba(
+    color.adjust($accent-base, $lightness: -30%),
+    $transparency
+  );
   border: 1px solid $font-color;
   border-radius: 5px;
   padding: 0 8px;

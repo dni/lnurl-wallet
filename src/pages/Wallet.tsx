@@ -138,7 +138,8 @@ const Wallet: Component = () => {
     if (key === 'default') return filteredBearers()
     const factor = sortDesc() ? -1 : 1
     return [...filteredBearers()].sort((a, b) => {
-      const diff = key === 'amount' ? a.amount - b.amount : a.updatedAt - b.updatedAt
+      const diff =
+        key === 'amount' ? a.amount - b.amount : a.updatedAt - b.updatedAt
       return diff * factor
     })
   })
