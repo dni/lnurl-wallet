@@ -242,57 +242,6 @@ const Mints: Component = () => {
       </p>
       <div class="two-columns">
         <div class="two-col">
-          <figure class="setup-card">
-            <h4>Public mints</h4>
-            <p>
-              A small curated list, for a quick start - click one to look up and
-              trust its signing key via its mint-address discovery endpoint
-              (same as "Add a mint by address" below), or refresh it if it's
-              already trusted. The globe icon opens the mint's own site instead,
-              to look it up by hand first.
-            </p>
-            <div class="mint-picker">
-              <For each={PUBLIC_MINTS}>
-                {address => {
-                  const url = resolveMintInput(address)
-                  const alreadyTrusted = () =>
-                    !!url && isMintTrusted(serverOf(url))
-                  return (
-                    <Show when={url}>
-                      <span class="mint-picker-entry">
-                        <button
-                          disabled={addressBusy() || offlineMode()}
-                          title={
-                            offlineMode()
-                              ? 'Offline mode is on'
-                              : alreadyTrusted()
-                                ? "Refresh this mint's cached info"
-                                : 'Look up and trust this mint'
-                          }
-                          onClick={() => addByAddress(address)}
-                        >
-                          <Show when={alreadyTrusted()}>
-                            <IoLockClosedSharp />
-                            &nbsp;
-                          </Show>
-                          {address}
-                        </button>
-                        <a
-                          class="icon-btn"
-                          title="Open this mint's site"
-                          href={`https://${serverOf(url!)}`}
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          <IoGlobeSharp />
-                        </a>
-                      </span>
-                    </Show>
-                  )
-                }}
-              </For>
-            </div>
-          </figure>
           <h4>Trusted mints</h4>
           <p>
             Every signing key this wallet actually checks notes against - added
@@ -472,6 +421,57 @@ const Mints: Component = () => {
           </Show>
         </div>
         <div class="two-col">
+          <figure class="setup-card">
+            <h4>Public mints</h4>
+            <p>
+              A small curated list, for a quick start - click one to look up and
+              trust its signing key via its mint-address discovery endpoint
+              (same as "Add a mint by address" below), or refresh it if it's
+              already trusted. The globe icon opens the mint's own site instead,
+              to look it up by hand first.
+            </p>
+            <div class="mint-picker">
+              <For each={PUBLIC_MINTS}>
+                {address => {
+                  const url = resolveMintInput(address)
+                  const alreadyTrusted = () =>
+                    !!url && isMintTrusted(serverOf(url))
+                  return (
+                    <Show when={url}>
+                      <span class="mint-picker-entry">
+                        <button
+                          disabled={addressBusy() || offlineMode()}
+                          title={
+                            offlineMode()
+                              ? 'Offline mode is on'
+                              : alreadyTrusted()
+                                ? "Refresh this mint's cached info"
+                                : 'Look up and trust this mint'
+                          }
+                          onClick={() => addByAddress(address)}
+                        >
+                          <Show when={alreadyTrusted()}>
+                            <IoLockClosedSharp />
+                            &nbsp;
+                          </Show>
+                          {address}
+                        </button>
+                        <a
+                          class="icon-btn"
+                          title="Open this mint's site"
+                          href={`https://${serverOf(url!)}`}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          <IoGlobeSharp />
+                        </a>
+                      </span>
+                    </Show>
+                  )
+                }}
+              </For>
+            </div>
+          </figure>
           <Show when={pendingTrust()}>
             {pending => (
               <figure class="setup-card">

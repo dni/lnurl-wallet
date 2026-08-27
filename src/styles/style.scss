@@ -471,6 +471,44 @@ pre {
   overflow-wrap: break-word;
 }
 
+// Vault.tsx's device console - a scrolling request/response log, oldest
+// first like a serial terminal. Each entry gets its own left border
+// (amber for a normal response, red once the device/transport rejected
+// it) rather than relying on color alone, since a raw response body can
+// itself happen to contain the word "error"
+.console-log {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 320px;
+  overflow-y: auto;
+  margin-top: 10px;
+}
+
+.console-entry {
+  background: rgba($bg, $transparency);
+  border-radius: 5px;
+  border-left: 3px solid $font-color;
+  padding: 8px 12px;
+}
+
+.console-entry.console-entry-error {
+  border-left-color: #f66;
+}
+
+.console-request {
+  margin: 0 0 6px 0;
+  font-family: monospace;
+  font-size: 0.9em;
+  opacity: 0.85;
+  overflow-wrap: anywhere;
+}
+
+.console-response {
+  cursor: default;
+  font-size: 0.85em;
+}
+
 // sizes and positions the qrcode box itself - .qr-frame (below) matches
 // this same width/max-width so the download button anchors to its corner
 // instead of some wider ancestor's
