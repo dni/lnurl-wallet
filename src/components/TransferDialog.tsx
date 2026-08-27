@@ -348,6 +348,18 @@ const TransferDialog: Component<TransferDialogProps> = props => {
     }
   }
 
+  // once claimed, or once there's neither a destination verify endpoint to
+  // poll NOR an unconfirmed source left to rotate-probe, a tick of
+  // checkTransfer has nothing left it can do - the destination side is
+  // either resolved or waiting on a manually-pasted preimage (see the
+  // !verifyUrl() form below), and the source side already got its answer.
+  // Without this, the button/timer kept "checking" forever with literally
+  // no HTTP request going out - looked alive (spinner flips on and off)
+  // while silently doing nothing, which is exactly the bug this guards
+  const canCheckTransfer = createMemo(
+    () => !claimed() && (verifyUrl() !== null || !sourceConfirmed())
+  )
+
   // one tick checks both sides: whether the destination invoice settled
   // (learning the preimage, then claiming) and - independently - whether
   // the source note actually burned. Rotating it succeeding means it was
@@ -356,6 +368,10 @@ const TransferDialog: Component<TransferDialogProps> = props => {
   // the remaining step
   const checkTransfer = async () => {
     if (checking()) return
+    if (!canCheckTransfer()) {
+      stopPolling()
+      return
+    }
     setChecking(true)
     try {
       if (!claimed()) {
@@ -475,6 +491,7 @@ const TransferDialog: Component<TransferDialogProps> = props => {
   }
 
   const manualCheck = () => {
+    if (checking()) return
     checkTransfer()
     startPolling()
   }
@@ -582,13 +599,20 @@ const TransferDialog: Component<TransferDialogProps> = props => {
           <button onClick={() => copyToClipboard(invoice()!)}>
             Copy invoice
           </button>
-          <button disabled={checking() || offlineMode()} onClick={manualCheck}>
-            <Show when={checking()}>
-              <IoRefreshSharp class="spin" />
-              &nbsp;
-            </Show>
-            {checking() ? 'Checking...' : `Check transfer (${secondsLeft()}s)`}
-          </button>
+          <Show when={canCheckTransfer()}>
+            <button
+              disabled={checking() || offlineMode()}
+              onClick={manualCheck}
+            >
+              <Show when={checking()}>
+                <IoRefreshSharp class="spin" />
+                &nbsp;
+              </Show>
+              {checking()
+                ? 'Checking...'
+                : `Check transfer (${secondsLeft()}s)`}
+            </button>
+          </Show>
         </div>
         <Show when={!verifyUrl()}>
           <label>
