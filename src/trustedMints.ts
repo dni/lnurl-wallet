@@ -91,9 +91,10 @@ export const mintAddressCacheInfo = (
 // still resolves to the exact same address, just how these mints tend to
 // actually display their own.
 export const PUBLIC_MINTS = [
+  '@mint.lnurlcash.com',
   '@mint.600.wtf',
   '@lnurl.21mint.me',
-  '@mint.forgesworn.dev',
+  '@moneyer.dev',
   '@lnurl.21linz.at',
   '@minty.exe.xyz'
 ]
