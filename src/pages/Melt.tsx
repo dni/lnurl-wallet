@@ -154,7 +154,7 @@ const Melt: Component = () => {
       }
       logActivity(
         'melt',
-        `Melted ${msatToSats(note.amount)} sats from ${serverOf(note.url)} to pay an invoice.`
+        `Melted ${msatToSats(note.amount)} sats from ${serverOf(note.url)} to pay an invoice. Verify: ${url}.`
       )
       notify('Payment confirmed - the note is gone.', NotifyKind.SUCCESS)
       navigate('/wallet')
