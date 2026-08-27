@@ -805,6 +805,18 @@ export class DeviceClient {
     this.externalDisconnectHandler?.()
   }
 
+  // the one public escape hatch into the private send()/sendOne() queue
+  // below - every other method on this class is a typed wrapper around a
+  // single hardcoded `{cmd: '...'}` shape, but Vault.tsx's device console
+  // needs to send whatever the holder typed (including commands this
+  // client has no typed wrapper for at all, e.g. `wipe`/`ota_begin`). It
+  // still goes through the same queue/timeout/disconnect handling and
+  // response validation every other command gets (see handleMessage) -
+  // only the request shape is unchecked, not the response.
+  sendRaw(cmd: object, timeoutMs = DEFAULT_TIMEOUT_MS): Promise<any> {
+    return this.send(cmd, timeoutMs)
+  }
+
   private send(cmd: object, timeoutMs = DEFAULT_TIMEOUT_MS): Promise<any> {
     const run = this.queue
       .catch(() => {})
