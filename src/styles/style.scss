@@ -294,6 +294,13 @@ a:where(.icon-btn, .link-btn) {
   flex-wrap: wrap;
   align-items: center;
   margin: 10px 0 0 0;
+  // buttons only ever space themselves apart horizontally (margin-right,
+  // see the base button rule) - on a narrow viewport where a long row like
+  // the wallet's note-action bar wraps onto several lines, that left every
+  // wrapped row touching the one above it with zero gap. row-gap only
+  // affects the cross-axis between wrapped lines, so it doesn't double up
+  // with that existing horizontal spacing
+  row-gap: 8px;
 }
 
 @keyframes spin {

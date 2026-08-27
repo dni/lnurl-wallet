@@ -544,7 +544,8 @@ const Mint: Component = () => {
           })
           logActivity(
             'mint',
-            `Minted ${msatToSats(result.amountMsat)} sats from ${serverOf(result.url)} (on device).`
+            `Minted ${msatToSats(result.amountMsat)} sats from ${serverOf(result.url)} (on device).` +
+              (verifyUrl() ? ` Verify: ${verifyUrl()}.` : '')
           )
           notify(
             `Minted a bearer note of ${msatToSats(result.amountMsat)} sats.`,
@@ -566,7 +567,8 @@ const Mint: Component = () => {
           })
           logActivity(
             'mint',
-            `Minted ${msatToSats(err.imported.amountMsat)} sats from ${serverOf(err.imported.url)} (on device), but rotating it under device custody failed (${err.message}) - tracked unverified.`
+            `Minted ${msatToSats(err.imported.amountMsat)} sats from ${serverOf(err.imported.url)} (on device), but rotating it under device custody failed (${err.message}) - tracked unverified.` +
+              (verifyUrl() ? ` Verify: ${verifyUrl()}.` : '')
           )
           notify(
             `Minted ${msatToSats(err.imported.amountMsat)} sats, but moving it onto the vault didn't complete (${err.message}) - the note is tracked unverified; refresh it with the vault connected to repair.`,
@@ -636,7 +638,8 @@ const Mint: Component = () => {
       })
       logActivity(
         'mint',
-        `Minted ${msatToSats(noteInfo.maxWithdrawable)} sats from ${serverOf(url)}.`
+        `Minted ${msatToSats(noteInfo.maxWithdrawable)} sats from ${serverOf(url)}.` +
+          (verifyUrl() ? ` Verify: ${verifyUrl()}.` : '')
       )
       // one toast, not two - the note was minted either way (it's in the
       // wallet now), so a failed rotate is folded into the same message
