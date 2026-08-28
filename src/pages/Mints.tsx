@@ -232,23 +232,17 @@ const Mints: Component = () => {
     <div id="mints" class="page">
       <h2>Trusted mints</h2>
       <p>
-        Whenever this wallet sees a mint's signing key - looking one up,
-        minting, refreshing or receiving a note - it's remembered here. This is
-        what a note's "signed" badge is checked against. A mint you already hold
-        a bearer note from is trusted automatically and can't be removed;
-        anything else here you added yourself, and can remove again. If a mint
-        ever advertises a different key than the remembered one, the change is
-        staged for your review - the remembered key keeps deciding the badge
-        until you confirm the new one.
+        Every signing key this wallet checks notes against lives here -
+        remembered the moment you look up, mint from, refresh, or receive a note
+        from a mint. One you already hold a bearer note from is trusted
+        automatically and can't be removed; anything else was added manually and
+        can be removed. If a mint advertises a different key, it's staged for
+        review - the pinned key keeps deciding the "signed" badge until you
+        confirm it.
       </p>
       <div class="two-columns">
         <div class="two-col">
           <h4>Trusted mints</h4>
-          <p>
-            Every signing key this wallet actually checks notes against - added
-            above, looked up manually, or picked up automatically the moment you
-            hold a note from that mint.
-          </p>
           <Show
             when={trustedMints().length > 0}
             fallback={<p>No trusted mints yet.</p>}
