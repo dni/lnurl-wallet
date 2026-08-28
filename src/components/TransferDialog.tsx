@@ -38,6 +38,7 @@ import {notify, NotifyKind, msatToSats, copyToClipboard} from '../helpers'
 import {isMintTrusted, addTrustedMint, trustedMints} from '../trustedMints'
 import {offlineMode} from '../offlineMode'
 import Qr from './Qr'
+import Dialog from './Dialog'
 
 export type TransferDialogProps = {
   sourceBearer: Bearer
@@ -499,143 +500,145 @@ const TransferDialog: Component<TransferDialogProps> = props => {
   onCleanup(stopPolling)
 
   return (
-    <figure class="setup-card">
-      <figcaption>
-        Transfer {msatToSats(props.sourceBearer.amount)} sats to another mint
-      </figcaption>
-      <Show when={!invoice()}>
-        <label>Destination mint (LNURL or Lightning Address)</label>
-        <input
-          type="text"
-          placeholder="lnurl1... or mint@example.com"
-          value={mintInput()}
-          onInput={e => setMintInput(e.currentTarget.value)}
-          onKeyDown={e => e.key === 'Enter' && lookup()}
-        />
-        <div class="btns">
-          <button disabled={busy() || offlineMode()} onClick={lookup}>
-            <Show when={busy()}>
-              <IoRefreshSharp class="spin" />
-              &nbsp;
-            </Show>
-            Look up mint
-          </button>
-          <button onClick={props.onClose}>Cancel</button>
-        </div>
-        <Show when={trustedMints().length > 0}>
-          <div class="mint-picker">
-            <For each={trustedMints()}>
-              {mint => (
-                <button
-                  disabled={busy() || offlineMode()}
-                  onClick={() => selectMint(`mint@${mint.server}`)}
-                >
-                  {mint.server}
-                </button>
-              )}
-            </For>
-          </div>
-        </Show>
-        <Show when={pendingTrust()}>
-          {pending => (
-            <>
-              <p>
-                First time seeing a signing key from{' '}
-                <strong>{pending().server}</strong>. Trusting it lets its notes
-                show as offline-verified against this key.
-              </p>
-              <pre>{pending().mintPubkey}</pre>
-              <div class="btns">
-                <button onClick={confirmTrust}>Trust this mint</button>
-                <button onClick={cancelTrust}>Cancel</button>
-              </div>
-            </>
-          )}
-        </Show>
-        <Show when={readyPayRequest()}>
-          {info => (
-            <>
-              <Show when={info().mintFee}>
-                {fee => (
-                  <p class="warning">
-                    {serverOf(info().callback)} withholds a fee on minting:{' '}
-                    {describeMintFee(fee())}. The note you end up holding there
-                    will be worth less than the one you're melting.
-                  </p>
-                )}
-              </Show>
-              <p class="bearer-hint">
-                Transfer exactly {msatToSats(props.sourceBearer.amount)} sats to{' '}
-                {serverOf(info().callback)}? The source note is melted to fund
-                it - this can't be undone.
-                <Show when={info().mintFee}>
-                  {' '}
-                  You'll end up with ~{msatToSats(expectedNet())} sats there.
-                </Show>
-              </p>
-              <div class="btns">
-                <button
-                  disabled={busy() || offlineMode()}
-                  onClick={startTransfer}
-                >
-                  <Show when={busy()}>
-                    <IoRefreshSharp class="spin" />
-                    &nbsp;
-                  </Show>
-                  Confirm transfer
-                </button>
-              </div>
-            </>
-          )}
-        </Show>
-      </Show>
-      <Show when={invoice()}>
-        <p class="bearer-hint">
-          Melting the source note to fund this invoice at the destination mint -
-          it's locked as spent until this confirms.
-        </p>
-        <Qr value={invoice()!.toUpperCase()} />
-        <div class="btns">
-          <button onClick={() => copyToClipboard(invoice()!)}>
-            Copy invoice
-          </button>
-          <Show when={canCheckTransfer()}>
-            <button
-              disabled={checking() || offlineMode()}
-              onClick={manualCheck}
-            >
-              <Show when={checking()}>
+    <Dialog onClose={props.onClose}>
+      <figure class="setup-card">
+        <figcaption>
+          Transfer {msatToSats(props.sourceBearer.amount)} sats to another mint
+        </figcaption>
+        <Show when={!invoice()}>
+          <label>Destination mint (LNURL or Lightning Address)</label>
+          <input
+            type="text"
+            placeholder="lnurl1... or mint@example.com"
+            value={mintInput()}
+            onInput={e => setMintInput(e.currentTarget.value)}
+            onKeyDown={e => e.key === 'Enter' && lookup()}
+          />
+          <div class="btns">
+            <button disabled={busy() || offlineMode()} onClick={lookup}>
+              <Show when={busy()}>
                 <IoRefreshSharp class="spin" />
                 &nbsp;
               </Show>
-              {checking()
-                ? 'Checking...'
-                : `Check transfer (${secondsLeft()}s)`}
+              Look up mint
             </button>
-          </Show>
-        </div>
-        <Show when={!verifyUrl()}>
-          <label>
-            This mint doesn't support checking automatically - paste the
-            preimage here if you learn it some other way
-          </label>
-          <input
-            type="text"
-            placeholder="payment preimage (64 hex characters)"
-            value={preimage()}
-            onInput={e => setPreimage(e.currentTarget.value)}
-          />
-          <div class="btns">
-            <button
-              disabled={!isPreimage(preimage()) || offlineMode()}
-              onClick={() => claimDestination(preimage())}
-            >
-              Claim at destination
-            </button>
+            <button onClick={props.onClose}>Cancel</button>
           </div>
+          <Show when={trustedMints().length > 0}>
+            <div class="mint-picker">
+              <For each={trustedMints()}>
+                {mint => (
+                  <button
+                    disabled={busy() || offlineMode()}
+                    onClick={() => selectMint(`mint@${mint.server}`)}
+                  >
+                    {mint.server}
+                  </button>
+                )}
+              </For>
+            </div>
+          </Show>
+          <Show when={pendingTrust()}>
+            {pending => (
+              <>
+                <p>
+                  First time seeing a signing key from{' '}
+                  <strong>{pending().server}</strong>. Trusting it lets its
+                  notes show as offline-verified against this key.
+                </p>
+                <pre>{pending().mintPubkey}</pre>
+                <div class="btns">
+                  <button onClick={confirmTrust}>Trust this mint</button>
+                  <button onClick={cancelTrust}>Cancel</button>
+                </div>
+              </>
+            )}
+          </Show>
+          <Show when={readyPayRequest()}>
+            {info => (
+              <>
+                <Show when={info().mintFee}>
+                  {fee => (
+                    <p class="warning">
+                      {serverOf(info().callback)} withholds a fee on minting:{' '}
+                      {describeMintFee(fee())}. The note you end up holding
+                      there will be worth less than the one you're melting.
+                    </p>
+                  )}
+                </Show>
+                <p class="bearer-hint">
+                  Transfer exactly {msatToSats(props.sourceBearer.amount)} sats
+                  to {serverOf(info().callback)}? The source note is melted to
+                  fund it - this can't be undone.
+                  <Show when={info().mintFee}>
+                    {' '}
+                    You'll end up with ~{msatToSats(expectedNet())} sats there.
+                  </Show>
+                </p>
+                <div class="btns">
+                  <button
+                    disabled={busy() || offlineMode()}
+                    onClick={startTransfer}
+                  >
+                    <Show when={busy()}>
+                      <IoRefreshSharp class="spin" />
+                      &nbsp;
+                    </Show>
+                    Confirm transfer
+                  </button>
+                </div>
+              </>
+            )}
+          </Show>
         </Show>
-      </Show>
-    </figure>
+        <Show when={invoice()}>
+          <p class="bearer-hint">
+            Melting the source note to fund this invoice at the destination mint
+            - it's locked as spent until this confirms.
+          </p>
+          <Qr value={invoice()!.toUpperCase()} />
+          <div class="btns">
+            <button onClick={() => copyToClipboard(invoice()!)}>
+              Copy invoice
+            </button>
+            <Show when={canCheckTransfer()}>
+              <button
+                disabled={checking() || offlineMode()}
+                onClick={manualCheck}
+              >
+                <Show when={checking()}>
+                  <IoRefreshSharp class="spin" />
+                  &nbsp;
+                </Show>
+                {checking()
+                  ? 'Checking...'
+                  : `Check transfer (${secondsLeft()}s)`}
+              </button>
+            </Show>
+          </div>
+          <Show when={!verifyUrl()}>
+            <label>
+              This mint doesn't support checking automatically - paste the
+              preimage here if you learn it some other way
+            </label>
+            <input
+              type="text"
+              placeholder="payment preimage (64 hex characters)"
+              value={preimage()}
+              onInput={e => setPreimage(e.currentTarget.value)}
+            />
+            <div class="btns">
+              <button
+                disabled={!isPreimage(preimage()) || offlineMode()}
+                onClick={() => claimDestination(preimage())}
+              >
+                Claim at destination
+              </button>
+            </div>
+          </Show>
+        </Show>
+      </figure>
+    </Dialog>
   )
 }
 export default TransferDialog

@@ -28,6 +28,7 @@ import {notify, NotifyKind, msatToSats, pasteFromClipboard} from '../helpers'
 import {offlineMode} from '../offlineMode'
 import ScanToggle from './ScanToggle'
 import NfcToggle from './NfcToggle'
+import Dialog from './Dialog'
 
 export type ReceiveDialogProps = {
   onClose: () => void
@@ -228,65 +229,62 @@ const ReceiveDialog: Component<ReceiveDialogProps> = props => {
   }
 
   return (
-    <figure class="setup-card">
-      <figcaption>Bring in a bearer note</figcaption>
-      <div class="paste-input-row">
-        <ScanToggle onScan={onScan} accept={isValidNoteInput} />
-        <NfcToggle onScan={onScan} accept={isValidNoteInput} />
-        <button
-          type="button"
-          class="icon-btn paste-icon-btn"
-          title="Paste from clipboard"
-          onClick={paste}
-        >
-          <IoClipboardSharp />
-        </button>
-        <div class="paste-input-wrapper">
-          <input
-            ref={pasteRef}
-            type="text"
-            class="paste-input"
-            classList={{invalid: value() !== '' && !isValid()}}
-            placeholder="lnurl1... / lnurlw://...?k1=... / lnbc1..."
-            value={value()}
-            onInput={e => setValue(e.currentTarget.value)}
-            onKeyDown={onKeydown}
-          />
-          <Show when={value() !== ''}>
-            <button
-              type="button"
-              class="icon-btn paste-clear-btn"
-              title="Clear"
-              onClick={() => setValue('')}
-            >
-              <IoCloseSharp />
-            </button>
-          </Show>
+    <Dialog onClose={props.onClose}>
+      <figure class="setup-card">
+        <figcaption>Bring in a bearer note</figcaption>
+        <div class="paste-input-row">
+          <ScanToggle onScan={onScan} accept={isValidNoteInput} />
+          <NfcToggle onScan={onScan} accept={isValidNoteInput} />
+          <button
+            type="button"
+            class="icon-btn paste-icon-btn"
+            title="Paste from clipboard"
+            onClick={paste}
+          >
+            <IoClipboardSharp />
+          </button>
+          <div class="paste-input-wrapper">
+            <input
+              ref={pasteRef}
+              type="text"
+              class="paste-input"
+              classList={{invalid: value() !== '' && !isValid()}}
+              placeholder="lnurl1... / lnurlw://...?k1=... / lnbc1..."
+              value={value()}
+              onInput={e => setValue(e.currentTarget.value)}
+              onKeyDown={onKeydown}
+            />
+            <Show when={value() !== ''}>
+              <button
+                type="button"
+                class="icon-btn paste-clear-btn"
+                title="Clear"
+                onClick={() => setValue('')}
+              >
+                <IoCloseSharp />
+              </button>
+            </Show>
+          </div>
+          <button
+            type="button"
+            class="icon-btn paste-confirm-btn"
+            title={offlineMode() ? 'Offline mode is on' : 'Add to wallet'}
+            disabled={busy() || value() === '' || !isValid() || offlineMode()}
+            onClick={handlePaste}
+          >
+            <Show when={busy()} fallback={<IoReturnDownForwardSharp />}>
+              <IoRefreshSharp class="spin" />
+            </Show>
+          </button>
         </div>
-        <button
-          type="button"
-          class="icon-btn paste-confirm-btn"
-          title={offlineMode() ? 'Offline mode is on' : 'Add to wallet'}
-          disabled={busy() || value() === '' || !isValid() || offlineMode()}
-          onClick={handlePaste}
-        >
-          <Show when={busy()} fallback={<IoReturnDownForwardSharp />}>
-            <IoRefreshSharp class="spin" />
-          </Show>
-        </button>
-      </div>
-      <Show when={value() !== '' && !isValid()}>
-        <p class="warning">
-          Not a valid LNURLcash bearer note (an LNURL-withdraw link carrying a
-          k1) or bolt11 invoice.
-        </p>
-      </Show>
-      <div class="btns">
-        <button type="button" onClick={props.onClose}>
-          Cancel
-        </button>
-      </div>
-    </figure>
+        <Show when={value() !== '' && !isValid()}>
+          <p class="warning">
+            Not a valid LNURLcash bearer note (an LNURL-withdraw link carrying a
+            k1) or bolt11 invoice.
+          </p>
+        </Show>
+      </figure>
+    </Dialog>
   )
 }
 export default ReceiveDialog

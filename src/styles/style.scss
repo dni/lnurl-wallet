@@ -1322,6 +1322,72 @@ nav {
   margin-top: 10px;
 }
 
+// ---- dialog ----
+
+// higher than nav's z-index: 2/3 (see below) so a dialog opened from any
+// page always sits above the fixed nav bar, not behind it
+.dialog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba($bg, 0.75);
+  backdrop-filter: blur(4px);
+}
+
+.dialog {
+  position: relative;
+  width: 100%;
+  max-width: 480px;
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  background: $bg;
+  border: 1px solid rgba($font-color, 0.3);
+  border-radius: 10px;
+  padding: 20px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+
+  // a dialog's own .setup-card content shouldn't also cap itself to 480px -
+  // the panel around it already does that, and double-capping just wastes
+  // width inside a narrower mobile sheet (see the breakpoint below)
+  .setup-card {
+    max-width: none;
+  }
+}
+
+.dialog-close-btn {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 1;
+}
+
+@media (max-width: 700px) {
+  // a bottom sheet reads more natively on mobile than a floating centered
+  // card, and keeps the close button reachable one-handed near the thumb
+  .dialog-overlay {
+    padding: 0;
+    align-items: flex-end;
+  }
+  .dialog {
+    max-width: none;
+    max-height: 88vh;
+    border-radius: 16px 16px 0 0;
+    padding: 16px;
+    // clears the close button, which stays top-right rather than moving
+    // for this breakpoint - one consistent spot to reach for on any size
+    padding-top: 44px;
+  }
+  .dialog-close-btn {
+    // meets the ~44px minimum touch target on the breakpoint where a
+    // finger, not a mouse, is doing the tapping
+    padding: 10px;
+  }
+}
+
 // ---- setup / mint / backup / docs ----
 
 .setup-card {
