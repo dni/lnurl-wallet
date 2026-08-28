@@ -48,3 +48,33 @@ interface Navigator {
   readonly serial?: Serial
   readonly bluetooth?: Bluetooth
 }
+
+// ---- Web NFC (Chrome on Android only) ----
+// used by helpers.ts's readNfcTag() to read an NFC tag's URL/text record as
+// an alternative to camera-scanning its QR code or pasting it by hand - a
+// global constructor, not a Navigator property, unlike Serial/Bluetooth
+// above. Minimal surface only - just what readNfcTag actually calls.
+interface NDEFRecord {
+  readonly recordType: string
+  readonly data?: DataView
+  readonly encoding?: string
+}
+
+interface NDEFMessage {
+  readonly records: NDEFRecord[]
+}
+
+interface NDEFReadingEvent extends Event {
+  readonly message: NDEFMessage
+}
+
+interface NDEFReader extends EventTarget {
+  scan(): Promise<void>
+  onreading: ((event: NDEFReadingEvent) => void) | null
+  onreadingerror: ((event: Event) => void) | null
+}
+
+declare var NDEFReader: {
+  prototype: NDEFReader
+  new (): NDEFReader
+}

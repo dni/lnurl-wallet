@@ -41,6 +41,7 @@ import {
 } from '../helpers'
 import {offlineMode} from '../offlineMode'
 import ScanToggle from '../components/ScanToggle'
+import NfcToggle from '../components/NfcToggle'
 
 const Mints: Component = () => {
   const [server, setServer] = createSignal('')
@@ -501,6 +502,10 @@ const Mints: Component = () => {
             </p>
             <div class="paste-input-row">
               <ScanToggle
+                onScan={value => addByAddress(value)}
+                accept={v => resolveMintInput(v) !== null}
+              />
+              <NfcToggle
                 onScan={value => addByAddress(value)}
                 accept={v => resolveMintInput(v) !== null}
               />

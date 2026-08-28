@@ -58,6 +58,56 @@ export const pasteFromClipboard = async (): Promise<string | null> => {
   }
 }
 
+export const nfcSupported = (): boolean =>
+  typeof window !== 'undefined' && 'NDEFReader' in window
+
+// reads one NFC tag and normalizes its payload the same way
+// pasteFromClipboard normalizes a pasted value, so the result can be handed
+// to exactly the same onScan-style callbacks every paste-input-row already
+// wires up. Web NFC models a read as a "reading" event on an open scan
+// session rather than a one-shot call - this opens one, waits for exactly
+// one reading (or a reading error), then lets the session lapse; there's no
+// narrower "read once" primitive in the API itself. `url`/`text` cover
+// every NDEF payload this wallet's own writer (or any standard phone
+// "write NFC tag" tool) would produce for an lnurl/lightning: URI - a tag
+// carrying anything else isn't something this wallet knows how to read as
+// a note or a mint address, so it's treated the same as a failed read.
+export const readNfcTag = async (): Promise<string | null> => {
+  if (!nfcSupported()) {
+    notify(
+      "This browser can't read NFC tags - try Chrome on Android.",
+      NotifyKind.ERROR
+    )
+    return null
+  }
+  try {
+    const reader = new NDEFReader()
+    const raw = await new Promise<string>((resolve, reject) => {
+      reader.onreadingerror = () =>
+        reject(new Error('Could not read that tag - try again.'))
+      reader.onreading = event => {
+        const record = event.message.records.find(
+          r => (r.recordType === 'url' || r.recordType === 'text') && r.data
+        )
+        if (!record?.data) {
+          reject(new Error('That tag has no readable URL or text on it.'))
+          return
+        }
+        resolve(new TextDecoder(record.encoding || 'utf-8').decode(record.data))
+      }
+      reader.scan().catch(reject)
+    })
+    const text = raw.trim().replace(/^lightning:/i, '')
+    return CASE_SENSITIVE_SCHEME.test(text) ? text : text.toLowerCase()
+  } catch (err) {
+    notify(
+      (err as Error).message || 'Failed to read NFC tag.',
+      NotifyKind.ERROR
+    )
+    return null
+  }
+}
+
 // a mint's published mintPubkey is its Lightning node's own identity key
 // (signing happens via that node's signmessage RPC - see lnurlcash.ts's
 // verifyNoteSignature) - mempool.space's explorer is a quick way to look up

@@ -75,6 +75,7 @@ import {
 import {offlineMode} from '../offlineMode'
 import Qr from '../components/Qr'
 import ScanToggle from '../components/ScanToggle'
+import NfcToggle from '../components/NfcToggle'
 import RequireWallet from '../components/RequireWallet'
 
 type Mode = 'invoice' | 'preimage'
@@ -678,6 +679,10 @@ const Mint: Component = () => {
             <figure class="paste-widget">
               <div class="paste-input-row">
                 <ScanToggle
+                  onScan={selectMint}
+                  accept={v => resolveMintInput(v) !== null}
+                />
+                <NfcToggle
                   onScan={selectMint}
                   accept={v => resolveMintInput(v) !== null}
                 />
