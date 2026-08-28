@@ -27,6 +27,7 @@ import {handoffMeltInvoice} from '../meltHandoff'
 import {notify, NotifyKind, msatToSats, pasteFromClipboard} from '../helpers'
 import {offlineMode} from '../offlineMode'
 import ScanToggle from './ScanToggle'
+import NfcToggle from './NfcToggle'
 
 export type ReceiveDialogProps = {
   onClose: () => void
@@ -231,6 +232,7 @@ const ReceiveDialog: Component<ReceiveDialogProps> = props => {
       <figcaption>Bring in a bearer note</figcaption>
       <div class="paste-input-row">
         <ScanToggle onScan={onScan} accept={isValidNoteInput} />
+        <NfcToggle onScan={onScan} accept={isValidNoteInput} />
         <button
           type="button"
           class="icon-btn paste-icon-btn"

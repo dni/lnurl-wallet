@@ -57,6 +57,7 @@ import {
   removeStoreableMeltAddress
 } from '../storeableLinks'
 import ScanToggle from '../components/ScanToggle'
+import NfcToggle from '../components/NfcToggle'
 import RequireWallet from '../components/RequireWallet'
 import SendNoteCard from '../components/SendNoteCard'
 
@@ -817,6 +818,10 @@ const Melt: Component = () => {
         <figure class="paste-widget">
           <div class="paste-input-row">
             <ScanToggle
+              onScan={onScan}
+              accept={v => isBolt11Invoice(v) || isLightningAddress(v)}
+            />
+            <NfcToggle
               onScan={onScan}
               accept={v => isBolt11Invoice(v) || isLightningAddress(v)}
             />
