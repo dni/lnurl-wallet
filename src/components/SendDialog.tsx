@@ -33,6 +33,7 @@ import {
 } from '../helpers'
 import {offlineMode} from '../offlineMode'
 import Qr from './Qr'
+import Dialog from './Dialog'
 
 export type SendDialogProps = {
   onClose: () => void
@@ -453,7 +454,7 @@ const SendDialog: Component<SendDialogProps> = props => {
   }
 
   return (
-    <>
+    <Dialog onClose={props.onClose}>
       <figure class="setup-card">
         <figcaption>
           Carve an exact amount out of one or more held notes (merging and/or
@@ -608,7 +609,7 @@ const SendDialog: Component<SendDialogProps> = props => {
           </Show>
         </figure>
       </Show>
-    </>
+    </Dialog>
   )
 }
 export default SendDialog
