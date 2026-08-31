@@ -430,7 +430,7 @@ input[type='checkbox'] {
 }
 
 .icon-btn {
-  padding: 6px;
+  padding: 9px;
   margin-right: 0;
   &.active {
     background-color: rgba(
@@ -438,6 +438,13 @@ input[type='checkbox'] {
       $transparency
     );
   }
+}
+
+// used on the second of a pair of adjacent .icon-btns (e.g. Mints.tsx's
+// globe + mempool links) to separate them - .icon-btn zeroes its own
+// margin-right above, so without this they'd sit flush against each other
+.icon-btn-gap {
+  margin-left: 9px;
 }
 
 figcaption {
