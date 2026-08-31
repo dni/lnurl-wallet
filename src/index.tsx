@@ -19,7 +19,6 @@ import Hero from './pages/Hero'
 import Wallet from './pages/Wallet'
 import Setup from './pages/Setup'
 import Mint from './pages/Mint'
-import Melt from './pages/Melt'
 import Activity from './pages/Activity'
 import Backup from './pages/Backup'
 import Docs from './pages/Docs'
@@ -81,7 +80,11 @@ const cleanup = render(
       the bottom of that page) - kept as a redirect so old links/bookmarks
       still land somewhere useful instead of 404ing */}
       <Route path="/mints" component={() => <Navigate href="/mint" />} />
-      <Route path="/melt" component={Melt} />
+      {/* /melt merged into /wallet (MeltDialog, opened from the "Melt" hero
+      button or automatically via a pasted invoice in Receive - see
+      meltHandoff.ts) - kept as a redirect so old links/bookmarks still land
+      somewhere useful instead of 404ing */}
+      <Route path="/melt" component={() => <Navigate href="/wallet" />} />
       <Route path="/activity" component={Activity} />
       <Route path="/backup" component={Backup} />
       <Route path="/docs" component={Docs} />

@@ -5,7 +5,6 @@ import {
   IoCloseSharp,
   IoWalletSharp,
   IoAddCircleSharp,
-  IoFlameSharp,
   IoLockClosedSharp,
   IoSaveSharp,
   IoBookSharp,
@@ -56,10 +55,12 @@ const Nav = () => {
               &nbsp;Wallet
             </A>
           </Show>
-          {/* not gated on state()/offlineMode() like Melt below - trusted-
-          mint management lives at the bottom of this page too now (see
-          pages/Mint.tsx) and stays usable without an unlocked wallet or a
-          network connection, same as /backup below */}
+          {/* not gated on state()/offlineMode() - trusted-mint management
+          lives at the bottom of this page too now (see pages/Mint.tsx) and
+          stays usable without an unlocked wallet or a network connection,
+          same as /backup below. Melt has no nav link of its own anymore -
+          it's a dialog on the Wallet page now (see its own "Melt" button),
+          same as Send/Receive */}
           <A
             href="/mint"
             class="nav-link"
@@ -68,12 +69,6 @@ const Nav = () => {
             <IoAddCircleSharp />
             &nbsp;Mint
           </A>
-          <Show when={state() === 'unlocked'}>
-            <A href="/melt" class="nav-link">
-              <IoFlameSharp />
-              &nbsp;Melt
-            </A>
-          </Show>
           {/* not gated on state() === 'unlocked' - restoring a backup is
           exactly what a device with no wallet yet (state() === 'none') needs
           this link for, and hiding it there was the whole bug: after

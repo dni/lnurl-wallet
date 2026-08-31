@@ -568,9 +568,9 @@ pre {
   background: rgba($bg, 0.85);
   border-radius: 5px;
 }
-// SendNoteCard's tap-to-reveal gate around an embedded Qr - kept separate
-// from .qr-frame (Qr's own internal sizing) so the overlay covers the
-// whole revealed area, download button included
+// BearerCard's tap-to-reveal gate around an embedded Qr (Unveil to hand
+// over) - kept separate from .qr-frame (Qr's own internal sizing) so the
+// overlay covers the whole revealed area, download button included
 .qr-wrapper {
   position: relative;
   display: inline-block;

@@ -47,7 +47,7 @@ const storageWarning = (
 // version and the notes it holds. Routing this wallet's own rotate/split/
 // merge/melt through the device instead of generating secrets in-browser
 // lives in deviceOrchestration.ts, driven from Mint.tsx/BearerCard.tsx/
-// MintGroupCard.tsx/SendDialog.tsx/Melt.tsx - this page itself stays scoped
+// MintGroupCard.tsx/SendDialog.tsx/MeltDialog.tsx - this page itself stays scoped
 // to pairing and read-only visibility, not those flows.
 const Vault: Component = () => {
   const {

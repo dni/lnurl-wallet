@@ -5,22 +5,33 @@ import {
   IoShieldCheckmarkSharp,
   IoBanSharp,
   IoArrowUndoSharp,
-  IoHardwareChipSharp
+  IoHardwareChipSharp,
+  IoEyeSharp,
+  IoCopySharp,
+  IoRefreshSharp
 } from 'solid-icons/io'
 
 import type {Bearer} from '../storage'
 import {useWallet} from '../WalletContext'
+import {useDevice} from '../DeviceContext'
 import {
   noteK1,
   noteSignature,
   serverOf,
+  toBech32Lnurl,
   verifyNoteSignature,
   verifyNoteSignatureHash
 } from '../lnurlcash'
 import {
+  deviceExportForHandoff,
+  markDeviceNoteSpent,
+  requireDeviceClient
+} from '../deviceOrchestration'
+import {
   msatToSats,
   formatDate,
   formatRelativeTime,
+  copyToClipboard,
   notify,
   NotifyKind
 } from '../helpers'
@@ -29,6 +40,7 @@ import {
   getTrustedMintNodeColor,
   isMintUnconfirmed
 } from '../trustedMints'
+import Qr from './Qr'
 
 export type BearerCardProps = {
   bearer: Bearer
@@ -38,8 +50,23 @@ export type BearerCardProps = {
 
 const BearerCard: Component<BearerCardProps> = props => {
   const {updateBearer, removeBearer, logActivity} = useWallet()
+  const {client: deviceClient} = useDevice()
   const [confirmDelete, setConfirmDelete] = createSignal(false)
   const [confirmUnspend, setConfirmUnspend] = createSignal(false)
+  // whether the "hand this note over" panel is open at all - separate from
+  // revealedUrl below, since a device-backed note opens the panel before
+  // its secret is actually known (see revealDeviceNote)
+  const [unveiling, setUnveiling] = createSignal(false)
+  // this note's real, secret-bearing url - null until revealed. For a
+  // browser-only note this is available the instant the panel opens (see
+  // startUnveil); a device-backed one needs an explicit export (physical
+  // button press) first - see revealDeviceNote. Never persisted, only ever
+  // held here in memory.
+  const [revealedUrl, setRevealedUrl] = createSignal<string | null>(null)
+  const [revealing, setRevealing] = createSignal(false)
+  // tap-to-reveal on the QR itself - a shoulder-surfing guard, so the note's
+  // actual secret never sits bare on screen just because the panel is open
+  const [qrRevealed, setQrRevealed] = createSignal(false)
 
   const k1 = () => noteK1(props.bearer.url) || ''
   const isSpent = () => !!props.bearer.spent
@@ -63,8 +90,11 @@ const BearerCard: Component<BearerCardProps> = props => {
   // the whole card is the click target for select-to-combine - except any
   // interactive control inside it (a spent note's own Unspend/Clear
   // buttons), which should do their own thing rather than also flip
-  // selection
+  // selection - and except while the hand-over panel is open, where a
+  // stray click on the revealed QR itself (not a button) shouldn't also
+  // toggle selection underneath it
   const onCardClick = (e: MouseEvent) => {
+    if (unveiling()) return
     if ((e.target as HTMLElement).closest('button, input, textarea, a')) return
     toggleSelect()
   }
@@ -110,6 +140,53 @@ const BearerCard: Component<BearerCardProps> = props => {
       `Unspent ${msatToSats(props.bearer.amount)} sats from ${serverOf(props.bearer.url)}.`
     )
     notify('Unspent - actions are available again.', NotifyKind.SUCCESS)
+  }
+
+  // opens the hand-over panel - browser-only notes reveal immediately
+  // (their url already carries the real secret); device-backed ones wait
+  // for an explicit reveal action (see revealDeviceNote)
+  const startUnveil = () => {
+    setUnveiling(true)
+    setRevealedUrl(props.bearer.deviceId ? null : props.bearer.url)
+    setQrRevealed(false)
+  }
+
+  const cancelUnveil = () => {
+    setUnveiling(false)
+    setRevealedUrl(null)
+    setQrRevealed(false)
+  }
+
+  const revealDeviceNote = async () => {
+    if (!props.bearer.deviceId) return
+    setRevealing(true)
+    try {
+      const client = requireDeviceClient(deviceClient())
+      const {url} = await deviceExportForHandoff(
+        client,
+        props.bearer.deviceId,
+        props.bearer.url,
+        props.bearer.amount
+      )
+      setRevealedUrl(url)
+    } catch (err) {
+      notify((err as Error).message, NotifyKind.ERROR)
+    } finally {
+      setRevealing(false)
+    }
+  }
+
+  const markHandedOver = async () => {
+    updateBearer(props.bearer.id, {spent: true})
+    if (props.bearer.deviceId) {
+      await markDeviceNoteSpent(deviceClient(), props.bearer.deviceId)
+    }
+    cancelUnveil()
+    logActivity(
+      'transfer',
+      `Handed over ${msatToSats(props.bearer.amount)} sats from ${serverOf(props.bearer.url)}.`
+    )
+    notify('Marked as handed over and spent.', NotifyKind.SUCCESS)
   }
 
   return (
@@ -185,6 +262,67 @@ const BearerCard: Component<BearerCardProps> = props => {
             </button>
           </div>
         </div>
+      </Show>
+      <Show when={!isSpent()}>
+        <Show
+          when={unveiling()}
+          fallback={
+            <div class="btns">
+              <div class="bearer-actions">
+                <button
+                  class="icon-btn"
+                  title="Unveil to hand over"
+                  onClick={startUnveil}
+                >
+                  <IoEyeSharp />
+                </button>
+              </div>
+            </div>
+          }
+        >
+          <Show
+            when={revealedUrl()}
+            fallback={
+              <div class="btns">
+                <button disabled={revealing()} onClick={revealDeviceNote}>
+                  <Show when={revealing()}>
+                    <IoRefreshSharp class="spin" />
+                    &nbsp;
+                  </Show>
+                  {revealing()
+                    ? 'Waiting for the vault...'
+                    : 'Reveal to hand over'}
+                </button>
+                <button onClick={cancelUnveil}>Cancel</button>
+              </div>
+            }
+          >
+            {url => (
+              <>
+                <div class="qr-wrapper">
+                  <Qr value={toBech32Lnurl(url())} />
+                  <Show when={!qrRevealed()}>
+                    <button
+                      class="qr-overlay"
+                      title="Show QR code - it IS the bearer note, anyone who scans it can spend it"
+                      onClick={() => setQrRevealed(true)}
+                    >
+                      <IoEyeSharp />
+                    </button>
+                  </Show>
+                </div>
+                <div class="btns">
+                  <button onClick={() => copyToClipboard(toBech32Lnurl(url()))}>
+                    <IoCopySharp />
+                    &nbsp;Copy note
+                  </button>
+                  <button onClick={markHandedOver}>Done</button>
+                  <button onClick={cancelUnveil}>Cancel</button>
+                </div>
+              </>
+            )}
+          </Show>
+        </Show>
       </Show>
       <Show when={isSpent() && !confirmUnspend()}>
         <p class="bearer-hint">

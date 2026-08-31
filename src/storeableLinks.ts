@@ -9,7 +9,7 @@ import {createSignal} from 'solid-js'
 // unencrypted localStorage, same as trustedMints.ts.
 //
 // Two separate registries, never merged: one for payRequests seen on the
-// Mint page (places to mint FROM), one for the Melt page's "pay to a
+// Mint page (places to mint FROM), one for MeltDialog's "pay to a
 // Lightning Address" flow (places to melt/pay TO). A mint saying its own
 // payRequest is storeable says nothing about whether it's also a sane
 // melt destination, and vice versa - conflating them would surface a
