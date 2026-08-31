@@ -107,21 +107,6 @@ h2 {
   margin: 0 0 24px 0;
 }
 
-// no heading of its own anymore (dropped the redundant "Your LNURLcash") -
-// just the row that keeps the icon buttons (activity log, clear spent)
-// pinned to the right edge above .wallet-stats
-.wallet-hero-header {
-  display: flex;
-  justify-content: flex-end;
-  margin-bottom: 14px;
-}
-
-.wallet-hero-actions {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
 // Mint - the wallet's one remaining explicit shortcut, sized up from the
 // app's default buttons the same way the note-action toolbar is, so it
 // still reads as a primary call to action even standing alone next to the
@@ -208,10 +193,7 @@ h2 {
   white-space: nowrap;
 }
 
-// back button + title + (pushed right) clear-log button - its own row
-// rather than reusing .wallet-hero-header, whose justify-content: flex-end
-// is tuned for Wallet.tsx's own icon-only pair and would bunch this page's
-// title in with them instead of anchoring it next to the back button
+// back button + title + (pushed right) clear-log button, all in one row
 .activity-header {
   display: flex;
   align-items: center;
@@ -1035,14 +1017,6 @@ nav {
   font-size: 0.9em;
 }
 
-// leftmost control in .list-controls-row - narrower than the global
-// select's own width: 100% so it sits inline with the search box and
-// sort/toggle controls instead of claiming the whole row
-.mint-select-all {
-  width: auto;
-  max-width: 200px;
-}
-
 // the wallet-wide selection bar (selection count/clear, combine/split/
 // transfer) that replaced the old per-mint MintGroupCard header - sits
 // below .list-controls, since acting on a selection only makes sense once
@@ -1101,14 +1075,26 @@ nav {
   border-radius: 8px;
   padding: 6px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
-  // Label/Mark spent/Export/QR as full-width, left-aligned rows instead of
-  // the toolbar's usual inline pill buttons
+  // Label/Mark spent/Export/QR (or Group by mint/Refresh all/Remove all
+  // spent, see the filter toolbar's own More) as full-width, left-aligned
+  // rows instead of the toolbar's usual inline pill buttons
   button {
     width: 100%;
     margin: 0;
     justify-content: flex-start;
     background: none;
     &:hover:not(:disabled) {
+      background-color: rgba(
+        color.adjust($accent-base, $lightness: -10%),
+        $transparency
+      );
+    }
+    // same "held" look .list-controls-row's own direct button children get
+    // (see its > button.active) - a toggle item (Group by mint) still needs
+    // to show its state even nested a level deeper, inside the panel
+    &.active {
+      opacity: 1;
+      box-shadow: inset 0 0 0 1px $font-color;
       background-color: rgba(
         color.adjust($accent-base, $lightness: -10%),
         $transparency
@@ -1338,10 +1324,18 @@ nav {
   // room to push it to the right edge instead of doing nothing
   width: 100%;
   // a size up from the app's default icon-btn, since these are a note
-  // card's own primary actions (Unveil/Copy/Mark spent, Unspend/Clear)
+  // card's own primary actions (Unveil/Copy/Mark spent, Unspend/Clear) -
+  // and the default/hover background negated from the app's usual button
+  // (which starts visible and darkens on hover): transparent by default, so
+  // the row reads as quiet icons rather than a cluster of pills, and only
+  // picks up the normal button background once actually hovered
   .icon-btn {
     padding: 11px;
     font-size: 1.1em;
+    background-color: transparent;
+    &:hover {
+      background-color: rgba($accent-base, $transparency);
+    }
   }
 }
 
