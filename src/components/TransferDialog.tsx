@@ -25,6 +25,9 @@ import {
   describeMintFee,
   probeBurnedNote,
   sameInvoice,
+  generateNoteSecret,
+  hashK1,
+  canUseMintComment,
   PendingNoteError,
   AmbiguousMutationError
 } from '../lnurlcash'
@@ -75,6 +78,13 @@ const TransferDialog: Component<TransferDialogProps> = props => {
 
   const [invoice, setInvoice] = createSignal<string | null>(null)
   const [verifyUrl, setVerifyUrl] = createSignal<string | null>(null)
+  // LUD-25 comment protection (see lnurlcash.ts's canUseMintComment): set
+  // only when the current invoice was requested with `comment=hashK1(this)`
+  // - the note's real k1 once paid, never the payment preimage. null means
+  // the destination didn't support it (or wasn't offered enough
+  // commentAllowed), the legacy no-comment fallback where the preimage
+  // itself is the secret - same as Mint.tsx's own getInvoice/claim.
+  const [mintSecret, setMintSecret] = createSignal<string | null>(null)
   const [preimage, setPreimage] = createSignal('')
   const [claimed, setClaimed] = createSignal(false)
   const [sourceConfirmed, setSourceConfirmed] = createSignal(false)
@@ -180,10 +190,22 @@ const TransferDialog: Component<TransferDialogProps> = props => {
     if (!info?.withdrawLink) return
     setBusy(true)
     try {
+      // LUD-25 comment protection, same as Mint.tsx's getInvoice: if the
+      // destination advertises enough commentAllowed (LUD-12), generate the
+      // note's real secret now and send only its hash as `comment` - the
+      // melt's payment preimage never becomes the bearer secret, so it's
+      // safe to disclose (including via LUD-21 verify below). Otherwise the
+      // destination gets the plain no-comment mint, and the preimage IS the
+      // secret - see claimDestination's preimage path.
+      const secret = canUseMintComment(info)
+        ? generateNoteSecret(serverOf(info.withdrawLink || info.callback))
+        : null
       const result = await requestInvoice(
         info.callback,
-        props.sourceBearer.amount
+        props.sourceBearer.amount,
+        secret ? hashK1(secret) : undefined
       )
+      setMintSecret(secret)
       if (props.sourceBearer.deviceId) {
         await deviceMeltRequest(
           requireDeviceClient(deviceClient()),
@@ -209,11 +231,14 @@ const TransferDialog: Component<TransferDialogProps> = props => {
     }
   }
 
-  // claims the destination note once its preimage is known - same claim
-  // sequence as Mint.tsx: verify (also settling the k1), rotate to close
-  // the exposure that GET just created, then store it. If a vault is
-  // connected, that fresh secret is generated and held there instead of in
-  // this browser (deviceMint - import then rotate).
+  // claims the destination note once its secret is known - either the
+  // wallet-generated one from a comment-protected invoice (see
+  // startTransfer/mintSecret), or the real payment preimage for a
+  // destination that doesn't support that. Same claim sequence as Mint.tsx:
+  // verify (also settling the k1), rotate to close the exposure that GET
+  // just created, then store it. If a vault is connected, that fresh secret
+  // is generated and held there instead of in this browser (deviceMint -
+  // import then rotate).
   const claimDestination = async (preimageValue: string) => {
     const info = payRequest()
     if (!info?.withdrawLink || !isPreimage(preimageValue)) return
@@ -395,13 +420,18 @@ const TransferDialog: Component<TransferDialogProps> = props => {
               )
               return
             }
-            if (
-              result.settled &&
-              result.preimage &&
-              isPreimage(result.preimage)
-            ) {
-              setPreimage(result.preimage)
-              await claimDestination(result.preimage)
+            if (result.settled) {
+              // if this transfer used comment protection (see
+              // startTransfer), the note's real k1 is the wallet-held
+              // secret, not whatever preimage the destination discloses
+              // here - prefer it when present
+              const secret = mintSecret()
+              if (secret) {
+                await claimDestination(secret)
+              } else if (result.preimage && isPreimage(result.preimage)) {
+                setPreimage(result.preimage)
+                await claimDestination(result.preimage)
+              }
             }
           } catch {
             // a single failed check isn't fatal - the next tick tries again
@@ -616,25 +646,51 @@ const TransferDialog: Component<TransferDialogProps> = props => {
               </button>
             </Show>
           </div>
-          <Show when={!verifyUrl()}>
-            <label>
-              This mint doesn't support checking automatically - paste the
-              preimage here if you learn it some other way
-            </label>
-            <input
-              type="text"
-              placeholder="payment preimage (64 hex characters)"
-              value={preimage()}
-              onInput={e => setPreimage(e.currentTarget.value)}
-            />
-            <div class="btns">
-              <button
-                disabled={!isPreimage(preimage()) || offlineMode()}
-                onClick={() => claimDestination(preimage())}
-              >
-                Claim at destination
-              </button>
-            </div>
+          <Show
+            when={mintSecret()}
+            fallback={
+              <Show when={!verifyUrl()}>
+                <label>
+                  This mint doesn't support checking automatically - paste the
+                  preimage here if you learn it some other way
+                </label>
+                <input
+                  type="text"
+                  placeholder="payment preimage (64 hex characters)"
+                  value={preimage()}
+                  onInput={e => setPreimage(e.currentTarget.value)}
+                />
+                <div class="btns">
+                  <button
+                    disabled={!isPreimage(preimage()) || offlineMode()}
+                    onClick={() => claimDestination(preimage())}
+                  >
+                    Claim at destination
+                  </button>
+                </div>
+              </Show>
+            }
+          >
+            {secret => (
+              <>
+                <label>
+                  This mint supports comment-protected minting - nothing to
+                  paste, the note's secret never left this wallet.
+                  <Show when={verifyUrl()}>
+                    {' '}
+                    (or wait - this mint checks automatically)
+                  </Show>
+                </label>
+                <div class="btns">
+                  <button
+                    disabled={checking() || offlineMode()}
+                    onClick={() => claimDestination(secret())}
+                  >
+                    Claim at destination
+                  </button>
+                </div>
+              </>
+            )}
           </Show>
         </Show>
       </figure>
