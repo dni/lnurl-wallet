@@ -101,6 +101,10 @@ const Wallet: Component = () => {
   // Combine/Combine & split/Transfer, instead of each note carrying its own
   // copy of these buttons
   const [refreshing, setRefreshing] = createSignal(false)
+  // separate from refreshing above (which is scoped to the current
+  // selection) - Refresh all acts on every unspent note regardless of
+  // what's selected, so it needs its own spinner state
+  const [refreshingAll, setRefreshingAll] = createSignal(false)
   const [showSplitSingleInput, setShowSplitSingleInput] = createSignal(false)
   const [splitSingleSats, setSplitSingleSats] = createSignal('')
   const [splitSingleTimes, setSplitSingleTimes] = createSignal('1')
@@ -519,7 +523,8 @@ const Wallet: Component = () => {
         })
         logActivity(
           'refresh',
-          `Refreshed ${msatToSats(result.amountMsat)} sats from ${serverOf(result.url)} (on device).`
+          `Refreshed ${msatToSats(result.amountMsat)} sats from ${serverOf(result.url)} (on device).`,
+          bearer.label
         )
         notify('Note refreshed.', NotifyKind.SUCCESS)
         return
@@ -544,7 +549,8 @@ const Wallet: Component = () => {
         })
         logActivity(
           'refresh',
-          `Refreshed ${msatToSats(info.maxWithdrawable)} sats from ${serverOf(migrated.url)} - moved onto your vault.`
+          `Refreshed ${msatToSats(info.maxWithdrawable)} sats from ${serverOf(migrated.url)} - moved onto your vault.`,
+          bearer.label
         )
         notify('Note refreshed and moved onto your vault.', NotifyKind.SUCCESS)
         return
@@ -603,7 +609,8 @@ const Wallet: Component = () => {
       logActivity(
         'refresh',
         `Refreshed ${msatToSats(info.maxWithdrawable)} sats from ${serverOf(url)}.` +
-          (rotationError ? ` Could not rotate (${rotationError}).` : '')
+          (rotationError ? ` Could not rotate (${rotationError}).` : ''),
+        bearer.label
       )
       // the GET this refresh is nominally "about" is only ever a means to
       // the rotate - it succeeding on its own isn't worth telling the
@@ -627,7 +634,8 @@ const Wallet: Component = () => {
         await updateBearer(bearer.id, {spent: true})
         logActivity(
           'spent',
-          `${serverOf(bearer.url)} reports ${msatToSats(bearer.amount)} sats as already spent - marked spent locally.`
+          `${serverOf(bearer.url)} reports ${msatToSats(bearer.amount)} sats as already spent - marked spent locally.`,
+          bearer.label
         )
       }
       notify((err as Error).message, NotifyKind.ERROR)
@@ -647,6 +655,23 @@ const Wallet: Component = () => {
     }
   }
 
+  // every unspent note in the wallet, regardless of selection - same
+  // one-at-a-time sequencing as refreshSelected, for the same reason
+  // (persistBearer reads localStorage fresh per-write, so concurrent
+  // refreshes could race and clobber each other's records)
+  const refreshAllNotes = async () => {
+    const picked = bearers().filter(b => !b.spent)
+    if (picked.length === 0) return
+    setRefreshingAll(true)
+    try {
+      for (const bearer of picked) {
+        await refreshOneBearer(bearer)
+      }
+    } finally {
+      setRefreshingAll(false)
+    }
+  }
+
   // a local-only lock (see storage.ts's Bearer.spent) - no network call,
   // just stops this wallet from acting on notes it considers given away.
   // A device-backed note's on-device copy is retired alongside (queued for
@@ -662,7 +687,8 @@ const Wallet: Component = () => {
       }
       logActivity(
         'spent',
-        `Marked ${msatToSats(bearer.amount)} sats from ${serverOf(bearer.url)} as spent.`
+        `Marked ${msatToSats(bearer.amount)} sats from ${serverOf(bearer.url)} as spent.`,
+        bearer.label
       )
     }
     setSelected(new Set<string>())
@@ -848,7 +874,8 @@ const Wallet: Component = () => {
             await updateBearer(remainderId, {spent: true})
             logActivity(
               'spent',
-              `${serverOf(currentUrl)} reports ${msatToSats(currentAmount)} sats as already spent - marked spent locally.`
+              `${serverOf(currentUrl)} reports ${msatToSats(currentAmount)} sats as already spent - marked spent locally.`,
+              bearer.label
             )
             throw splitError
           }
@@ -1020,7 +1047,8 @@ const Wallet: Component = () => {
           : ''
       logActivity(
         'split',
-        `Split off ${times} note${times === 1 ? '' : 's'} of ${msatToSats(msat)} sats each from ${serverOf(bearer.url)}.${feeNote}`
+        `Split off ${times} note${times === 1 ? '' : 's'} of ${msatToSats(msat)} sats each from ${serverOf(bearer.url)}.${feeNote}`,
+        bearer.label
       )
       notify(
         `Split off ${times} note${times === 1 ? '' : 's'} of ${msatToSats(msat)} sats each.${feeNote}`,
@@ -1167,7 +1195,8 @@ const Wallet: Component = () => {
           : ''
       logActivity(
         'combine',
-        `Combined ${picked.length} notes from ${server} into ${msatToSats(actualAmount)} sats.${creditNote}`
+        `Combined ${picked.length} notes from ${server} into ${msatToSats(actualAmount)} sats.${creditNote}`,
+        base.label
       )
       notify(
         `Combined ${picked.length} notes into one.${creditNote}`,
@@ -1333,7 +1362,8 @@ const Wallet: Component = () => {
           : ''
       logActivity(
         'split',
-        `Combined ${picked.length} notes from ${server} and split into ${msatToSats(targetAmount)} + ${msatToSats(changeAmount)} sats.${feeNote}`
+        `Combined ${picked.length} notes from ${server} and split into ${msatToSats(targetAmount)} + ${msatToSats(changeAmount)} sats.${feeNote}`,
+        base.label
       )
       notify(
         `Split into ${msatToSats(targetAmount)} sats and ${msatToSats(changeAmount)} sats change.${feeNote}`,
@@ -1491,15 +1521,6 @@ const Wallet: Component = () => {
                   >
                     <IoReceiptSharp />
                   </A>
-                  <Show when={spentCount() > 0}>
-                    <button
-                      class="icon-btn"
-                      title={`Clear all ${spentCount()} spent note${spentCount() === 1 ? '' : 's'} from the wallet`}
-                      onClick={() => setConfirmClearSpent(true)}
-                    >
-                      <IoTrashSharp />
-                    </button>
-                  </Show>
                 </div>
               </div>
               <Show when={confirmClearSpent()}>
@@ -1713,6 +1734,37 @@ const Wallet: Component = () => {
                     <span class="switch-track"></span>
                   </span>
                 </label>
+                <button
+                  type="button"
+                  class="refresh-all-btn"
+                  disabled={
+                    refreshingAll() ||
+                    offlineMode() ||
+                    spendableBearers().length === 0
+                  }
+                  title={
+                    offlineMode()
+                      ? 'Offline mode is on'
+                      : 'Refresh every unspent note in the wallet, one at a time'
+                  }
+                  onClick={refreshAllNotes}
+                >
+                  <Show when={refreshingAll()} fallback={<IoRefreshSharp />}>
+                    <IoRefreshSharp class="spin" />
+                  </Show>
+                  &nbsp;Refresh all
+                </button>
+                <Show when={spentCount() > 0}>
+                  <button
+                    type="button"
+                    class="remove-spent-btn"
+                    title={`Clear all ${spentCount()} spent note${spentCount() === 1 ? '' : 's'} from the wallet`}
+                    onClick={() => setConfirmClearSpent(true)}
+                  >
+                    <IoTrashSharp />
+                    &nbsp;Remove all spent
+                  </button>
+                </Show>
               </div>
             </section>
 
@@ -1902,16 +1954,14 @@ const Wallet: Component = () => {
                   </Show>
                 </div>
                 <Show when={selected().size > 0}>
-                  <span class="selection-count">
-                    {selected().size} selected
-                  </span>
                   <button
                     type="button"
-                    class="icon-btn"
+                    class="icon-btn clear-selection-btn"
                     title="Clear selection"
                     onClick={() => setSelected(new Set<string>())}
                   >
                     <IoCloseCircleSharp />
+                    &nbsp;Clear selection ({selected().size})
                   </button>
                 </Show>
               </div>

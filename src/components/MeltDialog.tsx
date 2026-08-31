@@ -168,7 +168,8 @@ const MeltDialog: Component<MeltDialogProps> = props => {
       }
       logActivity(
         'melt',
-        `Melted ${msatToSats(note.amount)} sats from ${serverOf(note.url)} to pay an invoice. Verify: ${url}.`
+        `Melted ${msatToSats(note.amount)} sats from ${serverOf(note.url)} to pay an invoice. Verify: ${url}.`,
+        note.label
       )
       notify('Payment confirmed - the note is gone.', NotifyKind.SUCCESS)
       props.onClose()
@@ -552,7 +553,8 @@ const MeltDialog: Component<MeltDialogProps> = props => {
     // refresh with the vault connected reconciles it
     logActivity(
       'melt',
-      `Melted ${msatToSats(note.amount)} sats from ${serverOf(note.url)} to pay an invoice.`
+      `Melted ${msatToSats(note.amount)} sats from ${serverOf(note.url)} to pay an invoice.`,
+      note.label
     )
     notify(
       "Payment requested and the note is locked as spent - this mint doesn't support checking automatically." +
@@ -599,7 +601,8 @@ const MeltDialog: Component<MeltDialogProps> = props => {
           await updateBearer(current.id, {spent: true})
           logActivity(
             'spent',
-            `${serverOf(current.url)} reports ${msatToSats(current.amount)} sats as already spent - marked spent locally.`
+            `${serverOf(current.url)} reports ${msatToSats(current.amount)} sats as already spent - marked spent locally.`,
+            current.label
           )
         }
         throw err

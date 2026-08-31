@@ -142,7 +142,8 @@ const BearerCard: Component<BearerCardProps> = props => {
     }
     logActivity(
       'spent',
-      `Marked ${msatToSats(props.bearer.amount)} sats from ${serverOf(props.bearer.url)} as spent.`
+      `Marked ${msatToSats(props.bearer.amount)} sats from ${serverOf(props.bearer.url)} as spent.`,
+      props.bearer.label
     )
     notify('Marked as spent.', NotifyKind.SUCCESS)
   }
@@ -152,7 +153,8 @@ const BearerCard: Component<BearerCardProps> = props => {
     setConfirmUnspend(false)
     logActivity(
       'unspent',
-      `Unspent ${msatToSats(props.bearer.amount)} sats from ${serverOf(props.bearer.url)}.`
+      `Unspent ${msatToSats(props.bearer.amount)} sats from ${serverOf(props.bearer.url)}.`,
+      props.bearer.label
     )
     notify('Unspent - actions are available again.', NotifyKind.SUCCESS)
   }
@@ -199,7 +201,8 @@ const BearerCard: Component<BearerCardProps> = props => {
     cancelUnveil()
     logActivity(
       'transfer',
-      `Handed over ${msatToSats(props.bearer.amount)} sats from ${serverOf(props.bearer.url)}.`
+      `Handed over ${msatToSats(props.bearer.amount)} sats from ${serverOf(props.bearer.url)}.`,
+      props.bearer.label
     )
     notify('Marked as handed over and spent.', NotifyKind.SUCCESS)
   }
@@ -388,7 +391,8 @@ const BearerCard: Component<BearerCardProps> = props => {
               removeBearer(props.bearer.id)
               logActivity(
                 'deleted',
-                `Cleared a spent ${msatToSats(props.bearer.amount)} sat note from ${serverOf(props.bearer.url)}.`
+                `Cleared a spent ${msatToSats(props.bearer.amount)} sat note from ${serverOf(props.bearer.url)}.`,
+                props.bearer.label
               )
               notify('Spent note cleared.', NotifyKind.SUCCESS)
             }}

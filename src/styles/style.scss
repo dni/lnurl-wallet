@@ -163,9 +163,24 @@ h2 {
   opacity: 0.8;
 }
 
-.activity-message {
+.activity-message-group {
+  display: flex;
+  flex-direction: column;
   flex: 1;
   min-width: 0;
+  gap: 2px;
+}
+
+.activity-message {
+  overflow-wrap: anywhere;
+}
+
+// the acted-on note's own label (see ActivityEvent.label) - same styling
+// language as BearerCard's .bearer-label, so it reads as "yours" here too
+.activity-label {
+  font-size: 0.85em;
+  font-style: italic;
+  opacity: 0.75;
   overflow-wrap: anywhere;
 }
 
@@ -174,6 +189,24 @@ h2 {
   font-size: 0.85em;
   opacity: 0.7;
   white-space: nowrap;
+}
+
+// back button + title + (pushed right) clear-log button - its own row
+// rather than reusing .wallet-hero-header, whose justify-content: flex-end
+// is tuned for Wallet.tsx's own icon-only pair and would bunch this page's
+// title in with them instead of anchoring it next to the back button
+.activity-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  h2 {
+    margin: 0;
+  }
+}
+
+.activity-clear-btn {
+  margin-left: auto;
 }
 
 .wallet-stats {
@@ -993,29 +1026,22 @@ nav {
   margin-bottom: 16px;
 }
 
-// sits at the right edge of .selection-toolbar's own .btns row (which is
-// display:flex - margin-left:auto on the first of this trailing pair pushes
-// both it and the clear button all the way over, same trick
-// .wallet-hero-actions/.bearer-actions use), instead of its own row above
-// the action buttons
-.selection-count {
-  opacity: 0.85;
-  font-size: 0.9em;
-  margin-left: auto;
-}
-
-// Refresh, Split, Combine, Combine & split, Transfer, More - a size up from
-// the app's default buttons, since this is the primary action row for
-// whatever's selected (all moved here from BearerCard so every note-level
-// action lives in one bar). Label/Mark spent/Export/QR - acted on far less
-// often than these - are tucked behind More instead of crowding this row
-// (see .more-menu below)
+// Refresh, Split, Combine, Combine & split, Transfer, More, Clear selection
+// - a size up from the app's default buttons, since this is the primary
+// action row for whatever's selected (all moved here from BearerCard so
+// every note-level action lives in one bar). Label/Mark spent/Export/QR -
+// acted on far less often than these - are tucked behind More instead of
+// crowding this row (see .more-menu below). Clear selection trails the row
+// (last place) but stays inline with everything else here rather than
+// pushed off to the far edge - same left-aligned reasoning as the list
+// controls' own Show spent/Group by mint toggles
 .refresh-btn,
 .split-single-btn,
 .combine-btn,
 .split-btn,
 .transfer-btn,
-.more-btn {
+.more-btn,
+.clear-selection-btn {
   padding: 10px 18px;
   font-size: 1.05em;
 }
@@ -1024,7 +1050,8 @@ nav {
 .combine-btn,
 .split-btn,
 .transfer-btn,
-.more-btn {
+.more-btn,
+.clear-selection-btn {
   margin-left: 8px;
 }
 
