@@ -1319,8 +1319,26 @@ nav {
 
 .bearer-actions {
   display: flex;
+  align-items: center;
   gap: 6px;
-  // pushes this group to the far right of the (flex) .btns row it sits in
+  // spans the whole (flex) .btns row it sits in, rather than shrink-wrapping
+  // its own content - Unveil/Copy sit flush left as a result, with Mark
+  // spent's own auto margin (see .bearer-action-right) then having actual
+  // room to push it to the right edge instead of doing nothing
+  width: 100%;
+  // a size up from the app's default icon-btn, since these are a note
+  // card's own primary actions (Unveil/Copy/Mark spent, Unspend/Clear)
+  .icon-btn {
+    padding: 11px;
+    font-size: 1.1em;
+  }
+}
+
+// Mark spent trails Unveil/Copy within .bearer-actions but reads as a
+// separate, more consequential action - pushed to the right edge of the
+// group instead of sitting flush beside them, same auto-margin trick
+// .bearer-actions itself uses against its own parent row
+.bearer-action-right {
   margin-left: auto;
 }
 

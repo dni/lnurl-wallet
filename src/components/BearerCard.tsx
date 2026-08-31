@@ -8,7 +8,8 @@ import {
   IoHardwareChipSharp,
   IoEyeSharp,
   IoCopySharp,
-  IoRefreshSharp
+  IoRefreshSharp,
+  IoCheckmarkSharp
 } from 'solid-icons/io'
 
 import type {Bearer} from '../storage'
@@ -294,6 +295,13 @@ const BearerCard: Component<BearerCardProps> = props => {
               <div class="bearer-actions">
                 <button
                   class="icon-btn"
+                  title="Unveil to hand over"
+                  onClick={startUnveil}
+                >
+                  <IoEyeSharp />
+                </button>
+                <button
+                  class="icon-btn"
                   title="Copy this note to clipboard"
                   onClick={() =>
                     copyToClipboard(toBech32Lnurl(props.bearer.url))
@@ -302,18 +310,11 @@ const BearerCard: Component<BearerCardProps> = props => {
                   <IoCopySharp />
                 </button>
                 <button
-                  class="icon-btn"
+                  class="icon-btn bearer-action-right"
                   title="Mark as spent - locks this note without removing it, e.g. if you already handed it out some other way"
                   onClick={markSpent}
                 >
-                  <IoBanSharp />
-                </button>
-                <button
-                  class="icon-btn"
-                  title="Unveil to hand over"
-                  onClick={startUnveil}
-                >
-                  <IoEyeSharp />
+                  <IoCheckmarkSharp />
                 </button>
               </div>
             </div>
