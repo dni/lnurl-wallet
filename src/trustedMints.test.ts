@@ -247,3 +247,39 @@ describe('removeTrustedMint', () => {
     expect(mod.isMintTrusted('open.example')).toBe(false)
   })
 })
+
+describe('unlockTrustedMint', () => {
+  it('clears the lock so a mint with no notes left can be removed', () => {
+    mod.lockTrustedMint('held.example', KEY_A)
+    expect(() => mod.removeTrustedMint('held.example')).toThrow()
+    mod.unlockTrustedMint('held.example')
+    expect(
+      mod.trustedMints().find(m => m.server === 'held.example')?.locked
+    ).toBe(false)
+    mod.removeTrustedMint('held.example')
+    expect(mod.isMintTrusted('held.example')).toBe(false)
+  })
+
+  it('is a no-op for an already-unlocked or unknown server', () => {
+    mod.addTrustedMint('open.example', KEY_A)
+    mod.unlockTrustedMint('open.example') // already unlocked
+    expect(
+      mod.trustedMints().find(m => m.server === 'open.example')?.locked
+    ).toBe(false)
+    mod.unlockTrustedMint('nowhere.example') // not trusted at all
+    expect(mod.trustedMints()).toHaveLength(1)
+  })
+
+  it('leaves the pinned key and other fields untouched', () => {
+    mod.lockTrustedMint('held.example', KEY_A)
+    mod.unlockTrustedMint('held.example')
+    const entry = mod.trustedMints().find(m => m.server === 'held.example')
+    expect(entry?.mintPubkey).toBe(KEY_A)
+    // holding another bearer from this mint re-locks it the same as the
+    // first time
+    expect(mod.lockTrustedMint('held.example', KEY_A)).toBe('unchanged')
+    expect(
+      mod.trustedMints().find(m => m.server === 'held.example')?.locked
+    ).toBe(true)
+  })
+})

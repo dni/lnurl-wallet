@@ -5,6 +5,7 @@ import {
   createSignal,
   onCleanup,
   onMount,
+  untrack,
   useContext
 } from 'solid-js'
 import toast from 'solid-toast'
@@ -46,7 +47,9 @@ import {
 import {serverOf} from './lnurlcash'
 import type {TrustKeyResult} from './trustedMints'
 import {
+  trustedMints,
   lockTrustedMint,
+  unlockTrustedMint,
   grandfatherTrustedMint,
   clearTrustedMints
 } from './trustedMints'
@@ -311,6 +314,30 @@ export const WalletProvider = (props: {children: JSX.Element}) => {
   const reloadBearers = async () => {
     setBearers(await loadBearers(requireKey()))
   }
+
+  // lockTrustedMint only ever locks - it never learns that a note got spent
+  // and cleared, so without this a mint stayed irrevocably locked on the
+  // Mints page forever, even once nothing backed the lock anymore. Runs
+  // whenever bearers() changes (a spend, a clear, or the initial load after
+  // unlocking), and un-ticks the lock for any trusted mint no longer backed
+  // by an unspent bearer - self-healing stale locks left over from before
+  // this effect existed, not just ones created going forward. trustedMints()
+  // is read untracked so this only re-runs on bearer changes, not on every
+  // unrelated trust-list update (a rename, a refreshed node info, ...)
+  createEffect(() => {
+    const heldServers = new Set(
+      bearers()
+        .filter(b => !b.spent)
+        .map(b => serverOf(b.url))
+    )
+    untrack(() => {
+      for (const mint of trustedMints()) {
+        if (mint.locked && !heldServers.has(mint.server)) {
+          unlockTrustedMint(mint.server)
+        }
+      }
+    })
+  })
 
   // best-effort and silent on failure - a wallet action that already
   // succeeded (the note was split/melted/whatever) must never surface an

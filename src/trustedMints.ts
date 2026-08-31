@@ -380,6 +380,21 @@ export const removeTrustedMint = (server: string): void => {
   persist(trustedMints().filter(m => m.server !== server))
 }
 
+// releases the lock once this wallet no longer holds any unspent bearer
+// from `server` - lockTrustedMint only ever sets locked to true, so without
+// this a mint stayed irrevocably locked forever, even after every note from
+// it was spent and cleared (see WalletContext's reconciliation effect,
+// which calls this whenever the held bearers change). The entry and its
+// pinned key are left alone - only the removeTrustedMint guard comes off;
+// holding another bearer from this mint later re-locks it the same way the
+// first one did.
+export const unlockTrustedMint = (server: string): void => {
+  const current = trustedMints()
+  const existing = current.find(m => m.server === server)
+  if (!existing?.locked) return
+  persist(current.map(m => (m.server === server ? {...m, locked: false} : m)))
+}
+
 // wipes the whole registry - part of forgetting a wallet (WalletContext's
 // forgetWallet): nothing about a wallet's mints (including otherwise
 // irremovable locked pins) should linger on the device after it
