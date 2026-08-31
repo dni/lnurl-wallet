@@ -91,7 +91,8 @@ const ReceiveDialog: Component<ReceiveDialogProps> = props => {
           await updateBearer(bearer.id, {
             url: result.url,
             callback: result.callback,
-            deviceId: result.deviceId
+            deviceId: result.deviceId,
+            deviceHash: result.deviceHash
           })
         } else {
           const url = await secureReceivedNote(received)

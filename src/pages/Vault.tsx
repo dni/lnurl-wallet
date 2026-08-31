@@ -83,8 +83,10 @@ const Vault: Component = () => {
     if (!current) return
     const adopted = await adoptDeviceNote(current, {
       id: note.id,
+      h: note.h,
       host: note.host,
-      amountMsat: note.amount_msat
+      amountMsat: note.amount_msat,
+      signature: note.sig
     })
     await addBearer({
       url: adopted.url,
@@ -92,7 +94,8 @@ const Vault: Component = () => {
       amount: adopted.amountMsat,
       verified: true,
       mintPubkey: adopted.mintPubkey,
-      deviceId: adopted.deviceId
+      deviceId: adopted.deviceId,
+      deviceHash: adopted.deviceHash
     })
     logActivity(
       'transfer',

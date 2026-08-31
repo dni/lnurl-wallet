@@ -55,6 +55,7 @@ import {
 } from './trustedMints'
 import {clearStoreableLinks} from './storeableLinks'
 import {clearPendingDeviceOps} from './deviceQueue'
+import {clearPendingDeviceMint} from './pendingDeviceMint'
 
 // the one lockTrustedMint outcome a holder must hear about: the mint is
 // advertising a DIFFERENT signing key than the one pinned - the new key was
@@ -85,6 +86,7 @@ export type NewBearer = {
   verified: boolean
   mintPubkey?: string
   deviceId?: string
+  deviceHash?: string
 }
 
 export type WalletContextType = {
@@ -257,6 +259,7 @@ export const WalletProvider = (props: {children: JSX.Element}) => {
     clearTrustedMints()
     clearStoreableLinks()
     clearPendingDeviceOps()
+    clearPendingDeviceMint()
     aesKey = null
     setCashRoot(null)
     setPubkey(null)

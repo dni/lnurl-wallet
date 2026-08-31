@@ -434,7 +434,8 @@ const Melt: Component = () => {
         amount: settled.amountMsat,
         verified,
         mintPubkey: base.mintPubkey,
-        deviceId: settled.deviceId
+        deviceId: settled.deviceId,
+        deviceHash: settled.deviceHash
       })
       for (const bearer of picked) removeBearer(bearer.id)
       return added
@@ -656,7 +657,8 @@ const Melt: Component = () => {
           amount: settledChange.amountMsat,
           verified: changeVerified,
           mintPubkey: base.mintPubkey,
-          deviceId: settledChange.deviceId
+          deviceId: settledChange.deviceId,
+          deviceHash: settledChange.deviceHash
         })
         const spend = await addBearer({
           url: parts.target.url,
@@ -664,7 +666,8 @@ const Melt: Component = () => {
           amount: target,
           verified: true,
           mintPubkey: base.mintPubkey,
-          deviceId: parts.target.deviceId
+          deviceId: parts.target.deviceId,
+          deviceHash: parts.target.deviceHash
         })
         for (const bearer of picked) removeBearer(bearer.id)
         let result: MeltResult

@@ -107,14 +107,23 @@ callback?k1=X&k1=Y&h=<sha256(Z)>         merge: all burned, one note keyed by h 
             >
               LUD-06
             </a>{' '}
-            payRequest advertising <code>withdrawLink</code> mints notes - the{' '}
-            <strong>payment preimage</strong> of its paid invoice is the bearer
-            secret. Pay the invoice with any Lightning wallet, paste the
-            preimage it reveals; the wallet verifies it with the service, then
-            immediately rotates it (that verifying GET already put the preimage
-            on the wire) before storing the note - opportunistically obtaining
-            its first offline-verifiable signature in the same step. When a
-            mint's invoice also advertises a{' '}
+            payRequest advertising <code>withdrawLink</code> mints notes. For
+            every new note, this wallet requires <code>commentAllowed: 64</code>{' '}
+            and sends the note's SHA-256 commitment as the callback{' '}
+            <code>comment</code> and identical additive <code>h</code>. With a
+            connected LNURLvault/Heartwood and a receipt-capable mint, the vault
+            generates and retains the secret before the invoice exists. The
+            wallet displays that invoice only after its quote commits the same
+            hash and amount, then authenticates the settled note signature
+            against the pinned mint key before confirming the device note. No
+            secret export, import, or rotate occurs. The public recovery state
+            is saved before the invoice QR appears, so a reload can safely
+            resume. If that receipt extension is unavailable, a fresh invoice
+            instead binds a seed-recoverable browser secret which is imported
+            and rotated onto the connected vault after settlement. The payment
+            preimage is proof, never the note. A mint without the mandatory
+            comment capacity is refused before any invoice is created or paid.
+            When an invoice advertises a{' '}
             <a
               href="https://github.com/lnurl/luds/blob/luds/21.md"
               target="_blank"
@@ -123,18 +132,15 @@ callback?k1=X&k1=Y&h=<sha256(Z)>         merge: all burned, one note keyed by h 
               LUD-21
             </a>{' '}
             verify URL, a "Check payment" button appears with a countdown and
-            checks automatically every 5 seconds - if that check ever returns
-            the preimage itself, the wallet claims and rotates the note right
-            then, no pasting needed. Most mints won't return it there (for
-            lnurlcash the preimage is the spend secret, so handing it to anyone
-            who merely knows the payment hash - not proof of payment - would let
-            them steal the note first), in which case verify just confirms the
-            payment settled and pasting the preimage by hand remains the way to
-            claim. A mint MAY also withhold a fee on minting, advertised as an
-            extra <code>Mint fees: base_msat,ppm</code> entry in the
-            payRequest's metadata - when present, this wallet shows it and
-            requests a bigger invoice so the note you end up holding still nets
-            the amount you asked for.
+            checks automatically every 5 seconds. A settled response is bound to
+            the requested invoice; the wallet either validates the sealed
+            receipt or claims with its already held browser secret. Any returned
+            preimage remains ordinary payment proof. A mint MAY also withhold a
+            fee on minting, advertised as an extra{' '}
+            <code>Mint fees: base_msat,ppm</code> entry in the payRequest's
+            metadata - when present, this wallet shows it and requests a bigger
+            invoice so the note you end up holding still nets the amount you
+            asked for.
           </li>
           <li>
             <strong>Melt</strong> has the service pay a bolt11 invoice of

@@ -16,6 +16,7 @@ import {
   toBech32Lnurl,
   probeBurnedNote,
   canUseMintComment,
+  requireMintComment,
   generateNoteSecret,
   hashK1,
   PendingNoteError,
@@ -39,9 +40,8 @@ import {receiveNote} from './receive'
 const BASE = 'https://mock-mint.test'
 const PAY_URL = `${BASE}/pay`
 const PAY_CALLBACK = `${BASE}/pay/cb`
-// same mint, a payLink that additionally advertises LUD-12 commentAllowed
-// (see canUseMintComment) - separate from PAY_URL so the plain no-comment
-// tests below stay exactly as they were
+// Current mint profile, advertising the mandatory LUD-12 comment capacity.
+// PAY_URL remains a generic/legacy fixture for low-level protocol tests.
 const PAY_COMMENT_URL = `${BASE}/pay-comment`
 const PAY_COMMENT_CALLBACK = `${BASE}/pay-comment/cb`
 const WITHDRAW_URL = `${BASE}/w`
@@ -56,9 +56,7 @@ const randomHex = (bytes: number): string =>
 const idFromVerifyUrl = (url: string): string => url.split('/').pop()!
 
 type Note = {amountMsat: number; pending: boolean}
-// `comment`: LUD-12 comment sent alongside this invoice request, if any -
-// per LUD-25, once settled a valid one makes the note keyed by that hash
-// instead of by the payment preimage (see MockMint.settleInvoice)
+// `comment`: the mandatory current-mint output commitment.
 type Invoice = {
   amountMsat: number
   preimage: string
@@ -102,13 +100,9 @@ class MockMint {
     return this.notes.has(hashK1(k1))
   }
 
-  // simulates the wallet's own Lightning node paying an invoice this mock
-  // issued: settles it and credits an outstanding note, per LUD-25's
-  // minting flow. Keyed by the preimage's hash normally - but if a valid
-  // LUD-12 comment (a bare hex sha256) came with the invoice request, the
-  // note is keyed by that hash instead (Protecting a freshly minted note
-  // from a preimage race): SERVICE never learns the wallet-side secret
-  // behind it, only the hash the comment already was.
+  // Simulates paying an invoice. Current mint invoices are always keyed by
+  // the LUD-12 commitment; the legacy generic fixture remains preimage-keyed
+  // only for compatibility tests unrelated to new wallet mint creation.
   settleInvoice(invoiceId: string): void {
     const invoice = this.invoices.get(invoiceId)
     if (!invoice) throw new Error('no such invoice')
@@ -191,6 +185,12 @@ class MockMint {
     if (url.pathname === '/pay/cb' || url.pathname === '/pay-comment/cb') {
       const amountMsat = Number(params.get('amount'))
       const comment = params.get('comment') ?? undefined
+      if (
+        url.pathname === '/pay-comment/cb' &&
+        (!comment || !/^[0-9a-f]{64}$/i.test(comment))
+      ) {
+        return this.error('comment must be 64 hex characters')
+      }
       const id = String(this.invoiceCounter++)
       this.invoices.set(id, {
         amountMsat,
@@ -478,7 +478,7 @@ describe('mint -> rotate -> split -> merge -> melt', () => {
   })
 })
 
-describe('LUD-12 comment protection (LUD-25 preimage-race mitigation)', () => {
+describe('current LUD-25 mandatory comment binding', () => {
   it('mints a note keyed by the wallet secret, never by the payment preimage', async () => {
     const payInfo = await fetchPayRequest(PAY_COMMENT_URL)
     expect(canUseMintComment(payInfo)).toBe(true)
@@ -511,17 +511,10 @@ describe('LUD-12 comment protection (LUD-25 preimage-race mitigation)', () => {
     expect(info.k1).toBe(secret)
   })
 
-  it('a mint with no commentAllowed leaves the preimage as the only secret', async () => {
+  it('refuses a mint with no commentAllowed before requesting an invoice', async () => {
     const payInfo = await fetchPayRequest(PAY_URL)
     expect(canUseMintComment(payInfo)).toBe(false)
-
-    const invoice = await requestInvoice(payInfo.callback, 21000)
-    mint.settleInvoice(idFromVerifyUrl(invoice.verify!))
-    const preimage = (await fetchInvoiceVerification(invoice.verify!)).preimage!
-
-    // no comment was sent, so - per LUD-25's fallback - the note is keyed
-    // by the preimage itself, exactly as the pre-LUD-12 flow always was
-    expect(mint.isOutstanding(preimage)).toBe(true)
+    expect(() => requireMintComment(payInfo)).toThrow(/commentAllowed: 64/)
   })
 })
 
@@ -710,6 +703,28 @@ describe('receiveNote surfaces a definitive spent/unknown report', () => {
 })
 
 describe('service-response sanity checks', () => {
+  it('sends the same mint output as mandatory comment and additive h, and parses receipt fields', async () => {
+    const h = 'ab'.repeat(32)
+    let requested: URL | null = null
+    vi.stubGlobal('fetch', (async (input: string | URL) => {
+      requested = new URL(input.toString())
+      return {
+        json: async () => ({
+          pr: 'lnbc1000n1mockinvoice',
+          verify: `${BASE}/verify/receipt`,
+          mintToHash: true,
+          mint: {h: h.toUpperCase(), amount: 99000}
+        })
+      } as unknown as Response
+    }) as typeof fetch)
+
+    const result = await requestInvoice(PAY_CALLBACK, 100_000, h)
+    expect(requested!.searchParams.get('comment')).toBe(h)
+    expect(requested!.searchParams.get('h')).toBe(h)
+    expect(result.mintToHash).toBe(true)
+    expect(result.mint).toEqual({h, amountMsat: 99000})
+  })
+
   it('requestInvoice rejects an invoice for a different amount than requested', async () => {
     // the mock's own invoices are amountless (lnbcmockN), which pass
     // through unchecked - this needs one with a decodable, wrong amount

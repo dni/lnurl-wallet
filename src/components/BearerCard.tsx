@@ -14,7 +14,8 @@ import {
   noteK1,
   noteSignature,
   serverOf,
-  verifyNoteSignature
+  verifyNoteSignature,
+  verifyNoteSignatureHash
 } from '../lnurlcash'
 import {
   msatToSats,
@@ -91,7 +92,14 @@ const BearerCard: Component<BearerCardProps> = props => {
       getTrustedMintPubkey(server) ??
       (isMintUnconfirmed(server) ? null : props.bearer.mintPubkey)
     if (!sig || !mintPubkey) return false
-    return verifyNoteSignature(k1(), props.bearer.amount, sig, mintPubkey)
+    return props.bearer.deviceHash
+      ? verifyNoteSignatureHash(
+          props.bearer.deviceHash,
+          props.bearer.amount,
+          sig,
+          mintPubkey
+        )
+      : verifyNoteSignature(k1(), props.bearer.amount, sig, mintPubkey)
   })
 
   const unspend = () => {

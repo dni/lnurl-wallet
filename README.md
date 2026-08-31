@@ -75,13 +75,24 @@ services that don't offer it leave the note simply locked as spent, with
 no automatic way to learn its outcome beyond checking back later.
 
 **Minting**: a [LUD-06](https://github.com/lnurl/luds/blob/luds/06.md)
-payRequest advertising `withdrawLink` mints notes - the **payment
-preimage** of its paid invoice becomes a valid `k1` at that endpoint. This
-wallet has no Lightning node of its own, so you pay the invoice with any
-wallet and paste back the preimage it reveals; the wallet verifies it with
-the service, then immediately rotates it - that verifying GET already put
-the preimage on the wire - before storing the note, same as it does for a
-scanned or pasted note.
+payRequest advertising `withdrawLink` mints notes. For new notes this wallet
+requires `commentAllowed: 64` and sends the new note's SHA-256 commitment as
+the callback `comment` (and the identical additive `h`). With a connected
+LNURLvault/Heartwood and a receipt-capable mint, the vault creates and keeps
+the secret `PENDING` before the invoice exists. The wallet refuses to display
+that invoice until its quote commits the same hash and amount, then verifies
+the settled receipt's note signature against the pinned mint key before
+confirming the device note. The secret is never exported, imported, or
+rotated. The public quote state is persisted before its QR is shown, so a
+reload can resume against the hash exposed by `list_notes`.
+
+Without that additive receipt, the compatible fallback chooses the secret
+from the seed-derived browser cash ladder, persists its advanced index before
+requesting a fresh invoice, then imports and rotates the bound note onto the
+connected vault after settlement. In both paths the payment preimage proves
+settlement but is not the note. Mints without the mandatory comment capacity
+are refused before an invoice is created or paid. Manual preimage import
+remains available only to recover legacy notes created elsewhere.
 
 **Offline verification (optional)**: a service MAY publish a `mintPubkey`
 on its withdrawRequest response and sign each fresh secret's hash on
@@ -118,6 +129,9 @@ The wallet follows the spec's security guidance:
   service** (see the callback table above) - the service is never a prior
   holder of it, unlike an informational GET or a scanned/pasted note,
   which do put a secret on the wire and are handled by the next point.
+- A receipt-backed fresh mint is stronger with a vault connected: the
+  **device generates and retains the secret before payment**, while the
+  companion authenticates only its hash, amount, invoice and mint signature.
 - Received (scanned/pasted) notes are **rotated immediately** after the
   informational GET that verifies them - that GET necessarily puts the old
   secret on the wire, so the previous holder's copy needs burning regardless

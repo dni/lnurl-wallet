@@ -114,6 +114,21 @@ export const nextCashSecret = (domain: string): string | null => {
   return secret
 }
 
+// Mint and cross-mint transfer quotes become payable promises to create a
+// specific output. Their secret must survive a reload before an invoice is
+// shown, so those paths may not use generateNoteSecret's in-memory random
+// fallback. The derived index is persisted by nextCashSecret before this
+// returns and can be scanned again from the wallet seed during recovery.
+export const requireRecoverableCashSecret = (domain: string): string => {
+  const secret = nextCashSecret(domain)
+  if (secret === null) {
+    throw new Error(
+      'This wallet cannot safely create a mint invoice until its seed-derived cash key is unlocked. Restore or re-enter the wallet seed first.'
+    )
+  }
+  return secret
+}
+
 // merges a backup's per-SERVICE counters in - never decreases one (that
 // would risk re-deriving and reusing an index this device, or the backup's
 // own device, already generated a secret at), and simply ignores anything

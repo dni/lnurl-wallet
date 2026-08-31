@@ -46,6 +46,13 @@ describe('generateNoteSecret fallback without a loaded root', () => {
     cashSecrets.setCashRoot(null)
     expect(cashSecrets.nextCashSecret('mint.example')).toBeNull()
   })
+
+  it('refuses a payable mint secret when it cannot be recovered from the seed', () => {
+    expect(() =>
+      cashSecrets.requireRecoverableCashSecret('mint.example')
+    ).toThrow(/seed-derived cash key/)
+    expect(cashSecrets.nextCashSecretIndex('mint.example')).toBe(0)
+  })
 })
 
 describe('deterministic secrets', () => {
@@ -84,6 +91,13 @@ describe('deterministic secrets', () => {
 })
 
 describe('per-SERVICE index counters', () => {
+  it('persists a recoverable mint secret before returning it', () => {
+    loadRoot()
+    const secret = cashSecrets.requireRecoverableCashSecret('mint.example')
+    expect(secret).toBe(cashSecrets.cashSecretAtIndex('mint.example', 0))
+    expect(cashSecrets.nextCashSecretIndex('mint.example')).toBe(1)
+  })
+
   it('nextCashSecret claims and persists sequential indices per domain', () => {
     loadRoot()
     const first = cashSecrets.nextCashSecret('mint.example')

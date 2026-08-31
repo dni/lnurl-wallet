@@ -30,6 +30,10 @@ export type DeviceNoteState = 'pending' | 'confirmed' | 'spent'
 
 export type DeviceNote = {
   id: string
+  // sha256(secret): public recovery metadata. Current firmware includes it
+  // so a browser can match a persisted bound-mint receipt after reload
+  // without asking the vault to export k1. Optional for older firmware.
+  h?: string
   state: DeviceNoteState
   amount_msat: number
   label: string
@@ -695,6 +699,7 @@ const isDeviceNote = (value: any): value is DeviceNote =>
   value !== null &&
   typeof value === 'object' &&
   isVaultId(value.id) &&
+  (value.h === undefined || isHex64(value.h)) &&
   (value.state === 'pending' ||
     value.state === 'confirmed' ||
     value.state === 'spent') &&

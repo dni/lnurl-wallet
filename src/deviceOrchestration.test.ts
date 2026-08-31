@@ -11,6 +11,8 @@ import {
   deviceSplit,
   deviceSettle,
   deviceMint,
+  stageDeviceBoundMint,
+  confirmDeviceBoundMint,
   deviceMeltRequest,
   deviceMarkSpent,
   markDeviceNoteSpent,
@@ -238,6 +240,7 @@ class MockDeviceFirmware implements DeviceTransport {
           ok: true,
           notes: [...this.notes.values()].map(n => ({
             id: n.id,
+            h: hashK1(n.secret),
             state: n.state,
             amount_msat: n.amount_msat,
             label: n.label,
@@ -789,6 +792,33 @@ describe('device melt', () => {
 })
 
 describe('deviceMint', () => {
+  it('confirms a vault-generated bound mint without importing or rotating a secret', async () => {
+    const firmware = new MockDeviceFirmware()
+    const client = new DeviceClient(firmware)
+    const staged = await stageDeviceBoundMint(client)
+
+    expect(firmware.get(staged.deviceId)?.state).toBe('pending')
+    await expect(client.exportSecret(staged.deviceId)).rejects.toMatchObject({
+      code: 'invalid_state'
+    })
+
+    const signature = 'ab'.repeat(65)
+    const result = await confirmDeviceBoundMint(client, {
+      ...staged,
+      withdrawLink: WITHDRAW_URL,
+      amountMsat: 21000,
+      signature
+    })
+
+    expect(firmware.get(staged.deviceId)?.state).toBe('confirmed')
+    expect(result.deviceId).toBe(staged.deviceId)
+    expect(result.deviceHash).toBe(staged.h)
+    expect(result.callback).toBe('')
+    expect(result.url).not.toContain('k1=')
+    expect(result.url).toContain(`sig=${signature}`)
+    expect(await client.exportSecret(staged.deviceId)).toHaveLength(64)
+  })
+
   it('imports a payment preimage and rotates it under device custody', async () => {
     const mint = new MockMint()
     const firmware = new MockDeviceFirmware()

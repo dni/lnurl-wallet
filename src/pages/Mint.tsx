@@ -20,7 +20,12 @@ import {
 
 import {useWallet} from '../WalletContext'
 import {useDevice} from '../DeviceContext'
-import type {PayRequestInfo, MintAddressInfo} from '../lnurlcash'
+import type {
+  PayRequestInfo,
+  MintAddressInfo,
+  VerifyResult,
+  InvoiceResult
+} from '../lnurlcash'
 import {
   resolveMintInput,
   fetchPayRequest,
@@ -41,12 +46,20 @@ import {
   lightningAddressUsername,
   probeBurnedNote,
   sameInvoice,
-  generateNoteSecret,
+  generateMintSecret,
   hashK1,
-  canUseMintComment,
+  requireMintComment,
+  requireBoundMintQuote,
+  validateBoundMintReceipt,
   AmbiguousMutationError
 } from '../lnurlcash'
-import {deviceMint, DeviceImportLeftBehindError} from '../deviceOrchestration'
+import {
+  deviceMint,
+  DeviceImportLeftBehindError,
+  stageDeviceBoundMint,
+  discardDeviceBoundMint,
+  confirmDeviceBoundMint
+} from '../deviceOrchestration'
 import {
   notify,
   NotifyKind,
@@ -60,6 +73,7 @@ import {
 } from '../helpers'
 import {
   isMintTrusted,
+  getTrustedMintPubkey,
   addTrustedMint,
   cacheTrustedMintNodeInfo,
   getTrustedMintAddress,
@@ -67,6 +81,12 @@ import {
   trustedMints,
   PUBLIC_MINTS
 } from '../trustedMints'
+import {
+  clearPendingDeviceMint,
+  readPendingDeviceMint,
+  savePendingDeviceMint,
+  type PendingDeviceMint
+} from '../pendingDeviceMint'
 import {
   storeableMints,
   addStoreableMint,
@@ -99,14 +119,12 @@ const guessMintAddress = (server: string): string => `mint@${server}`
 const mintAddressFor = (server: string): string =>
   getTrustedMintAddress(server) || guessMintAddress(server)
 
-// LUD-25 minting: pay a payRequest that advertises `withdrawLink` - the
-// payment preimage IS the bearer secret. This wallet has no node of its
-// own, so the invoice is paid externally and the preimage (which every
-// Lightning wallet reveals after a successful payment) is claimed here -
-// either freshly requested from this page, or already in hand from a
-// payment made some other way (the mint's own site, a different wallet).
+// LUD-25 minting: pay a payRequest that advertises `withdrawLink` and enough
+// comment capacity to bind the output to a wallet-chosen secret. This wallet
+// has no Lightning node of its own, so the invoice is paid externally; its
+// preimage proves settlement but never becomes the new bearer secret.
 const Mint: Component = () => {
-  const {addBearer, logActivity} = useWallet()
+  const {bearers, addBearer, logActivity} = useWallet()
   const {client: deviceClient} = useDevice()
   const navigate = useNavigate()
 
@@ -129,13 +147,14 @@ const Mint: Component = () => {
   // than what was expected, the latter to work out the fee actually paid
   const [invoicedMsat, setInvoicedMsat] = createSignal(0)
   const [invoicedGrossMsat, setInvoicedGrossMsat] = createSignal(0)
-  // LUD-25 comment protection (see lnurlcash.ts's canUseMintComment): set
-  // only when the current invoice was requested with `comment=hashK1(this)`
-  // - the note's real k1 once paid, never the payment preimage. null means
-  // this mint didn't support it (or wasn't offered enough commentAllowed),
-  // the legacy no-comment fallback where the preimage itself is the secret.
+  // The wallet-chosen k1 for the current invoice. It is null before an
+  // invoice exists; current mint creation refuses rather than creating an
+  // unnamed, payment-preimage-backed note.
   const [mintSecret, setMintSecret] = createSignal<string | null>(null)
-  const [preimage, setPreimage] = createSignal('')
+  // Present only for the preferred sealed flow. Everything here is public
+  // recovery metadata; the corresponding k1 never leaves the vault.
+  const [deviceMintAttempt, setDeviceMintAttempt] =
+    createSignal<PendingDeviceMint | null>(null)
   const [directPreimage, setDirectPreimage] = createSignal('')
   const [busy, setBusy] = createSignal(false)
 
@@ -191,9 +210,17 @@ const Mint: Component = () => {
       }
       if (result.settled) {
         stopPolling()
-        // if this mint was paid with comment protection (see getInvoice),
-        // the note's real k1 is the wallet-held secret, not whatever
-        // preimage the service discloses here - prefer it when present
+        const deviceAttempt = deviceMintAttempt()
+        if (deviceAttempt) {
+          notify(
+            'Payment settled - authenticating the vault receipt...',
+            NotifyKind.LOADING
+          )
+          await claimDeviceMint(deviceAttempt, result)
+          return
+        }
+        // The note's real k1 is the wallet-held secret, not whatever
+        // settlement preimage the service discloses here.
         const secret = mintSecret()
         if (secret) {
           notify(
@@ -201,19 +228,10 @@ const Mint: Component = () => {
             NotifyKind.LOADING
           )
           await claim(secret, invoicedMsat(), invoicedGrossMsat())
-        } else if (result.preimage && isPreimage(result.preimage)) {
-          // pre-fill the manual input too, so a failed auto-claim still
-          // leaves the holder one click away from retrying by hand
-          setPreimage(result.preimage)
-          notify(
-            'Payment settled - claiming automatically...',
-            NotifyKind.LOADING
-          )
-          await claim(result.preimage, invoicedMsat(), invoicedGrossMsat())
         } else {
           notify(
-            'Payment settled - paste the preimage your wallet revealed to claim the note.',
-            NotifyKind.SUCCESS
+            'Payment settled, but the wallet-held note secret is missing. Do not pay or retry this invoice.',
+            NotifyKind.ERROR
           )
         }
       }
@@ -239,6 +257,29 @@ const Mint: Component = () => {
     }, 1000)
   }
 
+  const restoreDeviceMint = (pending: PendingDeviceMint) => {
+    setDeviceMintAttempt(pending)
+    setMintInput(pending.mintInput)
+    setPayRequest(pending.payRequest)
+    setMode('invoice')
+    setInvoice(pending.invoice.pr)
+    setInvoicedMsat(pending.amountMsat)
+    setInvoicedGrossMsat(pending.grossMsat)
+    setMintSecret(null)
+    startPolling(pending.invoice.verify)
+  }
+
+  // A direct device-bound invoice is recoverable after a reload because its
+  // public quote state was persisted before the QR was rendered. The device
+  // still holds the only k1 in PENDING state.
+  let restoredPendingMint = false
+  createEffect(() => {
+    if (restoredPendingMint) return
+    restoredPendingMint = true
+    const pending = readPendingDeviceMint()
+    if (pending) restoreDeviceMint(pending)
+  })
+
   // manual click: check right away, then restart the countdown so the next
   // automatic tick isn't immediately on its heels. checkVerify's own guard
   // stops a second concurrent verify, but on its own that still lets a
@@ -258,9 +299,9 @@ const Mint: Component = () => {
     setPayRequest(info)
     setMode('invoice')
     setInvoice(null)
-    setPreimage('')
     setDirectPreimage('')
     setMintSecret(null)
+    setDeviceMintAttempt(null)
     stopPolling()
     setVerifyUrl(null)
   }
@@ -268,9 +309,10 @@ const Mint: Component = () => {
   // closes the combined lookup/trust/invoice dialog and drops this mint
   // attempt entirely - back to the lookup step, same as
   // proceedWithPayRequest's reset but in reverse, plus the node info/trust
-  // gate that can precede it. A half-paid invoice isn't lost by this: its
-  // preimage still claims the note later via "I already have a preimage"
-  // once the same mint is looked up again.
+  // gate that can precede it. A half-paid invoice is not lost by this: its
+  // bound secret came from the persisted seed ladder and a recovery scan can
+  // find the note later. The invoice-specific controls are not persisted, so
+  // the holder should still keep this dialog open while paying.
   const closeMintDialog = () => {
     setMintNodeInfo(null)
     setPendingTrust(null)
@@ -279,12 +321,20 @@ const Mint: Component = () => {
     setPayRequest(null)
     setInvoice(null)
     setMode('invoice')
-    setPreimage('')
     setDirectPreimage('')
     setMintSecret(null)
   }
 
   const lookup = async () => {
+    const pendingMint = deviceMintAttempt() ?? readPendingDeviceMint()
+    if (pendingMint) {
+      restoreDeviceMint(pendingMint)
+      notify(
+        'Resumed the invoice already bound to your vault. Finish or verify it before starting another device mint.',
+        NotifyKind.SUCCESS
+      )
+      return
+    }
     const url = resolveMintInput(mintInput())
     if (!url) {
       notify('Enter a mint LNURL or Lightning Address.', NotifyKind.ERROR)
@@ -345,7 +395,18 @@ const Mint: Component = () => {
       // already trusted - still worth refreshing the cached display info
       // (Mints.tsx) with whatever this lookup just (re)discovered
       const cached = mintAddressCacheInfo(nodeInfo, username)
-      if (cached) cacheTrustedMintNodeInfo(server, cached)
+      if (mintPubkey) {
+        const trust = addTrustedMint(server, mintPubkey, cached)
+        if (trust === 'rekey-pending') {
+          notify(
+            `${server} advertises a different signing key than the one pinned. Review it on the Mints page before minting a receipt-backed note.`,
+            NotifyKind.ERROR
+          )
+          return
+        }
+      } else if (cached) {
+        cacheTrustedMintNodeInfo(server, cached)
+      }
       proceedWithPayRequest(info)
     } catch (err) {
       notify((err as Error).message, NotifyKind.ERROR)
@@ -442,34 +503,120 @@ const Mint: Component = () => {
   const getInvoice = async () => {
     const info = payRequest()
     if (!info) return
+    const existing = deviceMintAttempt() ?? readPendingDeviceMint()
+    if (existing) {
+      restoreDeviceMint(existing)
+      notify(
+        'Finish the invoice already bound to your vault before creating another one.',
+        NotifyKind.ERROR
+      )
+      return
+    }
     const amount = parseAmount(info)
     if (amount === null) return
     setBusy(true)
     try {
-      // LUD-25 comment protection: if this mint advertises enough
-      // commentAllowed (LUD-12), generate the note's real secret now and
-      // send only its hash as `comment` - the payment preimage never
-      // becomes the bearer secret, so it's safe to disclose (including via
-      // LUD-21 verify below). Otherwise this mint gets the plain no-comment
-      // mint, and the preimage IS the secret - see claim()'s preimage path.
+      // Current LUD-25 minting requires the comment commitment. Refuse
+      // before an invoice exists if the mint does not advertise enough
+      // capacity, then generate the real secret and disclose only its hash.
       // domain the secret is derived/indexed under (see lnurlcash.ts's
-      // generateNoteSecret) is the note's actual home, the withdraw
+      // generateMintSecret) is the note's actual home, the withdraw
       // endpoint - not the payRequest callback, in the unlikely case a mint
       // ever splits those across hosts. withdrawLink is always present here
-      // (this page never reaches getInvoice without it - see lookup), the
-      // fallback is just to keep this call site type-safe without asserting
-      const secret = canUseMintComment(info)
-        ? generateNoteSecret(serverOf(info.withdrawLink || info.callback))
-        : null
-      const result = await requestInvoice(
-        info.callback,
-        amount.grossMsat,
-        secret ? hashK1(secret) : undefined
-      )
+      // because lookup rejects a payRequest that omits it.
+      requireMintComment(info)
+
+      let result: InvoiceResult | null = null
+      const client = deviceClient()
+      const mintServer = serverOf(info.withdrawLink || info.callback)
+      const mintPubkey = getTrustedMintPubkey(mintServer)
+
+      if (client && info.mintToHash === true && mintPubkey) {
+        // The device creates and durably stores k1 first. Confirm that this
+        // firmware also exposes h in list_notes: that public metadata is what
+        // lets a reloaded companion match the pending receipt without export.
+        const staged = await stageDeviceBoundMint(client)
+        let useBrowserFallback = false
+        try {
+          const stagedNote = (await client.listAllNotes()).find(
+            note => note.id === staged.deviceId
+          )
+          if (stagedNote?.h?.toLowerCase() !== staged.h) {
+            useBrowserFallback = true
+            throw new Error(
+              'The connected vault firmware cannot recover a pending bound mint by hash.'
+            )
+          }
+
+          const candidate = await requestInvoice(
+            info.callback,
+            amount.grossMsat,
+            staged.h
+          )
+          let commitment
+          try {
+            commitment = requireBoundMintQuote(
+              candidate,
+              staged.h,
+              amount.grossMsat,
+              info.mintFee
+            )
+          } catch (err) {
+            // The invoice has not been rendered or paid. Throw it away and
+            // request a fresh comment-bound invoice for the compatible
+            // browser-secret/import-and-rotate fallback below.
+            useBrowserFallback = true
+            throw err
+          }
+
+          const pending: PendingDeviceMint = {
+            version: 1,
+            deviceId: staged.deviceId,
+            h: staged.h,
+            mintInput: mintInput(),
+            payRequest: info,
+            invoice: {...candidate, verify: candidate.verify!},
+            grossMsat: amount.grossMsat,
+            amountMsat: commitment.amountMsat,
+            mintPubkey,
+            createdAt: Date.now()
+          }
+          // Persist before setInvoice makes the QR visible or copyable.
+          savePendingDeviceMint(pending)
+          setDeviceMintAttempt(pending)
+          setMintSecret(null)
+          setInvoicedMsat(commitment.amountMsat)
+          result = candidate
+        } catch (err) {
+          try {
+            await discardDeviceBoundMint(client, staged.deviceId)
+          } catch (discardError) {
+            throw new Error(
+              `${(err as Error).message} The unused staged output could not be discarded (${(discardError as Error).message}); it remains pending on the vault.`
+            )
+          }
+          if (!useBrowserFallback) throw err
+          notify(
+            `${(err as Error).message} Using a recoverable browser secret and moving it onto the vault after settlement instead.`,
+            NotifyKind.ERROR
+          )
+        }
+      }
+
+      if (!result) {
+        const secret = generateMintSecret(mintServer)
+        result = await requestInvoice(
+          info.callback,
+          amount.grossMsat,
+          hashK1(secret)
+        )
+        setMintSecret(secret)
+        setDeviceMintAttempt(null)
+        setInvoicedMsat(amount.netMsat)
+      }
+
       setInvoice(result.pr)
-      setInvoicedMsat(amount.netMsat)
       setInvoicedGrossMsat(amount.grossMsat)
-      setMintSecret(secret)
       // LUD-11: this mint says its own payRequest link (what's typed into
       // mintInput, not this one-shot invoice) is meant to be reused -
       // save it for a one-click return trip next time
@@ -482,22 +629,99 @@ const Mint: Component = () => {
     }
   }
 
-  // shared by the manual "Claim note" buttons and checkVerify's automatic
-  // claim once LUD-21 verify returns a preimage - rotates unconditionally
-  // right after verifying, in both cases, no separate confirmation step.
+  const claimDeviceMint = async (
+    pending: PendingDeviceMint,
+    verification: VerifyResult
+  ) => {
+    try {
+      const receipt = validateBoundMintReceipt(
+        pending.invoice,
+        verification,
+        pending.h,
+        pending.amountMsat,
+        pending.mintPubkey
+      )
+      const client = deviceClient()
+      if (!client) {
+        notify(
+          'Payment and receipt are valid. Reconnect the same vault, then check payment again to finish the note without exporting its secret.',
+          NotifyKind.ERROR
+        )
+        return
+      }
+
+      const staged = (await client.listAllNotes()).find(
+        note => note.id === pending.deviceId
+      )
+      if (!staged || staged.h?.toLowerCase() !== pending.h) {
+        throw new Error(
+          'The connected vault does not hold the staged output named by this receipt.'
+        )
+      }
+      if (staged.state === 'spent') {
+        throw new Error('The staged vault output is already marked spent.')
+      }
+
+      // A crash after addBearer but before clearing the recovery record must
+      // not create a duplicate card on retry.
+      if (bearers().some(bearer => bearer.deviceId === pending.deviceId)) {
+        clearPendingDeviceMint()
+        setDeviceMintAttempt(null)
+        navigate('/wallet')
+        return
+      }
+
+      const result = await confirmDeviceBoundMint(client, {
+        deviceId: pending.deviceId,
+        h: pending.h,
+        withdrawLink: pending.payRequest.withdrawLink!,
+        amountMsat: receipt.amountMsat,
+        signature: receipt.signature
+      })
+      await addBearer({
+        url: result.url,
+        callback: result.callback,
+        amount: result.amountMsat,
+        verified: true,
+        mintPubkey: pending.mintPubkey,
+        deviceId: result.deviceId,
+        deviceHash: result.deviceHash
+      })
+      // Clear only after the encrypted bearer exists. If the tab dies before
+      // here, the persisted receipt safely resumes and deduplicates above.
+      clearPendingDeviceMint()
+      setDeviceMintAttempt(null)
+      logActivity(
+        'mint',
+        `Minted ${msatToSats(result.amountMsat)} sats from ${serverOf(result.url)} directly onto the vault.`
+      )
+      const feePaidMsat = pending.grossMsat - result.amountMsat
+      notify(
+        `Minted ${msatToSats(result.amountMsat)} sats directly onto the vault${feePaidMsat > 0 ? ` (${msatToSats(feePaidMsat)} sat mint fee)` : ''}. Refresh it once before its first spend to learn the mint callback.`,
+        NotifyKind.SUCCESS
+      )
+      navigate('/wallet')
+    } catch (err) {
+      notify((err as Error).message, NotifyKind.ERROR)
+    }
+  }
+
+  // Shared by the current wallet-secret claim and the explicit legacy
+  // "I already have a preimage" recovery path. It rotates unconditionally
+  // after verifying, with no separate confirmation step.
   // expectedNetMsat/grossPaidMsat are only known coming from this page's own
   // "Create new invoice" flow (see getInvoice) - the direct-preimage path
   // (claimDirect) has no invoice of its own to compare against, so both are
   // left undefined there and the checks below are skipped entirely
   const claim = async (
-    preimageValue: string,
+    noteSecret: string,
     expectedNetMsat?: number,
     grossPaidMsat?: number
   ) => {
     const info = payRequest()
     if (!info?.withdrawLink) return
-    if (!isPreimage(preimageValue)) {
-      notify('The preimage is 64 hex characters.', NotifyKind.ERROR)
+    if (!isPreimage(noteSecret)) {
+      notify('The note secret is 64 hex characters.', NotifyKind.ERROR)
       return
     }
     setBusy(true)
@@ -506,7 +730,7 @@ const Mint: Component = () => {
       // note is self-describing even before the verifying GET below
       const declaredUrl = buildNoteUrl(
         info.withdrawLink,
-        preimageValue,
+        noteSecret,
         expectedNetMsat
       )
       // verify with the service - this settles a freshly paid invoice on
@@ -538,7 +762,7 @@ const Mint: Component = () => {
       const mintPubkey = noteInfo.mintPubkey
 
       // if a vault is connected, this note's secret is generated and held
-      // there instead of in this browser - import the preimage, then
+      // there instead of in this browser - import the note secret, then
       // immediately rotate it (deviceMint), same reasoning as the
       // browser-only rotate below. A rotate that fails AFTER the import
       // already landed leaves the note CONFIRMED on the device (the failed
@@ -552,7 +776,7 @@ const Mint: Component = () => {
             info.withdrawLink,
             noteInfo.callback,
             noteEndpointOf(info.withdrawLink),
-            preimageValue,
+            noteSecret,
             noteInfo.maxWithdrawable
           )
           await addBearer({
@@ -561,7 +785,8 @@ const Mint: Component = () => {
             amount: result.amountMsat,
             verified: true,
             mintPubkey,
-            deviceId: result.deviceId
+            deviceId: result.deviceId,
+            deviceHash: result.deviceHash
           })
           logActivity(
             'mint',
@@ -574,7 +799,7 @@ const Mint: Component = () => {
           )
         } catch (err) {
           if (!(err instanceof DeviceImportLeftBehindError)) throw err
-          // the imported preimage note is still whole on the device - keep
+          // the imported note is still whole on the device - keep
           // tracking it locally (k1-less, unverified, at the service's own
           // reported amount); the next device refresh rotates it properly
           // under device custody and repairs the record
@@ -584,7 +809,8 @@ const Mint: Component = () => {
             amount: err.imported.amountMsat,
             verified: false,
             mintPubkey,
-            deviceId: err.imported.deviceId
+            deviceId: err.imported.deviceId,
+            deviceHash: err.imported.deviceHash
           })
           logActivity(
             'mint',
@@ -601,7 +827,7 @@ const Mint: Component = () => {
       }
 
       let url = withNewK1(declaredUrl, noteInfo.k1, noteInfo.maxWithdrawable)
-      // that informational GET just put the preimage on the wire (server
+      // that informational GET just put the note secret on the wire (server
       // logs, proxies, browser history) - per spec, a WALLET intending to
       // keep holding the note SHOULD rotate any k1 it has transmitted but
       // not burned. This also opportunistically obtains the note's first
@@ -629,7 +855,7 @@ const Mint: Component = () => {
               noteInfo.maxWithdrawable
             )
           } else if (outcome === 'unknown') {
-            // can't tell: the preimage note is stored below either way -
+            // can't tell: the original note is stored below either way -
             // track the possible rotated copy alongside it
             await addBearer({
               url: withNewK1(
@@ -667,7 +893,7 @@ const Mint: Component = () => {
       // rather than shown as a separate, easy-to-miss-the-relation error
       if (rotationError) {
         notify(
-          `Minted ${msatToSats(noteInfo.maxWithdrawable)} sats, but could not rotate (${rotationError}) - the preimage was just transmitted, treat this note as exposed.`,
+          `Minted ${msatToSats(noteInfo.maxWithdrawable)} sats, but could not rotate (${rotationError}) - the note secret was just transmitted, treat this note as exposed.`,
           NotifyKind.ERROR
         )
       } else {
@@ -878,10 +1104,10 @@ const Mint: Component = () => {
                             onClick={() => {
                               setMode('preimage')
                               setInvoice(null)
-                              setPreimage('')
+                              setDirectPreimage('')
                             }}
                           >
-                            I already have a preimage
+                            Recover legacy preimage note
                           </button>
                         </div>
                         <Show when={info().mintFee}>
@@ -953,10 +1179,9 @@ const Mint: Component = () => {
                           }
                         >
                           <label>
-                            Payment preimage - from paying this mint's invoice
-                            some other way (its own site, a different wallet);
-                            its value comes straight from the mint, no need to
-                            enter an amount
+                            Legacy payment preimage - only for recovering a
+                            pre-comment note created elsewhere; its value comes
+                            straight from the mint, so no amount is needed
                           </label>
                           <input
                             type="text"
@@ -1012,59 +1237,13 @@ const Mint: Component = () => {
                               </button>
                             </Show>
                           </div>
-                          <Show
-                            when={mintSecret()}
-                            fallback={
-                              <>
-                                <label>
-                                  2. Paste the payment preimage your wallet
-                                  reveals after paying - it IS the bearer secret
-                                  <Show when={verifyUrl()}>
-                                    {' '}
-                                    (or wait - this mint supports checking
-                                    automatically)
-                                  </Show>
-                                </label>
-                                <input
-                                  type="text"
-                                  placeholder="payment preimage (64 hex characters)"
-                                  value={preimage()}
-                                  onInput={e =>
-                                    setPreimage(e.currentTarget.value)
-                                  }
-                                />
-                                <div class="btns">
-                                  <button
-                                    disabled={
-                                      busy() ||
-                                      !isPreimage(preimage()) ||
-                                      offlineMode()
-                                    }
-                                    onClick={() =>
-                                      claim(
-                                        preimage(),
-                                        invoicedMsat(),
-                                        invoicedGrossMsat()
-                                      )
-                                    }
-                                  >
-                                    <Show when={busy()}>
-                                      <IoRefreshSharp class="spin" />
-                                      &nbsp;
-                                    </Show>
-                                    Claim note
-                                  </button>
-                                </div>
-                              </>
-                            }
-                          >
+                          <Show when={mintSecret()}>
                             {secret => (
                               <>
                                 <label>
-                                  2. This mint supports comment-protected
-                                  minting - nothing to paste, the note's secret
-                                  never left this wallet. Claim it below once
-                                  paid
+                                  2. This current LUD-25 mint is bound to this
+                                  wallet's secret - nothing to paste. Claim it
+                                  below once paid
                                   <Show when={verifyUrl()}>
                                     {' '}
                                     (or wait - this mint checks automatically)
@@ -1089,6 +1268,39 @@ const Mint: Component = () => {
                                     Claim note
                                   </button>
                                 </div>
+                              </>
+                            )}
+                          </Show>
+                          <Show when={deviceMintAttempt()}>
+                            {pending => (
+                              <>
+                                <label>
+                                  2. This invoice is bound directly to a secret
+                                  held PENDING on your vault. The browser has
+                                  only its hash; once paid, the mint's signed
+                                  receipt confirms it without exporting or
+                                  rotating the secret.
+                                </label>
+                                <div class="btns">
+                                  <button
+                                    disabled={
+                                      verifying() || busy() || offlineMode()
+                                    }
+                                    onClick={manualCheck}
+                                  >
+                                    <Show when={verifying()}>
+                                      <IoRefreshSharp class="spin" />
+                                      &nbsp;
+                                    </Show>
+                                    {deviceClient()
+                                      ? 'Verify and finish on vault'
+                                      : 'Reconnect vault, then verify'}
+                                  </button>
+                                </div>
+                                <p class="bearer-hint">
+                                  Recovery output {pending().deviceId} · hash{' '}
+                                  {pending().h.slice(0, 12)}…
+                                </p>
                               </>
                             )}
                           </Show>

@@ -199,7 +199,8 @@ const SendDialog: Component<SendDialogProps> = props => {
         amount: settled.amountMsat,
         verified,
         mintPubkey: base.mintPubkey,
-        deviceId: settled.deviceId
+        deviceId: settled.deviceId,
+        deviceHash: settled.deviceHash
       })
       for (const bearer of picked) removeBearer(bearer.id)
       return added
@@ -329,7 +330,8 @@ const SendDialog: Component<SendDialogProps> = props => {
           amount: target,
           verified: true,
           mintPubkey: base.mintPubkey,
-          deviceId: parts.target.deviceId
+          deviceId: parts.target.deviceId,
+          deviceHash: parts.target.deviceHash
         })
         await addBearer({
           url: settledChange.url,
@@ -337,7 +339,8 @@ const SendDialog: Component<SendDialogProps> = props => {
           amount: settledChange.amountMsat,
           verified: changeVerified,
           mintPubkey: base.mintPubkey,
-          deviceId: settledChange.deviceId
+          deviceId: settledChange.deviceId,
+          deviceHash: settledChange.deviceHash
         })
         for (const bearer of picked) removeBearer(bearer.id)
       } else if (total > target) {
