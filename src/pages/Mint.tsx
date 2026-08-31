@@ -17,7 +17,8 @@ import {
   IoGlobeSharp,
   IoTrashSharp,
   IoAddCircleSharp,
-  IoLockClosedSharp
+  IoLockClosedSharp,
+  IoHelpCircleSharp
 } from 'solid-icons/io'
 
 import {useWallet} from '../WalletContext'
@@ -917,13 +918,13 @@ const Mint: Component = () => {
   const [confirmDelete, setConfirmDelete] = createSignal<string | null>(null)
 
   // "add by address" - a best-effort automated alternative to the manual
-  // form below: looks up a mint's own mint-address discovery endpoint (see
-  // lnurlcash.ts's fetchMintAddress) and trusts whatever signing key it
-  // advertises there, same source this page's own mint-lookup prefers for
-  // its early trust prompt. Experimental (most mints won't have it yet) - a
-  // mint that doesn't still needs the manual form, with a pubkey trusted
-  // from elsewhere (its own site, a friend, etc).
-  const [addressInput, setAddressInput] = createSignal('')
+  // form below, driven by the Public mints picker and each trusted mint's
+  // own Refresh button (see lnurlcash.ts's fetchMintAddress): looks up a
+  // mint's mint-address discovery endpoint and trusts whatever signing key
+  // it advertises there, same source this page's own mint-lookup prefers
+  // for its early trust prompt. Experimental (most mints won't have it
+  // yet) - a mint that doesn't still needs the manual form, with a pubkey
+  // trusted from elsewhere (its own site, a friend, etc).
   const [addressBusy, setAddressBusy] = createSignal(false)
   // a looked-up mint this wallet has no entry for yet, awaiting an explicit
   // "trust this key" click before anything is pinned - the same posture as
@@ -944,9 +945,8 @@ const Mint: Component = () => {
     null
   )
 
-  const addByAddress = async (value?: string) => {
-    const raw = value ?? addressInput()
-    const url = resolveMintInput(raw)
+  const addByAddress = async (value: string) => {
+    const url = resolveMintInput(value)
     if (!url) {
       notify(
         'Enter a mint LNURL, Lightning Address, or bare domain.',
@@ -982,7 +982,6 @@ const Mint: Component = () => {
         return
       }
       const result = addTrustedMint(mintServer, info.nodePubkey, nodeInfo)
-      setAddressInput('')
       if (result === 'rekey-pending') {
         notify(
           `${mintServer} now advertises a different signing key than the one pinned - review it below before trusting "signed" notes from it.`,
@@ -1008,7 +1007,6 @@ const Mint: Component = () => {
         pending.nodeInfo
       )
       setAddressTrust(null)
-      setAddressInput('')
       if (result === 'rekey-pending') {
         notify(
           `${pending.server} already has a different key pinned - the new one was staged for review below.`,
@@ -1044,11 +1042,6 @@ const Mint: Component = () => {
       `Keeping the original signing key for ${mintServer}.`,
       NotifyKind.SUCCESS
     )
-  }
-
-  const pasteAddress = async () => {
-    const text = await pasteFromClipboard()
-    if (text !== null) setAddressInput(text)
   }
 
   // re-runs the same mint-address lookup addByAddress does, against
@@ -1620,11 +1613,15 @@ const Mint: Component = () => {
         <div class="two-col">
           <Show when={state() === 'unlocked' && storeableMints().length > 0}>
             <figure class="setup-card">
-              <h4>Your storeable mints</h4>
-              <p>
-                These mints said their own address is meant to be reused, not a
-                one-time link (LUD-11) - saved here for a one-click return trip.
-              </p>
+              <h4>
+                Your storeable mints
+                <span
+                  class="help-icon"
+                  title="These mints said their own address is meant to be reused, not a one-time link (LUD-11) - saved here for a one-click return trip."
+                >
+                  <IoHelpCircleSharp />
+                </span>
+              </h4>
               <div class="mint-picker">
                 <For each={storeableMints()}>
                   {link => (
@@ -1649,14 +1646,15 @@ const Mint: Component = () => {
             </figure>
           </Show>
           <figure class="setup-card">
-            <h4>Public mints</h4>
-            <p>
-              A small curated list, for a quick start - click one to look up and
-              trust its signing key via its mint-address discovery endpoint
-              (same as "Add a mint by address" below), or refresh it if it's
-              already trusted. The globe icon opens the mint's own site instead,
-              to look it up by hand first.
-            </p>
+            <h4>
+              Public mints
+              <span
+                class="help-icon"
+                title="A small curated list, for a quick start - click one to look up and trust its signing key via its mint-address discovery endpoint, or refresh it if it's already trusted. The globe icon opens the mint's own site instead, to look it up by hand first."
+              >
+                <IoHelpCircleSharp />
+              </span>
+            </h4>
             <div class="mint-picker">
               <For each={PUBLIC_MINTS}>
                 {address => {
@@ -1717,70 +1715,6 @@ const Mint: Component = () => {
               </figure>
             )}
           </Show>
-          <figure class="paste-widget">
-            <h4>Add a mint by address</h4>
-            <p>
-              Looks up a mint's LNURL, Lightning Address, or bare domain (e.g.
-              "mint@host" or just "@host") via its mint-address discovery
-              endpoint, and asks you to confirm the signing key it advertises
-              before trusting it - experimental, so most mints won't have it
-              yet. Falls back to the manual form below if it doesn't.
-            </p>
-            <div class="paste-input-row">
-              <ScanToggle
-                onScan={value => addByAddress(value)}
-                accept={v => resolveMintInput(v) !== null}
-              />
-              <NfcToggle
-                onScan={value => addByAddress(value)}
-                accept={v => resolveMintInput(v) !== null}
-              />
-              <button
-                type="button"
-                class="icon-btn paste-icon-btn"
-                title="Paste from clipboard"
-                onClick={pasteAddress}
-              >
-                <IoClipboardSharp />
-              </button>
-              <div class="paste-input-wrapper">
-                <input
-                  type="text"
-                  class="paste-input"
-                  placeholder="lnurl1... or mint@example.com"
-                  value={addressInput()}
-                  onInput={e => setAddressInput(e.currentTarget.value)}
-                  onKeyDown={e => e.key === 'Enter' && addByAddress()}
-                />
-                <Show when={addressInput() !== ''}>
-                  <button
-                    type="button"
-                    class="icon-btn paste-clear-btn"
-                    title="Clear"
-                    onClick={() => setAddressInput('')}
-                  >
-                    <IoCloseSharp />
-                  </button>
-                </Show>
-              </div>
-              <button
-                type="button"
-                class="icon-btn paste-confirm-btn"
-                title={offlineMode() ? 'Offline mode is on' : 'Look up mint'}
-                disabled={
-                  addressBusy() || addressInput() === '' || offlineMode()
-                }
-                onClick={() => addByAddress()}
-              >
-                <Show
-                  when={addressBusy()}
-                  fallback={<IoReturnDownForwardSharp />}
-                >
-                  <IoRefreshSharp class="spin" />
-                </Show>
-              </button>
-            </div>
-          </figure>
           <figure class="setup-card">
             <h4>Add a mint manually</h4>
             <label>Server</label>
