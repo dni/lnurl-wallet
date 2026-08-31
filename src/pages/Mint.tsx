@@ -1100,9 +1100,9 @@ const Mint: Component = () => {
   return (
     <div id="mint" class="page">
       <h2>Mint a bearer note</h2>
-      <RequireWallet>
-        <div class="two-columns">
-          <div class="two-col">
+      <div class="two-columns">
+        <div class="two-col">
+          <RequireWallet>
             <figure class="paste-widget">
               <div class="paste-input-row">
                 <ScanToggle
@@ -1430,70 +1430,7 @@ const Mint: Component = () => {
                 </Show>
               </Dialog>
             </Show>
-          </div>
-          <div class="two-col">
-            <Show when={storeableMints().length > 0}>
-              <figure class="setup-card">
-                <h4>Your storeable mints</h4>
-                <p>
-                  These mints said their own address is meant to be reused, not
-                  a one-time link (LUD-11) - saved here for a one-click return
-                  trip.
-                </p>
-                <div class="mint-picker">
-                  <For each={storeableMints()}>
-                    {link => (
-                      <span class="mint-picker-entry">
-                        <button
-                          disabled={busy() || offlineMode()}
-                          onClick={() => selectMint(link.address)}
-                        >
-                          {link.address}
-                        </button>
-                        <button
-                          class="icon-btn"
-                          title="Forget this mint"
-                          onClick={() => removeStoreableMint(link.address)}
-                        >
-                          <IoTrashSharp />
-                        </button>
-                      </span>
-                    )}
-                  </For>
-                </div>
-              </figure>
-            </Show>
-            <figure class="setup-card">
-              <h4>Public mints</h4>
-              <div class="mint-picker">
-                <For each={PUBLIC_MINTS}>
-                  {address => (
-                    <button
-                      disabled={busy() || offlineMode()}
-                      onClick={() => selectMint(address)}
-                    >
-                      {address}
-                    </button>
-                  )}
-                </For>
-              </div>
-            </figure>
-          </div>
-        </div>
-      </RequireWallet>
-
-      <h2>Trusted mints</h2>
-      <p>
-        Every signing key this wallet checks notes against lives here -
-        remembered the moment you look up, mint from, refresh, or receive a note
-        from a mint. One you already hold a bearer note from is trusted
-        automatically and can't be removed; anything else was added manually and
-        can be removed. If a mint advertises a different key, it's staged for
-        review - the pinned key keeps deciding the "signed" badge until you
-        confirm it.
-      </p>
-      <div class="two-columns">
-        <div class="two-col">
+          </RequireWallet>
           <h4>Trusted mints</h4>
           <Show
             when={trustedMints().length > 0}
@@ -1607,21 +1544,17 @@ const Mint: Component = () => {
                         </button>
                       </Show>
                       <button
+                        class="icon-btn"
                         disabled={addressBusy() || offlineMode()}
-                        title={
-                          offlineMode()
-                            ? 'Offline mode is on'
-                            : "Refresh this mint's cached info"
-                        }
+                        title={offlineMode() ? 'Offline mode is on' : 'Refresh'}
                         onClick={() => refreshMint(mint)}
                       >
                         <IoRefreshSharp
                           classList={{spin: refreshingServer() === mint.server}}
                         />
-                        &nbsp;Refresh
                       </button>
                       <a
-                        class="icon-btn"
+                        class="icon-btn icon-btn-gap"
                         title="Open this mint"
                         href={`https://${mint.server}`}
                         target="_blank"
@@ -1653,10 +1586,11 @@ const Mint: Component = () => {
                         fallback={
                           <div class="btns">
                             <button
+                              class="icon-btn"
+                              title="Remove"
                               onClick={() => setConfirmDelete(mint.server)}
                             >
                               <IoTrashSharp />
-                              &nbsp;Remove
                             </button>
                           </div>
                         }
@@ -1682,6 +1616,36 @@ const Mint: Component = () => {
           </Show>
         </div>
         <div class="two-col">
+          <Show when={state() === 'unlocked' && storeableMints().length > 0}>
+            <figure class="setup-card">
+              <h4>Your storeable mints</h4>
+              <p>
+                These mints said their own address is meant to be reused, not a
+                one-time link (LUD-11) - saved here for a one-click return trip.
+              </p>
+              <div class="mint-picker">
+                <For each={storeableMints()}>
+                  {link => (
+                    <span class="mint-picker-entry">
+                      <button
+                        disabled={busy() || offlineMode()}
+                        onClick={() => selectMint(link.address)}
+                      >
+                        {link.address}
+                      </button>
+                      <button
+                        class="icon-btn"
+                        title="Forget this mint"
+                        onClick={() => removeStoreableMint(link.address)}
+                      >
+                        <IoTrashSharp />
+                      </button>
+                    </span>
+                  )}
+                </For>
+              </div>
+            </figure>
+          </Show>
           <figure class="setup-card">
             <h4>Public mints</h4>
             <p>
