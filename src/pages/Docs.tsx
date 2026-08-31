@@ -208,16 +208,16 @@ digest  = sha256(sha256("Lightning Signed Message:" || message))`}</pre>
           an online rotate.
         </p>
         <p>
-          Every <code>mintPubkey</code> this wallet has ever seen lives on the{' '}
-          <A href="/mints">Trusted mints</A> page. The first time it sees a
-          brand new one - looking a mint up, before minting anything from it -
-          it asks whether to trust it; declining cancels that lookup. A mint you
-          already hold a bearer note from is trusted automatically instead
-          (holding funds there already implied trusting it) and can't be removed
-          from the list; anything you added yourself - by confirming a lookup or
-          typing it in directly - can be. The list travels with your{' '}
-          <A href="/backup">backup</A> file, in plain (a signing key isn't a
-          secret).
+          Every <code>mintPubkey</code> this wallet has ever seen lives in the{' '}
+          <A href="/mint">Trusted mints</A> section, at the bottom of the Mint
+          page. The first time it sees a brand new one - looking a mint up,
+          before minting anything from it - it asks whether to trust it;
+          declining cancels that lookup. A mint you already hold a bearer note
+          from is trusted automatically instead (holding funds there already
+          implied trusting it) and can't be removed from the list; anything you
+          added yourself - by confirming a lookup or typing it in directly - can
+          be. The list travels with your <A href="/backup">backup</A> file, in
+          plain (a signing key isn't a secret).
         </p>
       </figure>
 

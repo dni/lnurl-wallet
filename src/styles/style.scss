@@ -260,7 +260,7 @@ h4 {
 // just `a` - so .icon-btn below (and its own padding/margin overrides)
 // still wins on an <a>, exactly as it already does on a <button>. .link-btn
 // is the same idea for a plain text link that should just look like a
-// button (e.g. Mints.tsx's "open this mint's site" - a real <a
+// button (e.g. Mint.tsx's "open this mint's site" - a real <a
 // target="_blank">, not a button+window.open(), so ctrl/middle-click and
 // the browser's own link preview keep working)
 button,
@@ -440,7 +440,7 @@ input[type='checkbox'] {
   }
 }
 
-// used on the second of a pair of adjacent .icon-btns (e.g. Mints.tsx's
+// used on the second of a pair of adjacent .icon-btns (e.g. Mint.tsx's
 // globe + mempool links) to separate them - .icon-btn zeroes its own
 // margin-right above, so without this they'd sit flush against each other
 .icon-btn-gap {

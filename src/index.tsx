@@ -1,7 +1,7 @@
 /* @refresh reload */
 import {ErrorBoundary} from 'solid-js'
 import {render} from 'solid-js/web'
-import {Route, HashRouter} from '@solidjs/router'
+import {Route, HashRouter, Navigate} from '@solidjs/router'
 import toast, {Toaster} from 'solid-toast'
 import {registerSW} from 'virtual:pwa-register'
 
@@ -19,7 +19,6 @@ import Hero from './pages/Hero'
 import Wallet from './pages/Wallet'
 import Setup from './pages/Setup'
 import Mint from './pages/Mint'
-import Mints from './pages/Mints'
 import Melt from './pages/Melt'
 import Activity from './pages/Activity'
 import Backup from './pages/Backup'
@@ -78,7 +77,10 @@ const cleanup = render(
       <Route path="/wallet" component={Wallet} />
       <Route path="/setup" component={Setup} />
       <Route path="/mint" component={Mint} />
-      <Route path="/mints" component={Mints} />
+      {/* /mints merged into /mint (trusted-mint management now lives at
+      the bottom of that page) - kept as a redirect so old links/bookmarks
+      still land somewhere useful instead of 404ing */}
+      <Route path="/mints" component={() => <Navigate href="/mint" />} />
       <Route path="/melt" component={Melt} />
       <Route path="/activity" component={Activity} />
       <Route path="/backup" component={Backup} />
