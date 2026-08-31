@@ -631,27 +631,35 @@ const TransferDialog: Component<TransferDialogProps> = props => {
               </button>
             </Show>
           </div>
-          <Show when={mintSecret()}>
-            {secret => (
-              <>
-                <label>
-                  This current LUD-25 destination is bound to this wallet's
-                  secret - nothing to paste.
-                  <Show when={verifyUrl()}>
-                    {' '}
-                    (or wait - this mint checks automatically)
-                  </Show>
-                </label>
-                <div class="btns">
-                  <button
-                    disabled={checking() || offlineMode()}
-                    onClick={() => claimDestination(secret())}
-                  >
-                    Claim at destination
-                  </button>
-                </div>
-              </>
-            )}
+          {/* unlike Mint.tsx, this wallet pays the invoice itself
+          (meltNote above) rather than a human paying an external one - so
+          there's no "I know I've paid" moment for a holder to act on early.
+          This manual claim button must stay gated behind !verifyUrl(): with
+          verify available, the automatic poll (checkTransfer) is the only
+          thing that should ever trigger a claim, since it's the only thing
+          that actually confirms the destination settled - offering an
+          always-on button here would invite claiming (and rotating)
+          against a melt that's still only "in flight", not confirmed. */}
+          <Show when={!verifyUrl()}>
+            <Show when={mintSecret()}>
+              {secret => (
+                <>
+                  <label>
+                    This mint doesn't support checking automatically. This
+                    destination is bound to this wallet's secret - nothing to
+                    paste. Claim it below once the transfer has settled.
+                  </label>
+                  <div class="btns">
+                    <button
+                      disabled={checking() || offlineMode()}
+                      onClick={() => claimDestination(secret())}
+                    >
+                      Claim at destination
+                    </button>
+                  </div>
+                </>
+              )}
+            </Show>
           </Show>
         </Show>
       </figure>
