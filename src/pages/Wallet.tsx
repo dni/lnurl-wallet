@@ -1,5 +1,5 @@
 import type {Component} from 'solid-js'
-import {Show, For, createSignal, createMemo} from 'solid-js'
+import {Show, For, createSignal, createMemo, onMount} from 'solid-js'
 import {render} from 'solid-js/web'
 import {A} from '@solidjs/router'
 import {QRCodeSVG, ErrorCorrectionLevel} from 'solid-qr-code'
@@ -29,7 +29,7 @@ import {
 
 import {useWallet, groupByServer} from '../WalletContext'
 import type {Bearer} from '../storage'
-import {serverOf, toBech32Lnurl} from '../lnurlcash'
+import {serverOf, toBech32Lnurl, isBolt11Invoice} from '../lnurlcash'
 import {
   noteK1,
   requireNoteK1,
@@ -54,10 +54,12 @@ import {
 import {useDevice} from '../DeviceContext'
 import {offlineMode} from '../offlineMode'
 import {notify, NotifyKind, msatToSats} from '../helpers'
+import {takeMeltInvoice} from '../meltHandoff'
 import BearerCard from '../components/BearerCard'
 import TransferDialog from '../components/TransferDialog'
 import SendDialog from '../components/SendDialog'
 import ReceiveDialog from '../components/ReceiveDialog'
+import MeltDialog from '../components/MeltDialog'
 
 const Wallet: Component = () => {
   const {
@@ -105,11 +107,31 @@ const Wallet: Component = () => {
   const [transferSource, setTransferSource] = createSignal<Bearer | null>(null)
   // mutually exclusive - opening one closes the other rather than letting
   // both dialogs be up (and independently mutating wallet state) at once
-  const [openDialog, setOpenDialog] = createSignal<'send' | 'receive' | null>(
-    null
-  )
+  const [openDialog, setOpenDialog] = createSignal<
+    'send' | 'receive' | 'melt' | null
+  >(null)
   const showSend = () => openDialog() === 'send'
   const showReceive = () => openDialog() === 'receive'
+  const showMelt = () => openDialog() === 'melt'
+  // a bolt11 pasted into Receive hands off here (see meltHandoff.ts) rather
+  // than duplicating invoice-vs-note detection on this page too - MeltDialog
+  // reads it once as its own initialInvoice, pre-filled instead of a blank
+  // paste step
+  const [meltHandoffInvoice, setMeltHandoffInvoice] = createSignal<
+    string | null
+  >(null)
+  onMount(() => {
+    const pr = takeMeltInvoice()
+    if (pr && isBolt11Invoice(pr)) {
+      setMeltHandoffInvoice(pr)
+      setOpenDialog('melt')
+    }
+  })
+  // ReceiveDialog's own bolt11 detection - see its onMelt prop
+  const openMelt = (pr: string) => {
+    setMeltHandoffInvoice(pr)
+    setOpenDialog('melt')
+  }
 
   // the hero's balance/mint count is always the spendable view (excludes
   // spent notes) - "Total balance" shouldn't count sats that aren't
@@ -1305,7 +1327,10 @@ const Wallet: Component = () => {
                   </button>
                 </div>
                 <Show when={showReceive()}>
-                  <ReceiveDialog onClose={() => setOpenDialog(null)} />
+                  <ReceiveDialog
+                    onClose={() => setOpenDialog(null)}
+                    onMelt={openMelt}
+                  />
                 </Show>
               </section>
             </div>
@@ -1400,17 +1425,33 @@ const Wallet: Component = () => {
                   <IoAddCircleSharp />
                   &nbsp;Mint
                 </A>
-                <A href="/melt" class="link-btn wallet-hero-btn">
+                <button
+                  type="button"
+                  class="wallet-hero-btn"
+                  onClick={() => setOpenDialog('melt')}
+                >
                   <IoFlameSharp />
                   &nbsp;Melt
-                </A>
+                </button>
               </div>
             </section>
             <Show when={showReceive()}>
-              <ReceiveDialog onClose={() => setOpenDialog(null)} />
+              <ReceiveDialog
+                onClose={() => setOpenDialog(null)}
+                onMelt={openMelt}
+              />
             </Show>
             <Show when={showSend()}>
               <SendDialog onClose={() => setOpenDialog(null)} />
+            </Show>
+            <Show when={showMelt()}>
+              <MeltDialog
+                initialInvoice={meltHandoffInvoice() ?? undefined}
+                onClose={() => {
+                  setOpenDialog(null)
+                  setMeltHandoffInvoice(null)
+                }}
+              />
             </Show>
 
             <section class="list-controls">

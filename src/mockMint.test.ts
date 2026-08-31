@@ -28,7 +28,7 @@ import {
 } from './lnurlcash'
 import {receiveNote} from './receive'
 
-// Exercises the stateful multi-step flows Mint.tsx/Melt.tsx/SendDialog.tsx
+// Exercises the stateful multi-step flows Mint.tsx/MeltDialog.tsx/SendDialog.tsx
 // drive (mint -> rotate -> split -> merge -> melt, pending-note recovery,
 // rotation-on-failure) against an in-memory mock of a LUD-25 SERVICE, so
 // they're covered without a live lnurl-mint process (see integration.test.ts

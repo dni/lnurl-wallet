@@ -779,7 +779,7 @@ export type WithdrawSuccessResponse = {
 
 // thrown for the exact {"status":"ERROR","reason":"pending"} case (see
 // meltNote) - distinct from any other Error so callers polling a mid-melt
-// note (Melt.tsx) can tell "still in flight, try again shortly" apart from
+// note (MeltDialog.tsx) can tell "still in flight, try again shortly" apart from
 // every other failure, which instead means the k1 is gone for good
 export class PendingNoteError extends Error {
   constructor() {

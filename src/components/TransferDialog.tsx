@@ -54,7 +54,7 @@ export type TransferDialogProps = {
   onClose: () => void
 }
 
-// same cadence as Mint.tsx's LUD-21 verify poll and Melt.tsx's pending-melt
+// same cadence as Mint.tsx's LUD-21 verify poll and MeltDialog.tsx's pending-melt
 // poll - this is really both of those chained together
 const TRANSFER_POLL_SECONDS = 5
 

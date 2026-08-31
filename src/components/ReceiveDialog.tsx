@@ -36,6 +36,13 @@ export type ReceiveDialogProps = {
   // (pages/Claim.tsx). Deliberately prefilled and not auto-accepted: the
   // person should see what they are taking, and from which mint, first.
   initialValue?: string
+  // present only when this dialog is rendered from the Wallet page itself -
+  // opens MeltDialog directly in place, skipping the meltHandoff.ts/navigate
+  // round trip below (which would be a same-route no-op there: SolidJS
+  // Router doesn't remount on a navigate to the page already showing, so
+  // nothing would ever pick the handoff back up). Claim.tsx has no such
+  // dialog to open, so it always falls back to the handoff instead.
+  onMelt?: (pr: string) => void
 }
 
 // bringing a note into this wallet, scanned or pasted - same destination
@@ -181,14 +188,21 @@ const ReceiveDialog: Component<ReceiveDialogProps> = props => {
   }
 
   // this wallet has no Lightning node of its own - paying an invoice is its
-  // own dialog on the Melt page, reachable from the main nav. The invoice
-  // travels via an in-memory handoff (meltHandoff.ts), not a URL param -
-  // with the hash router a ?pr= would land in location.hash, hence in
-  // browser history and bookmarks
+  // own dialog on the Wallet page (MeltDialog). Reached from the wallet
+  // page itself, props.onMelt opens it directly. Reached from Claim.tsx
+  // instead, there's no such dialog to open here - the invoice travels via
+  // an in-memory handoff (meltHandoff.ts) rather than a URL param (with the
+  // hash router a ?pr= would land in location.hash, hence in browser
+  // history and bookmarks), and Wallet.tsx picks it back up once actually
+  // mounted there
   const goToMelt = (pr: string) => {
     props.onClose()
+    if (props.onMelt) {
+      props.onMelt(pr)
+      return
+    }
     handoffMeltInvoice(pr)
-    navigate('/melt')
+    navigate('/wallet')
   }
 
   // scanning stays bearer-notes-only (a camera pointed at someone else's

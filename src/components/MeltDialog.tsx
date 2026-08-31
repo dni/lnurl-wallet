@@ -1,6 +1,5 @@
 import type {Component} from 'solid-js'
-import {Show, For, createSignal, createMemo, onMount, onCleanup} from 'solid-js'
-import {useNavigate} from '@solidjs/router'
+import {Show, For, createSignal, createMemo, onCleanup} from 'solid-js'
 import {
   IoClipboardSharp,
   IoCloseSharp,
@@ -50,34 +49,45 @@ import {
 } from '../helpers'
 import {offlineMode} from '../offlineMode'
 import {getTrustedMintNodeColor} from '../trustedMints'
-import {takeMeltInvoice} from '../meltHandoff'
 import {
   storeableMeltAddresses,
   addStoreableMeltAddress,
   removeStoreableMeltAddress
 } from '../storeableLinks'
-import ScanToggle from '../components/ScanToggle'
-import NfcToggle from '../components/NfcToggle'
-import RequireWallet from '../components/RequireWallet'
-import SendNoteCard from '../components/SendNoteCard'
+import ScanToggle from './ScanToggle'
+import NfcToggle from './NfcToggle'
+import Dialog from './Dialog'
+
+export type MeltDialogProps = {
+  onClose: () => void
+  // pre-fills a pasted bolt11 handed off from ReceiveDialog's own invoice
+  // detection (see meltHandoff.ts) - Wallet.tsx picks that up on mount and
+  // opens this dialog with it already set, skipping the paste step
+  initialInvoice?: string
+}
 
 // same cadence as Mint.tsx's LUD-21 verify poll - a melt's own LUD-25 melt
 // proof (see meltNote) is checked the same way that poll checks an
 // incoming payment
 const PENDING_POLL_SECONDS = 5
 
-const Melt: Component = () => {
+// pay an external Lightning invoice by burning a held bearer note - this
+// wallet has no Lightning node of its own, so "paying" is always spending a
+// note out. Manually handing a note over as-is (no invoice involved) lives
+// on the note's own card instead (see BearerCard's Unveil).
+const MeltDialog: Component<MeltDialogProps> = props => {
   const {addBearer, updateBearer, removeBearer, bearers, logActivity} =
     useWallet()
   const {client: deviceClient} = useDevice()
-  const navigate = useNavigate()
   let pasteRef: HTMLInputElement | null = null
 
   const [value, setValue] = createSignal('')
   // this wallet has no Lightning node of its own, so paying an invoice here
   // means spending it out of a held bearer note - melt only ever takes a
   // single k1, so 2+ selected notes get merged into one first
-  const [pastedInvoice, setPastedInvoice] = createSignal<string | null>(null)
+  const [pastedInvoice, setPastedInvoice] = createSignal<string | null>(
+    props.initialInvoice ?? null
+  )
   const [selectedIds, setSelectedIds] = createSignal<Set<string>>(new Set())
   const [paying, setPaying] = createSignal(false)
   // which burn is awaiting its explicit confirm click, if any - a melt
@@ -142,7 +152,7 @@ const Melt: Component = () => {
           "The service's payment proof is for a different invoice than the one paid - the note stays locked as spent; check the payment's outcome before clearing or unspending it.",
           NotifyKind.ERROR
         )
-        navigate('/wallet')
+        props.onClose()
         return
       }
       stopPolling()
@@ -158,7 +168,7 @@ const Melt: Component = () => {
         `Melted ${msatToSats(note.amount)} sats from ${serverOf(note.url)} to pay an invoice. Verify: ${url}.`
       )
       notify('Payment confirmed - the note is gone.', NotifyKind.SUCCESS)
-      navigate('/wallet')
+      props.onClose()
     } catch {
       // a single failed check isn't fatal - the next tick tries again
     } finally {
@@ -197,16 +207,6 @@ const Melt: Component = () => {
   }
 
   onCleanup(stopPolling)
-
-  // arriving from ReceiveDialog's own bolt11 detection, invoice carried by
-  // the in-memory handoff (meltHandoff.ts) rather than duplicating this
-  // whole dialog there - one-shot, so a later plain visit starts empty
-  onMount(() => {
-    const pr = takeMeltInvoice()
-    if (pr && isBolt11Invoice(pr)) {
-      setPastedInvoice(pr)
-    }
-  })
 
   const isValid = createMemo(
     () =>
@@ -520,7 +520,7 @@ const Melt: Component = () => {
 
   // called right after meltNote locks a note as spent. If the service
   // returned a LUD-25 melt proof, checkPending polls it to confirm
-  // settlement and redirects once it does - same as BearerCard's melt, the
+  // settlement and closes once it does - same as BearerCard's melt, the
   // note stays in the wallet (locked) rather than being removed outright,
   // in case that confirmation never arrives. Without one there's nothing
   // to poll, so this treats the request as done right away: the note was
@@ -554,7 +554,7 @@ const Melt: Component = () => {
           : ''),
       NotifyKind.SUCCESS
     )
-    navigate('/wallet')
+    props.onClose()
   }
 
   // melts the selected note(s) as-is - only valid once they're already
@@ -815,338 +815,316 @@ const Melt: Component = () => {
   }
 
   return (
-    <RequireWallet>
-      <div id="melt" class="page">
-        <h2>Melt - pay an invoice with a bearer note</h2>
-        <figure class="paste-widget">
-          <div class="paste-input-row">
-            <ScanToggle
-              onScan={onScan}
-              accept={v => isBolt11Invoice(v) || isLightningAddress(v)}
-            />
-            <NfcToggle
-              onScan={onScan}
-              accept={v => isBolt11Invoice(v) || isLightningAddress(v)}
-            />
-            <button
-              type="button"
-              class="icon-btn paste-icon-btn"
-              title="Paste from clipboard"
-              onClick={paste}
-            >
-              <IoClipboardSharp />
-            </button>
-            <div class="paste-input-wrapper">
-              <input
-                ref={pasteRef}
-                type="text"
-                class="paste-input"
-                classList={{invalid: value() !== '' && !isValid()}}
-                placeholder="lnbc1... or user@example.com"
-                value={value()}
-                onInput={e => setValue(e.currentTarget.value)}
-                onKeyDown={onKeydown}
-              />
-              <Show when={value() !== ''}>
-                <button
-                  type="button"
-                  class="icon-btn paste-clear-btn"
-                  title="Clear"
-                  onClick={() => setValue('')}
-                >
-                  <IoCloseSharp />
-                </button>
-              </Show>
-            </div>
-            <button
-              type="button"
-              class="icon-btn paste-confirm-btn"
-              title={offlineMode() ? 'Offline mode is on' : 'Continue'}
-              disabled={
-                value() === '' ||
-                !isValid() ||
-                fetchingInvoice() ||
-                offlineMode()
-              }
-              onClick={handle}
-            >
-              <Show
-                when={fetchingInvoice()}
-                fallback={<IoReturnDownForwardSharp />}
-              >
-                <IoRefreshSharp class="spin" />
-              </Show>
-            </button>
-          </div>
-          <Show when={value() !== '' && !isValid()}>
-            <p class="warning">
-              Not a valid bolt11 invoice or Lightning Address.
-            </p>
-          </Show>
-          <Show when={lnAddressPayRequest()}>
-            {info => (
-              <div class="form-item">
-                <label>
-                  Amount (sats, {msatToSats(info().minSendable)} -{' '}
-                  {msatToSats(info().maxSendable)})
-                </label>
-                <input
-                  type="number"
-                  min="1"
-                  placeholder="amount in sats"
-                  value={lnAddressAmountSats()}
-                  onInput={e => setLnAddressAmountSats(e.currentTarget.value)}
-                  onKeyDown={e => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault()
-                      if (!fetchingInvoice() && !offlineMode())
-                        getInvoiceFromAddress()
-                    }
-                  }}
-                />
-                <div class="btns">
-                  <button
-                    disabled={fetchingInvoice() || offlineMode()}
-                    onClick={getInvoiceFromAddress}
-                  >
-                    <Show when={fetchingInvoice()}>
-                      <IoRefreshSharp class="spin" />
-                      &nbsp;
-                    </Show>
-                    Get invoice
-                  </button>
-                  <button onClick={() => setLnAddressPayRequest(null)}>
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            )}
-          </Show>
-        </figure>
-        <Show when={storeableMeltAddresses().length > 0}>
-          <figure class="setup-card">
-            <h4>Your saved addresses</h4>
-            <p>
-              These said their own address is meant to be reused, not a one-time
-              link (LUD-11) - saved here for a one-click return trip. Melt
-              destinations only, kept separate from the mints on the Mint page.
-            </p>
-            <div class="mint-picker">
-              <For each={storeableMeltAddresses()}>
-                {link => (
-                  <span class="mint-picker-entry">
-                    <button
-                      disabled={offlineMode()}
-                      onClick={() => selectSavedAddress(link.address)}
-                    >
-                      {link.address}
-                    </button>
-                    <button
-                      class="icon-btn"
-                      title="Forget this address"
-                      onClick={() => removeStoreableMeltAddress(link.address)}
-                    >
-                      <IoTrashSharp />
-                    </button>
-                  </span>
-                )}
-              </For>
-            </div>
-          </figure>
-        </Show>
-        <Show when={pastedInvoice()}>
-          <Show
-            when={!pendingNote()}
-            fallback={
-              <figure class="setup-card">
-                <figcaption>Confirming payment</figcaption>
-                <p class="bearer-hint">
-                  Checking the mint's own melt proof (LUD-25) for this payment -
-                  once it reports the outgoing payment settled, the note is
-                  confirmed gone for good.
-                </p>
-                <div class="btns">
-                  <button
-                    disabled={checkingPending() || offlineMode()}
-                    onClick={manualCheckPending}
-                  >
-                    <Show when={checkingPending()}>
-                      <IoRefreshSharp class="spin" />
-                      &nbsp;
-                    </Show>
-                    {checkingPending()
-                      ? 'Checking...'
-                      : `Check payment (${secondsLeft()}s)`}
-                  </button>
-                </div>
-              </figure>
-            }
+    <Dialog onClose={props.onClose}>
+      <figure class="paste-widget">
+        <figcaption>Melt - pay an invoice with a bearer note</figcaption>
+        <div class="paste-input-row">
+          <ScanToggle
+            onScan={onScan}
+            accept={v => isBolt11Invoice(v) || isLightningAddress(v)}
+          />
+          <NfcToggle
+            onScan={onScan}
+            accept={v => isBolt11Invoice(v) || isLightningAddress(v)}
+          />
+          <button
+            type="button"
+            class="icon-btn paste-icon-btn"
+            title="Paste from clipboard"
+            onClick={paste}
           >
-            <figure class="setup-card">
-              <figcaption>Pay with your bearer notes</figcaption>
-              <Show
-                when={invoiceAmountMsat() !== null}
-                fallback={
-                  <p class="bearer-hint">
-                    Couldn't read an amount from this invoice - select note(s)
-                    from one mint and the service will judge whether they cover
-                    it.
-                  </p>
-                }
+            <IoClipboardSharp />
+          </button>
+          <div class="paste-input-wrapper">
+            <input
+              ref={pasteRef}
+              type="text"
+              class="paste-input"
+              classList={{invalid: value() !== '' && !isValid()}}
+              placeholder="lnbc1... or user@example.com"
+              value={value()}
+              onInput={e => setValue(e.currentTarget.value)}
+              onKeyDown={onKeydown}
+            />
+            <Show when={value() !== ''}>
+              <button
+                type="button"
+                class="icon-btn paste-clear-btn"
+                title="Clear"
+                onClick={() => setValue('')}
               >
-                <p class="bearer-hint">
-                  Wants {msatToSats(invoiceAmountMsat()!)} sats - select note(s)
-                  from one mint worth at least that. Melt only spends a note of
-                  exactly the invoice amount, so an exact match pays directly
-                  and anything over it needs Split and pay first.
-                </p>
-              </Show>
-              <Show
-                when={unspentBearers().length > 0}
-                fallback={<p>No bearer notes to pay with yet.</p>}
-              >
-                <div class="bearer-list">
-                  <For each={unspentBearers()}>
-                    {bearer => {
-                      // not grouped by mint here (unlike the wallet page) -
-                      // each card already names its own mint below the
-                      // amount, so the tint (see BearerCard's own noteColor)
-                      // is looked up per-note instead of once per group
-                      const noteColor = () =>
-                        getTrustedMintNodeColor(serverOf(bearer.url))
-                      return (
-                        <figure
-                          class="bearer-card"
-                          classList={{tinted: !!noteColor()}}
-                          style={
-                            noteColor()
-                              ? {'--note-tint': noteColor()!}
-                              : undefined
-                          }
-                        >
-                          <div class="bearer-head">
-                            <label class="bearer-select">
-                              <input
-                                type="checkbox"
-                                checked={selectedIds().has(bearer.id)}
-                                disabled={!bearer.callback}
-                                onChange={e =>
-                                  toggleSelect(
-                                    bearer.id,
-                                    e.currentTarget.checked
-                                  )
-                                }
-                              />
-                            </label>
-                            <div
-                              class="bearer-title clickable"
-                              onClick={() =>
-                                bearer.callback &&
-                                toggleSelect(
-                                  bearer.id,
-                                  !selectedIds().has(bearer.id)
-                                )
-                              }
-                            >
-                              <span class="bearer-amount">
-                                {msatToSats(bearer.amount)} sats
-                              </span>
-                              <Show when={!bearer.callback}>
-                                <span class="bearer-pending">unverified</span>
-                              </Show>
-                              <span class="bearer-server">
-                                {serverOf(bearer.url)}
-                              </span>
-                            </div>
-                          </div>
-                        </figure>
-                      )
-                    }}
-                  </For>
-                </div>
-              </Show>
-              <Show when={selectedBearers().length > 0}>
-                <p class="bearer-hint">
-                  Selected {msatToSats(selectedTotal())} sats
-                  <Show when={!selectionPayable() && !selectionNeedsSplit()}>
-                    {' '}
-                    - not enough selected yet, or spans more than one mint
-                  </Show>
-                </p>
-              </Show>
-              <Show
-                when={confirming()}
-                fallback={
-                  <div class="btns">
-                    <Show
-                      when={selectionNeedsSplit()}
-                      fallback={
-                        <button
-                          disabled={
-                            paying() || !selectionPayable() || offlineMode()
-                          }
-                          onClick={() => setConfirming('pay')}
-                        >
-                          Pay invoice
-                        </button>
-                      }
-                    >
-                      <button
-                        disabled={paying() || offlineMode()}
-                        onClick={() => setConfirming('split')}
-                      >
-                        Split and pay
-                      </button>
-                    </Show>
-                    <button onClick={clearInvoice}>Clear</button>
-                  </div>
-                }
-              >
-                {/* the burn restated in plain terms before it fires - a melt
-                locks the note the moment the request lands, so this is the
-                last chance to catch a misclick or a wrong invoice. The invoice
-                itself is shown verbatim: "this invoice" needs an on-screen
-                identity, or a swapped-in QR/paste for the same amount would
-                be undetectable here */}
-                <p class="warning">{confirmText()} This can't be undone.</p>
-                <p class="mint-pubkey">{pastedInvoice()}</p>
-                <div class="btns">
-                  <button
-                    disabled={paying() || offlineMode()}
-                    onClick={() =>
-                      confirming() === 'split' ? splitAndPay() : payInvoice()
-                    }
-                  >
-                    <Show when={paying()}>
-                      <IoRefreshSharp class="spin" />
-                      &nbsp;
-                    </Show>
-                    Yes, pay it
-                  </button>
-                  <button
-                    disabled={paying()}
-                    onClick={() => setConfirming(null)}
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </Show>
-            </figure>
-          </Show>
+                <IoCloseSharp />
+              </button>
+            </Show>
+          </div>
+          <button
+            type="button"
+            class="icon-btn paste-confirm-btn"
+            title={offlineMode() ? 'Offline mode is on' : 'Continue'}
+            disabled={
+              value() === '' || !isValid() || fetchingInvoice() || offlineMode()
+            }
+            onClick={handle}
+          >
+            <Show
+              when={fetchingInvoice()}
+              fallback={<IoReturnDownForwardSharp />}
+            >
+              <IoRefreshSharp class="spin" />
+            </Show>
+          </button>
+        </div>
+        <Show when={value() !== '' && !isValid()}>
+          <p class="warning">
+            Not a valid bolt11 invoice or Lightning Address.
+          </p>
         </Show>
-        <h2>Manually send out bearers</h2>
-        <Show
-          when={unspentBearers().length > 0}
-          fallback={<p>No bearer notes to send yet.</p>}
-        >
-          <div class="bearer-list">
-            <For each={unspentBearers()}>
-              {bearer => <SendNoteCard bearer={bearer} />}
+        <Show when={lnAddressPayRequest()}>
+          {info => (
+            <div class="form-item">
+              <label>
+                Amount (sats, {msatToSats(info().minSendable)} -{' '}
+                {msatToSats(info().maxSendable)})
+              </label>
+              <input
+                type="number"
+                min="1"
+                placeholder="amount in sats"
+                value={lnAddressAmountSats()}
+                onInput={e => setLnAddressAmountSats(e.currentTarget.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    if (!fetchingInvoice() && !offlineMode())
+                      getInvoiceFromAddress()
+                  }
+                }}
+              />
+              <div class="btns">
+                <button
+                  disabled={fetchingInvoice() || offlineMode()}
+                  onClick={getInvoiceFromAddress}
+                >
+                  <Show when={fetchingInvoice()}>
+                    <IoRefreshSharp class="spin" />
+                    &nbsp;
+                  </Show>
+                  Get invoice
+                </button>
+                <button onClick={() => setLnAddressPayRequest(null)}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+        </Show>
+      </figure>
+      <Show when={storeableMeltAddresses().length > 0}>
+        <figure class="setup-card">
+          <h4>Your saved addresses</h4>
+          <p>
+            These said their own address is meant to be reused, not a one-time
+            link (LUD-11) - saved here for a one-click return trip. Melt
+            destinations only, kept separate from the mints on the Mint page.
+          </p>
+          <div class="mint-picker">
+            <For each={storeableMeltAddresses()}>
+              {link => (
+                <span class="mint-picker-entry">
+                  <button
+                    disabled={offlineMode()}
+                    onClick={() => selectSavedAddress(link.address)}
+                  >
+                    {link.address}
+                  </button>
+                  <button
+                    class="icon-btn"
+                    title="Forget this address"
+                    onClick={() => removeStoreableMeltAddress(link.address)}
+                  >
+                    <IoTrashSharp />
+                  </button>
+                </span>
+              )}
             </For>
           </div>
+        </figure>
+      </Show>
+      <Show when={pastedInvoice()}>
+        <Show
+          when={!pendingNote()}
+          fallback={
+            <figure class="setup-card">
+              <figcaption>Confirming payment</figcaption>
+              <p class="bearer-hint">
+                Checking the mint's own melt proof (LUD-25) for this payment -
+                once it reports the outgoing payment settled, the note is
+                confirmed gone for good.
+              </p>
+              <div class="btns">
+                <button
+                  disabled={checkingPending() || offlineMode()}
+                  onClick={manualCheckPending}
+                >
+                  <Show when={checkingPending()}>
+                    <IoRefreshSharp class="spin" />
+                    &nbsp;
+                  </Show>
+                  {checkingPending()
+                    ? 'Checking...'
+                    : `Check payment (${secondsLeft()}s)`}
+                </button>
+              </div>
+            </figure>
+          }
+        >
+          <figure class="setup-card">
+            <figcaption>Pay with your bearer notes</figcaption>
+            <Show
+              when={invoiceAmountMsat() !== null}
+              fallback={
+                <p class="bearer-hint">
+                  Couldn't read an amount from this invoice - select note(s)
+                  from one mint and the service will judge whether they cover
+                  it.
+                </p>
+              }
+            >
+              <p class="bearer-hint">
+                Wants {msatToSats(invoiceAmountMsat()!)} sats - select note(s)
+                from one mint worth at least that. Melt only spends a note of
+                exactly the invoice amount, so an exact match pays directly and
+                anything over it needs Split and pay first.
+              </p>
+            </Show>
+            <Show
+              when={unspentBearers().length > 0}
+              fallback={<p>No bearer notes to pay with yet.</p>}
+            >
+              <div class="bearer-list">
+                <For each={unspentBearers()}>
+                  {bearer => {
+                    // not grouped by mint here (unlike the wallet page) -
+                    // each card already names its own mint below the
+                    // amount, so the tint (see BearerCard's own noteColor)
+                    // is looked up per-note instead of once per group
+                    const noteColor = () =>
+                      getTrustedMintNodeColor(serverOf(bearer.url))
+                    return (
+                      <figure
+                        class="bearer-card"
+                        classList={{tinted: !!noteColor()}}
+                        style={
+                          noteColor()
+                            ? {'--note-tint': noteColor()!}
+                            : undefined
+                        }
+                      >
+                        <div class="bearer-head">
+                          <label class="bearer-select">
+                            <input
+                              type="checkbox"
+                              checked={selectedIds().has(bearer.id)}
+                              disabled={!bearer.callback}
+                              onChange={e =>
+                                toggleSelect(bearer.id, e.currentTarget.checked)
+                              }
+                            />
+                          </label>
+                          <div
+                            class="bearer-title clickable"
+                            onClick={() =>
+                              bearer.callback &&
+                              toggleSelect(
+                                bearer.id,
+                                !selectedIds().has(bearer.id)
+                              )
+                            }
+                          >
+                            <span class="bearer-amount">
+                              {msatToSats(bearer.amount)} sats
+                            </span>
+                            <Show when={!bearer.callback}>
+                              <span class="bearer-pending">unverified</span>
+                            </Show>
+                            <span class="bearer-server">
+                              {serverOf(bearer.url)}
+                            </span>
+                          </div>
+                        </div>
+                      </figure>
+                    )
+                  }}
+                </For>
+              </div>
+            </Show>
+            <Show when={selectedBearers().length > 0}>
+              <p class="bearer-hint">
+                Selected {msatToSats(selectedTotal())} sats
+                <Show when={!selectionPayable() && !selectionNeedsSplit()}>
+                  {' '}
+                  - not enough selected yet, or spans more than one mint
+                </Show>
+              </p>
+            </Show>
+            <Show
+              when={confirming()}
+              fallback={
+                <div class="btns">
+                  <Show
+                    when={selectionNeedsSplit()}
+                    fallback={
+                      <button
+                        disabled={
+                          paying() || !selectionPayable() || offlineMode()
+                        }
+                        onClick={() => setConfirming('pay')}
+                      >
+                        Pay invoice
+                      </button>
+                    }
+                  >
+                    <button
+                      disabled={paying() || offlineMode()}
+                      onClick={() => setConfirming('split')}
+                    >
+                      Split and pay
+                    </button>
+                  </Show>
+                  <button onClick={clearInvoice}>Clear</button>
+                </div>
+              }
+            >
+              {/* the burn restated in plain terms before it fires - a melt
+              locks the note the moment the request lands, so this is the
+              last chance to catch a misclick or a wrong invoice. The invoice
+              itself is shown verbatim: "this invoice" needs an on-screen
+              identity, or a swapped-in QR/paste for the same amount would
+              be undetectable here */}
+              <p class="warning">{confirmText()} This can't be undone.</p>
+              <p class="mint-pubkey">{pastedInvoice()}</p>
+              <div class="btns">
+                <button
+                  disabled={paying() || offlineMode()}
+                  onClick={() =>
+                    confirming() === 'split' ? splitAndPay() : payInvoice()
+                  }
+                >
+                  <Show when={paying()}>
+                    <IoRefreshSharp class="spin" />
+                    &nbsp;
+                  </Show>
+                  Yes, pay it
+                </button>
+                <button disabled={paying()} onClick={() => setConfirming(null)}>
+                  Cancel
+                </button>
+              </div>
+            </Show>
+          </figure>
         </Show>
-      </div>
-    </RequireWallet>
+      </Show>
+    </Dialog>
   )
 }
-export default Melt
+export default MeltDialog

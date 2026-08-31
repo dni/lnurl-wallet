@@ -1,6 +1,6 @@
 import type {Component} from 'solid-js'
 import {Show, For, createSignal, createMemo} from 'solid-js'
-import {IoRefreshSharp, IoCopySharp, IoEyeSharp} from 'solid-icons/io'
+import {IoRefreshSharp} from 'solid-icons/io'
 
 import type {Bearer} from '../storage'
 import {useWallet, groupByServer} from '../WalletContext'
@@ -12,27 +12,12 @@ import {
   splitNote,
   settleNote,
   probeBurnedNote,
-  toBech32Lnurl,
   serverOf,
   AmbiguousMutationError
 } from '../lnurlcash'
-import {
-  deviceMerge,
-  deviceSplit,
-  deviceSettle,
-  deviceExportForHandoff,
-  markDeviceNoteSpent,
-  requireDeviceClient
-} from '../deviceOrchestration'
-import {
-  notify,
-  NotifyKind,
-  msatToSats,
-  satsToMsat,
-  copyToClipboard
-} from '../helpers'
+import {deviceMerge, deviceSplit, deviceSettle} from '../deviceOrchestration'
+import {notify, NotifyKind, msatToSats, satsToMsat} from '../helpers'
 import {offlineMode} from '../offlineMode'
-import Qr from './Qr'
 import Dialog from './Dialog'
 
 export type SendDialogProps = {
@@ -42,54 +27,12 @@ export type SendDialogProps = {
 // carve an exact amount out of one or more held notes (merging and/or
 // splitting as needed) into a single fresh note, ready to hand over
 const SendDialog: Component<SendDialogProps> = props => {
-  const {addBearer, updateBearer, removeBearer, bearers, logActivity} =
-    useWallet()
+  const {addBearer, updateBearer, removeBearer, bearers} = useWallet()
   const {client: deviceClient} = useDevice()
 
   const [amountSats, setAmountSats] = createSignal('')
   const [selectedIds, setSelectedIds] = createSignal<Set<string>>(new Set())
   const [preparing, setPreparing] = createSignal(false)
-  const [preparedBearer, setPreparedBearer] = createSignal<Bearer | null>(null)
-  // the prepared note's real, secret-bearing url - null until revealed.
-  // For a browser-only note this is available the instant it's prepared
-  // (see stagePrepared); a device-backed one needs an explicit export
-  // (physical button press) first - see revealPrepared. Never persisted,
-  // only ever held here in memory.
-  const [revealedUrl, setRevealedUrl] = createSignal<string | null>(null)
-  const [revealing, setRevealing] = createSignal(false)
-  // tap-to-reveal on the QR itself, same shoulder-surfing guard
-  // SendNoteCard applies to the same secret - a prepared note's QR never
-  // sits bare on screen just because the dialog is open
-  const [qrRevealed, setQrRevealed] = createSignal(false)
-
-  // stages a note as "ready to hand over" - browser-only notes reveal
-  // immediately (their url already carries the real secret); device-backed
-  // ones wait for an explicit reveal action
-  const stagePrepared = (bearer: Bearer) => {
-    setPreparedBearer(bearer)
-    setRevealedUrl(bearer.deviceId ? null : bearer.url)
-    setQrRevealed(false)
-  }
-
-  const revealPrepared = async () => {
-    const bearer = preparedBearer()
-    if (!bearer?.deviceId) return
-    setRevealing(true)
-    try {
-      const client = requireDeviceClient(deviceClient())
-      const {url} = await deviceExportForHandoff(
-        client,
-        bearer.deviceId,
-        bearer.url,
-        bearer.amount
-      )
-      setRevealedUrl(url)
-    } catch (err) {
-      notify((err as Error).message, NotifyKind.ERROR)
-    } finally {
-      setRevealing(false)
-    }
-  }
 
   const amountMsat = createMemo(() => {
     const msat = satsToMsat(amountSats())
@@ -139,19 +82,6 @@ const SendDialog: Component<SendDialogProps> = props => {
       else next.delete(id)
       return next
     })
-  }
-
-  // a single selected note needs no merge/split (and no amount typed in) to
-  // be handed over - just show what's already there. For a device-backed
-  // note "what's already there" still needs an explicit reveal (see
-  // revealPrepared) - stagePrepared leaves that gated rather than exporting
-  // it right away just because it was selected
-  const unveilSelectedNow = () => {
-    const picked = selectedBearers()
-    if (picked.length !== 1) return
-    stagePrepared(picked[0])
-    setSelectedIds(new Set<string>())
-    setAmountSats('')
   }
 
   // a no-op returning the note itself when only one is selected, since
@@ -287,7 +217,7 @@ const SendDialog: Component<SendDialogProps> = props => {
   // amount directly from every selected note in one request - split takes
   // one or many k1s per LUD-25, so no merge round trip first. Only an exact
   // match (no split needed) still goes through mergeSelectionIfNeeded.
-  // Same device-connected branch as Melt.tsx's splitAndPay: both outputs
+  // Same device-connected branch as MeltDialog.tsx's splitAndPay: both outputs
   // land on the vault when one's connected, regardless of input custody.
   const prepareNote = async () => {
     const picked = selectedBearers()
@@ -297,7 +227,6 @@ const SendDialog: Component<SendDialogProps> = props => {
     try {
       const total = selectedTotal()
       const client = deviceClient()
-      let current: Bearer
       if (total > target && client) {
         const base = picked[0]
         const parts = await deviceSplit(
@@ -324,7 +253,7 @@ const SendDialog: Component<SendDialogProps> = props => {
             NotifyKind.ERROR
           )
         }
-        current = await addBearer({
+        await addBearer({
           url: parts.target.url,
           callback: parts.target.callback,
           amount: target,
@@ -396,7 +325,7 @@ const SendDialog: Component<SendDialogProps> = props => {
         // are stored BEFORE any removeBearer of an input; the change is
         // then settled in place (a failed settle leaves an unverified note
         // a refresh can repair, not a lost secret)
-        current = await addBearer({
+        await addBearer({
           url: withNewK1(base.url, partK1, target, partSignature),
           callback: base.callback,
           amount: target,
@@ -440,15 +369,15 @@ const SendDialog: Component<SendDialogProps> = props => {
           )
         }
       } else {
-        current = await mergeSelectionIfNeeded(picked)
+        await mergeSelectionIfNeeded(picked)
       }
-      stagePrepared(current)
       setSelectedIds(new Set<string>())
       setAmountSats('')
       notify(
-        `Prepared a ${msatToSats(target)} sat note - ready to hand over.`,
+        `Prepared a ${msatToSats(target)} sat note - unveil it from its card to hand it over.`,
         NotifyKind.SUCCESS
       )
+      props.onClose()
     } catch (err) {
       notify((err as Error).message, NotifyKind.ERROR)
     } finally {
@@ -519,12 +448,6 @@ const SendDialog: Component<SendDialogProps> = props => {
           </Show>
         </Show>
         <div class="btns">
-          <Show when={selectedBearers().length === 1}>
-            <button onClick={unveilSelectedNow}>
-              <IoEyeSharp />
-              &nbsp;Unveil now
-            </button>
-          </Show>
           <button
             disabled={!canPrepare() || preparing() || offlineMode()}
             onClick={prepareNote}
@@ -540,78 +463,6 @@ const SendDialog: Component<SendDialogProps> = props => {
           </button>
         </div>
       </figure>
-      <Show when={preparedBearer()}>
-        <figure class="setup-card">
-          <figcaption>
-            Ready to hand over - {msatToSats(preparedBearer()!.amount)} sats
-          </figcaption>
-          <Show
-            when={revealedUrl()}
-            fallback={
-              <div class="btns">
-                <button disabled={revealing()} onClick={revealPrepared}>
-                  <Show when={revealing()}>
-                    <IoRefreshSharp class="spin" />
-                    &nbsp;
-                  </Show>
-                  {revealing()
-                    ? 'Waiting for the vault...'
-                    : 'Reveal to hand over'}
-                </button>
-              </div>
-            }
-          >
-            {url => (
-              <>
-                <div class="qr-wrapper">
-                  <Qr value={toBech32Lnurl(url())} />
-                  <Show when={!qrRevealed()}>
-                    <button
-                      class="qr-overlay"
-                      title="Show QR code - it IS the bearer note, anyone who scans it can spend it"
-                      onClick={() => setQrRevealed(true)}
-                    >
-                      <IoEyeSharp />
-                    </button>
-                  </Show>
-                </div>
-                <div class="btns">
-                  <button onClick={() => copyToClipboard(toBech32Lnurl(url()))}>
-                    <IoCopySharp />
-                    &nbsp;Copy note
-                  </button>
-                  <button
-                    onClick={async () => {
-                      const handedOver = preparedBearer()!
-                      updateBearer(handedOver.id, {spent: true})
-                      if (handedOver.deviceId) {
-                        await markDeviceNoteSpent(
-                          deviceClient(),
-                          handedOver.deviceId
-                        )
-                      }
-                      setPreparedBearer(null)
-                      setRevealedUrl(null)
-                      setQrRevealed(false)
-                      logActivity(
-                        'transfer',
-                        `Handed over ${msatToSats(handedOver.amount)} sats from ${serverOf(handedOver.url)}.`
-                      )
-                      notify(
-                        'Marked as handed over and spent.',
-                        NotifyKind.SUCCESS
-                      )
-                      props.onClose()
-                    }}
-                  >
-                    Done
-                  </button>
-                </div>
-              </>
-            )}
-          </Show>
-        </figure>
-      </Show>
     </Dialog>
   )
 }

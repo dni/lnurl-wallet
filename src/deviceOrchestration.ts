@@ -564,7 +564,7 @@ export const deviceMeltRequest = async (
 }
 
 // marks a device note spent with no accompanying new secret - a melt once
-// its settlement is confirmed (Melt.tsx's checkPending / TransferDialog's
+// its settlement is confirmed (MeltDialog.tsx's checkPending / TransferDialog's
 // checkTransfer already detect that point for the local spent-flag, this
 // is the same moment, not optimistic), or a prepared note once its "Done"/
 // handed-over action fires (SendDialog.tsx). Routed through the same
