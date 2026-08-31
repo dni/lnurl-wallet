@@ -780,9 +780,52 @@ const Wallet: Component = () => {
                   rotated.signature
                 )
               })
-            } catch {
-              // rotation unsupported/unreachable too - the remainder stays
-              // recorded under its pre-attempt secret rather than vanish
+            } catch (err) {
+              // this rotate is itself a mutating request, so a transport
+              // failure here is exactly as ambiguous as the split's own -
+              // it may have landed despite the failure, and the fresh
+              // secret it carries would then be the ONLY copy of the
+              // remainder left (the pre-attempt one now burned). Silently
+              // swallowing this (as this code used to) turned a purely
+              // defensive "don't leave k1 exposed" step into real fund
+              // loss: the remainder would vanish entirely, with neither
+              // the old record (burned) nor the new secret (discarded)
+              // pointing to real money - see issue report "split failed
+              // due to minimum amount, note gone"
+              if (err instanceof AmbiguousMutationError) {
+                const outcome = await probeBurnedNote(currentUrl)
+                if (outcome === 'gone') {
+                  // the rotate landed - its carried secret is the only
+                  // money left
+                  await updateBearer(remainderId, {
+                    url: withNewK1(currentUrl, err.newSecrets[0], currentAmount)
+                  })
+                } else if (outcome === 'unknown') {
+                  // can't tell: keep the pre-rotate record (already
+                  // shown below) AND track the possible rotated copy,
+                  // rather than gamble either way
+                  await addBearer({
+                    url: withNewK1(
+                      currentUrl,
+                      err.newSecrets[0],
+                      currentAmount
+                    ),
+                    callback: currentCallback,
+                    amount: currentAmount,
+                    verified: false,
+                    mintPubkey: bearer.mintPubkey
+                  })
+                  notify(
+                    "Couldn't confirm whether the remainder's defensive rotation went through - a possible rotated copy is stored unverified alongside it; refresh both to reconcile.",
+                    NotifyKind.ERROR
+                  )
+                }
+                // 'live': the rotate never landed - the pre-attempt secret
+                // (already recorded) is still good, nothing to change
+              }
+              // any other failure (rotation unsupported/unreachable, a
+              // definitive rejection) leaves the remainder recorded under
+              // its pre-attempt secret rather than vanish
             }
             throw splitError
           }
