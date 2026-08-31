@@ -37,7 +37,13 @@ import {
   markDeviceNoteSpent,
   requireDeviceClient
 } from '../deviceOrchestration'
-import {notify, NotifyKind, msatToSats, copyToClipboard} from '../helpers'
+import {
+  notify,
+  NotifyKind,
+  msatToSats,
+  floorMsatToSat,
+  copyToClipboard
+} from '../helpers'
 import {isMintTrusted, addTrustedMint, trustedMints} from '../trustedMints'
 import {offlineMode} from '../offlineMode'
 import Qr from './Qr'
@@ -169,11 +175,15 @@ const TransferDialog: Component<TransferDialogProps> = props => {
   // invoiced for the full source amount. What its mint fee (if any) does
   // instead is shrink the note that comes out the other end, which this
   // estimates so the payer isn't surprised (the authoritative value is
-  // whatever the destination's informational GET reports once claimed)
+  // whatever the destination's informational GET reports once claimed).
+  // Floored to a whole sat, same as every other fee-adjusted estimate (see
+  // helpers.ts's floorMsatToSat) - a mint fee's percentage cut can leave
+  // sub-sat precision, and rounding that up here would display a note
+  // value bigger than what actually comes out the other end
   const expectedNet = createMemo(() => {
     const info = payRequest()
     return info?.mintFee
-      ? applyMintFee(props.sourceBearer.amount, info.mintFee)
+      ? floorMsatToSat(applyMintFee(props.sourceBearer.amount, info.mintFee))
       : props.sourceBearer.amount
   })
 
