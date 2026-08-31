@@ -153,6 +153,47 @@ const Backup: Component = () => {
               </div>
             </figure>
           </Show>
+          <Show when={state() !== 'none'}>
+            <figure class="setup-card">
+              <h4>Forget this wallet</h4>
+              <p class="warning">
+                This removes <strong>everything</strong> from this device - the
+                linking key, every bearer note, trusted mints, and saved links.
+                Unlike locking, restoring the same seed phrase afterward will
+                not bring the notes back: their ciphertext is gone too, not just
+                re-locked. A backup downloaded beforehand is the only way back.
+              </p>
+              <div class="btns">
+                <button onClick={download}>
+                  <IoDownloadSharp />
+                  &nbsp;Download backup first
+                </button>
+              </div>
+              <Show
+                when={confirmForget()}
+                fallback={
+                  <div class="btns">
+                    <button onClick={() => setConfirmForget(true)}>
+                      <IoTrashSharp />
+                      &nbsp;Forget wallet
+                    </button>
+                  </div>
+                }
+              >
+                <p class="warning">
+                  Are you sure? This deletes the linking key and every bearer
+                  note from this device - only a backup downloaded beforehand
+                  can bring them back.
+                </p>
+                <div class="btns">
+                  <button onClick={doForget}>Yes, forget everything</button>
+                  <button onClick={() => setConfirmForget(false)}>
+                    Cancel
+                  </button>
+                </div>
+              </Show>
+            </figure>
+          </Show>
         </div>
         <div class="two-col">
           <figure class="setup-card">
@@ -238,45 +279,6 @@ const Backup: Component = () => {
           </figure>
         </div>
       </div>
-      <Show when={state() !== 'none'}>
-        <figure class="setup-card">
-          <h4>Forget this wallet</h4>
-          <p class="warning">
-            This removes <strong>everything</strong> from this device - the
-            linking key, every bearer note, trusted mints, and saved links.
-            Unlike locking, restoring the same seed phrase afterward will not
-            bring the notes back: their ciphertext is gone too, not just
-            re-locked. A backup downloaded beforehand is the only way back.
-          </p>
-          <div class="btns">
-            <button onClick={download}>
-              <IoDownloadSharp />
-              &nbsp;Download backup first
-            </button>
-          </div>
-          <Show
-            when={confirmForget()}
-            fallback={
-              <div class="btns">
-                <button onClick={() => setConfirmForget(true)}>
-                  <IoTrashSharp />
-                  &nbsp;Forget wallet
-                </button>
-              </div>
-            }
-          >
-            <p class="warning">
-              Are you sure? This deletes the linking key and every bearer note
-              from this device - only a backup downloaded beforehand can bring
-              them back.
-            </p>
-            <div class="btns">
-              <button onClick={doForget}>Yes, forget everything</button>
-              <button onClick={() => setConfirmForget(false)}>Cancel</button>
-            </div>
-          </Show>
-        </figure>
-      </Show>
     </div>
   )
 }
