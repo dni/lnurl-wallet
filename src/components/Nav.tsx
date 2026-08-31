@@ -1,4 +1,4 @@
-import {Show, createSignal} from 'solid-js'
+import {Show, For, createSignal, onMount, onCleanup} from 'solid-js'
 import {A, useNavigate} from '@solidjs/router'
 import {
   IoMenuSharp,
@@ -9,17 +9,37 @@ import {
   IoSaveSharp,
   IoBookSharp,
   IoCloudOfflineSharp,
-  IoHardwareChipSharp
+  IoHardwareChipSharp,
+  IoCashSharp
 } from 'solid-icons/io'
 import {useWallet} from '../WalletContext'
 import {useDevice} from '../DeviceContext'
 import {offlineMode, setOfflineMode} from '../offlineMode'
+import {currency, setCurrency, CURRENCY_LABEL} from '../currency'
+import type {Currency} from '../currency'
+
+// order they appear in the dropdown - 'none' (Disabled) first since that's
+// the default/off state, then alphabetical by the same three currencies
+// price.lnbits.com serves directly (see currency.ts)
+const CURRENCY_OPTIONS: Currency[] = ['none', 'eur', 'gbp', 'usd']
 
 const Nav = () => {
   const {state, encrypted, lock} = useWallet()
   const {connectionState} = useDevice()
   const navigate = useNavigate()
   const [menuOpen, setMenuOpen] = createSignal(false)
+  const [currencyMenuOpen, setCurrencyMenuOpen] = createSignal(false)
+  let currencyMenuRef: HTMLDivElement | null = null
+
+  onMount(() => {
+    const onDocClick = (e: MouseEvent) => {
+      if (currencyMenuRef && !currencyMenuRef.contains(e.target as Node)) {
+        setCurrencyMenuOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', onDocClick)
+    onCleanup(() => document.removeEventListener('mousedown', onDocClick))
+  })
 
   const closeMenu = () => setMenuOpen(false)
 
@@ -69,6 +89,18 @@ const Nav = () => {
             <IoAddCircleSharp />
             &nbsp;Mint
           </A>
+          <A
+            href="/vault"
+            class="nav-link"
+            title={
+              connectionState() === 'connected'
+                ? 'LNURLvault - connected'
+                : 'LNURLvault - pair a hardware device'
+            }
+          >
+            <IoHardwareChipSharp />
+            &nbsp;Vault
+          </A>
           {/* not gated on state() === 'unlocked' - restoring a backup is
           exactly what a device with no wallet yet (state() === 'none') needs
           this link for, and hiding it there was the whole bug: after
@@ -79,6 +111,42 @@ const Nav = () => {
           </A>
         </div>
         <div class="nav-persistent">
+          <div class="currency-menu" ref={el => (currencyMenuRef = el)}>
+            <button
+              type="button"
+              class="nav-icon-toggle"
+              classList={{active: currency() !== 'none'}}
+              title="Currency - show a fiat estimate alongside sats, using price.lnbits.com"
+              onClick={() => setCurrencyMenuOpen(v => !v)}
+            >
+              <IoCashSharp />
+              <span class="nav-label">
+                &nbsp;Currency
+                <Show when={currency() !== 'none'}>
+                  &nbsp;(
+                  {CURRENCY_LABEL[currency() as Exclude<Currency, 'none'>]})
+                </Show>
+              </span>
+            </button>
+            <Show when={currencyMenuOpen()}>
+              <div class="currency-menu-panel more-menu-panel">
+                <For each={CURRENCY_OPTIONS}>
+                  {option => (
+                    <button
+                      type="button"
+                      classList={{active: currency() === option}}
+                      onClick={() => {
+                        setCurrency(option)
+                        setCurrencyMenuOpen(false)
+                      }}
+                    >
+                      {option === 'none' ? 'Disabled' : CURRENCY_LABEL[option]}
+                    </button>
+                  )}
+                </For>
+              </div>
+            </Show>
+          </div>
           <button
             type="button"
             class="nav-icon-toggle"
@@ -93,17 +161,6 @@ const Nav = () => {
             <IoCloudOfflineSharp />
             <span class="nav-label">&nbsp;Offline mode</span>
           </button>
-          <A
-            href="/vault"
-            title={
-              connectionState() === 'connected'
-                ? 'LNURLvault - connected'
-                : 'LNURLvault - pair a hardware device'
-            }
-          >
-            <IoHardwareChipSharp />
-            <span class="nav-label">&nbsp;Vault</span>
-          </A>
           <A href="/docs" title="Documentation">
             <IoBookSharp />
             <span class="nav-label">&nbsp;Docs</span>

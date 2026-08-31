@@ -106,6 +106,7 @@ import ScanToggle from '../components/ScanToggle'
 import NfcToggle from '../components/NfcToggle'
 import RequireWallet from '../components/RequireWallet'
 import Dialog from '../components/Dialog'
+import FiatValue from '../components/FiatValue'
 
 // LUD-21 auto-poll interval, in seconds - both the countdown shown on the
 // button and the cadence of the automatic check
@@ -1304,6 +1305,7 @@ const Mint: Component = () => {
                                 (includes a {msatToSats(amount().feeMsat)} sat
                                 mint fee) - note: {msatToSats(amount().netMsat)}{' '}
                                 sats
+                                <FiatValue msat={amount().netMsat} />
                               </p>
                             </Show>
                           )}

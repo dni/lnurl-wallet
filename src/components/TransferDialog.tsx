@@ -48,6 +48,7 @@ import {isMintTrusted, addTrustedMint, trustedMints} from '../trustedMints'
 import {offlineMode} from '../offlineMode'
 import Qr from './Qr'
 import Dialog from './Dialog'
+import FiatValue from './FiatValue'
 
 export type TransferDialogProps = {
   sourceBearer: Bearer
@@ -530,7 +531,8 @@ const TransferDialog: Component<TransferDialogProps> = props => {
     <Dialog onClose={props.onClose}>
       <figure class="setup-card">
         <figcaption>
-          Transfer {msatToSats(props.sourceBearer.amount)} sats to another mint
+          Transfer {msatToSats(props.sourceBearer.amount)} sats
+          <FiatValue msat={props.sourceBearer.amount} /> to another mint
         </figcaption>
         <Show when={!invoice()}>
           <label>Destination mint (LNURL or Lightning Address)</label>

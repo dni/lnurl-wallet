@@ -57,6 +57,7 @@ import {
 import ScanToggle from './ScanToggle'
 import NfcToggle from './NfcToggle'
 import Dialog from './Dialog'
+import FiatValue from './FiatValue'
 
 export type MeltDialogProps = {
   onClose: () => void
@@ -1001,10 +1002,11 @@ const MeltDialog: Component<MeltDialogProps> = props => {
               }
             >
               <p class="bearer-hint">
-                Wants {msatToSats(invoiceAmountMsat()!)} sats - select note(s)
-                from one mint worth at least that. Melt only spends a note of
-                exactly the invoice amount, so an exact match pays directly and
-                anything over it needs Split and pay first.
+                Wants {msatToSats(invoiceAmountMsat()!)} sats
+                <FiatValue msat={invoiceAmountMsat()!} /> - select note(s) from
+                one mint worth at least that. Melt only spends a note of exactly
+                the invoice amount, so an exact match pays directly and anything
+                over it needs Split and pay first.
               </p>
             </Show>
             <Show
