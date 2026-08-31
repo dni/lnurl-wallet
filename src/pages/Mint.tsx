@@ -1571,43 +1571,45 @@ const Mint: Component = () => {
                       >
                         <IoOpenSharp />
                       </a>
-                    </div>
-                    <Show
-                      when={!hasNotesFrom(mint.server)}
-                      fallback={
-                        <p class="mint-locked">
-                          <IoLockClosedSharp />
-                          &nbsp;trusted - you hold a bearer note from here
-                        </p>
-                      }
-                    >
                       <Show
-                        when={confirmDelete() === mint.server}
-                        fallback={
-                          <div class="btns">
-                            <button
-                              class="icon-btn"
-                              title="Remove"
-                              onClick={() => setConfirmDelete(mint.server)}
-                            >
-                              <IoTrashSharp />
-                            </button>
-                          </div>
+                        when={
+                          !hasNotesFrom(mint.server) &&
+                          confirmDelete() !== mint.server
                         }
                       >
-                        <p class="warning">
-                          Remove this mint? Its notes will no longer show as
-                          offline-verified.
-                        </p>
-                        <div class="btns">
-                          <button onClick={() => removeMint(mint.server)}>
-                            Yes, remove
-                          </button>
-                          <button onClick={() => setConfirmDelete(null)}>
-                            Cancel
-                          </button>
-                        </div>
+                        <button
+                          class="icon-btn icon-btn-gap"
+                          title="Remove"
+                          onClick={() => setConfirmDelete(mint.server)}
+                        >
+                          <IoTrashSharp />
+                        </button>
                       </Show>
+                    </div>
+                    <Show when={hasNotesFrom(mint.server)}>
+                      <p class="mint-locked">
+                        <IoLockClosedSharp />
+                        &nbsp;trusted - you hold a bearer note from here
+                      </p>
+                    </Show>
+                    <Show
+                      when={
+                        !hasNotesFrom(mint.server) &&
+                        confirmDelete() === mint.server
+                      }
+                    >
+                      <p class="warning">
+                        Remove this mint? Its notes will no longer show as
+                        offline-verified.
+                      </p>
+                      <div class="btns">
+                        <button onClick={() => removeMint(mint.server)}>
+                          Yes, remove
+                        </button>
+                        <button onClick={() => setConfirmDelete(null)}>
+                          Cancel
+                        </button>
+                      </div>
                     </Show>
                   </figure>
                 )}
