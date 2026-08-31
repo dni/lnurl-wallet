@@ -1,13 +1,10 @@
 import type {Component} from 'solid-js'
-import {Show, For, createSignal, createMemo, onMount} from 'solid-js'
+import {Show, For, createSignal, createMemo, onMount, onCleanup} from 'solid-js'
 import {render} from 'solid-js/web'
 import {A} from '@solidjs/router'
 import {QRCodeSVG, ErrorCorrectionLevel} from 'solid-qr-code'
 import {
   IoAddCircleSharp,
-  IoPaperPlaneSharp,
-  IoArrowDownCircleSharp,
-  IoFlameSharp,
   IoLockOpenSharp,
   IoRefreshSharp,
   IoTrashSharp,
@@ -24,12 +21,21 @@ import {
   IoLayersSharp,
   IoDownloadSharp,
   IoPencilSharp,
-  IoQrCodeSharp
+  IoQrCodeSharp,
+  IoClipboardSharp,
+  IoReturnDownForwardSharp,
+  IoEllipsisVerticalSharp
 } from 'solid-icons/io'
 
 import {useWallet, groupByServer} from '../WalletContext'
 import type {Bearer} from '../storage'
-import {serverOf, toBech32Lnurl, isBolt11Invoice} from '../lnurlcash'
+import {
+  serverOf,
+  toBech32Lnurl,
+  isBolt11Invoice,
+  isLightningAddress,
+  isValidNoteInput
+} from '../lnurlcash'
 import {
   noteK1,
   requireNoteK1,
@@ -53,13 +59,14 @@ import {
 } from '../deviceOrchestration'
 import {useDevice} from '../DeviceContext'
 import {offlineMode} from '../offlineMode'
-import {notify, NotifyKind, msatToSats} from '../helpers'
+import {notify, NotifyKind, msatToSats, pasteFromClipboard} from '../helpers'
 import {takeMeltInvoice} from '../meltHandoff'
 import BearerCard from '../components/BearerCard'
 import TransferDialog from '../components/TransferDialog'
-import SendDialog from '../components/SendDialog'
 import ReceiveDialog from '../components/ReceiveDialog'
 import MeltDialog from '../components/MeltDialog'
+import ScanToggle from '../components/ScanToggle'
+import NfcToggle from '../components/NfcToggle'
 
 const Wallet: Component = () => {
   const {
@@ -100,17 +107,34 @@ const Wallet: Component = () => {
   const [splittingSingle, setSplittingSingle] = createSignal(false)
   const [showLabelInput, setShowLabelInput] = createSignal(false)
   const [labelInputValue, setLabelInputValue] = createSignal('')
+  // Label/Mark spent/Export/QR live behind this toggle instead of the
+  // primary action row - closes on an outside click, same as any other
+  // dropdown, and on picking one of its own items (see the click handlers
+  // below that wrap each item's action)
+  const [showMoreMenu, setShowMoreMenu] = createSignal(false)
+  let moreMenuRef: HTMLDivElement | null = null
+  onMount(() => {
+    const onDocClick = (e: MouseEvent) => {
+      if (moreMenuRef && !moreMenuRef.contains(e.target as Node)) {
+        setShowMoreMenu(false)
+      }
+    }
+    document.addEventListener('mousedown', onDocClick)
+    onCleanup(() => document.removeEventListener('mousedown', onDocClick))
+  })
   // captured once Transfer is clicked, independent of live selection -
   // starting a transfer immediately marks the source spent, which would
   // otherwise drop it out of selectedEligible() and yank the dialog out
   // from under itself mid-flight
   const [transferSource, setTransferSource] = createSignal<Bearer | null>(null)
   // mutually exclusive - opening one closes the other rather than letting
-  // both dialogs be up (and independently mutating wallet state) at once
-  const [openDialog, setOpenDialog] = createSignal<
-    'send' | 'receive' | 'melt' | null
-  >(null)
-  const showSend = () => openDialog() === 'send'
+  // both dialogs be up (and independently mutating wallet state) at once.
+  // No 'send' anymore - carving an exact amount out of one or more notes is
+  // already covered by this page's own Combine & split / Split toolbar
+  // actions, so a standalone Send dialog was pure duplication
+  const [openDialog, setOpenDialog] = createSignal<'receive' | 'melt' | null>(
+    null
+  )
   const showReceive = () => openDialog() === 'receive'
   const showMelt = () => openDialog() === 'melt'
   // a bolt11 pasted into Receive hands off here (see meltHandoff.ts) rather
@@ -131,6 +155,82 @@ const Wallet: Component = () => {
   const openMelt = (pr: string) => {
     setMeltHandoffInvoice(pr)
     setOpenDialog('melt')
+  }
+
+  // the hero's own scan/NFC/paste widget replaces the separate
+  // Receive/Send/Melt buttons it used to have - whatever's recognized
+  // decides which dialog opens, instead of making the holder pick the
+  // right button before they've even entered anything
+  const [heroValue, setHeroValue] = createSignal('')
+  let heroPasteRef: HTMLInputElement | null = null
+  // prefilled into ReceiveDialog for a scanned/pasted bearer note - shown,
+  // not auto-accepted, same reasoning as ReceiveDialog's own initialValue
+  const [receiveHandoffValue, setReceiveHandoffValue] = createSignal<
+    string | null
+  >(null)
+  // same idea as meltHandoffInvoice above, for a scanned/pasted Lightning
+  // Address that doesn't have an invoice yet - MeltDialog resolves it via
+  // its own initialAddress
+  const [meltHandoffAddress, setMeltHandoffAddress] = createSignal<
+    string | null
+  >(null)
+
+  const closeReceive = () => {
+    setOpenDialog(null)
+    setReceiveHandoffValue(null)
+  }
+  const closeMelt = () => {
+    setOpenDialog(null)
+    setMeltHandoffInvoice(null)
+    setMeltHandoffAddress(null)
+  }
+
+  const isValidHeroInput = (v: string) =>
+    isValidNoteInput(v) || isBolt11Invoice(v) || isLightningAddress(v)
+
+  const handleHeroValue = (raw: string) => {
+    const trimmed = raw.trim()
+    if (trimmed === '') return
+    if (isValidNoteInput(trimmed)) {
+      setReceiveHandoffValue(trimmed)
+      setHeroValue('')
+      setOpenDialog('receive')
+      return
+    }
+    if (isBolt11Invoice(trimmed)) {
+      setMeltHandoffInvoice(trimmed)
+      setHeroValue('')
+      setOpenDialog('melt')
+      return
+    }
+    if (isLightningAddress(trimmed)) {
+      setMeltHandoffAddress(trimmed)
+      setHeroValue('')
+      setOpenDialog('melt')
+      return
+    }
+    notify(
+      'Not a bearer note, invoice, or Lightning Address.',
+      NotifyKind.ERROR
+    )
+  }
+
+  const handleHero = () => {
+    if (heroValue() === '') return
+    handleHeroValue(heroValue())
+  }
+
+  const pasteHero = async () => {
+    const text = await pasteFromClipboard()
+    if (text === null) return
+    setHeroValue(text)
+    heroPasteRef?.focus()
+    handleHeroValue(text)
+  }
+
+  const onHeroScan = (raw: string) => {
+    setHeroValue(raw)
+    handleHeroValue(raw)
   }
 
   // the hero's balance/mint count is always the spendable view (excludes
@@ -1317,19 +1417,63 @@ const Wallet: Component = () => {
                     <IoAddCircleSharp />
                     &nbsp;Mint
                   </A>
-                  <button
-                    type="button"
-                    class="hero-btn hero-btn-primary"
-                    onClick={() => setOpenDialog('receive')}
-                  >
-                    <IoArrowDownCircleSharp />
-                    &nbsp;Receive
-                  </button>
                 </div>
+                <figure class="paste-widget hero-paste-widget">
+                  <div class="paste-input-row">
+                    <ScanToggle onScan={onHeroScan} accept={isValidHeroInput} />
+                    <NfcToggle onScan={onHeroScan} accept={isValidHeroInput} />
+                    <button
+                      type="button"
+                      class="icon-btn paste-icon-btn"
+                      title="Paste from clipboard"
+                      onClick={pasteHero}
+                    >
+                      <IoClipboardSharp />
+                    </button>
+                    <div class="paste-input-wrapper">
+                      <input
+                        ref={el => (heroPasteRef = el)}
+                        type="text"
+                        class="paste-input"
+                        placeholder="Note, invoice, or Lightning Address..."
+                        value={heroValue()}
+                        onInput={e => setHeroValue(e.currentTarget.value)}
+                        onKeyDown={e => e.key === 'Enter' && handleHero()}
+                      />
+                      <Show when={heroValue() !== ''}>
+                        <button
+                          type="button"
+                          class="icon-btn paste-clear-btn"
+                          title="Clear"
+                          onClick={() => setHeroValue('')}
+                        >
+                          <IoCloseSharp />
+                        </button>
+                      </Show>
+                    </div>
+                    <button
+                      type="button"
+                      class="icon-btn paste-confirm-btn"
+                      title="Receive a note, or pay an invoice/address"
+                      disabled={heroValue() === ''}
+                      onClick={handleHero}
+                    >
+                      <IoReturnDownForwardSharp />
+                    </button>
+                  </div>
+                </figure>
                 <Show when={showReceive()}>
                   <ReceiveDialog
-                    onClose={() => setOpenDialog(null)}
+                    initialValue={receiveHandoffValue() ?? undefined}
+                    onClose={closeReceive}
                     onMelt={openMelt}
+                  />
+                </Show>
+                <Show when={showMelt()}>
+                  <MeltDialog
+                    initialInvoice={meltHandoffInvoice() ?? undefined}
+                    initialAddress={meltHandoffAddress() ?? undefined}
+                    onClose={closeMelt}
                   />
                 </Show>
               </section>
@@ -1405,52 +1549,68 @@ const Wallet: Component = () => {
                 </Show>
               </div>
               <div class="btns">
-                <button
-                  type="button"
-                  class="wallet-hero-btn"
-                  onClick={() => setOpenDialog('receive')}
-                >
-                  <IoArrowDownCircleSharp />
-                  &nbsp;Receive
-                </button>
-                <button
-                  type="button"
-                  class="wallet-hero-btn"
-                  onClick={() => setOpenDialog('send')}
-                >
-                  <IoPaperPlaneSharp />
-                  &nbsp;Send
-                </button>
                 <A href="/mint" class="link-btn wallet-hero-btn">
                   <IoAddCircleSharp />
                   &nbsp;Mint
                 </A>
-                <button
-                  type="button"
-                  class="wallet-hero-btn"
-                  onClick={() => setOpenDialog('melt')}
-                >
-                  <IoFlameSharp />
-                  &nbsp;Melt
-                </button>
               </div>
+              <figure class="paste-widget hero-paste-widget">
+                <div class="paste-input-row">
+                  <ScanToggle onScan={onHeroScan} accept={isValidHeroInput} />
+                  <NfcToggle onScan={onHeroScan} accept={isValidHeroInput} />
+                  <button
+                    type="button"
+                    class="icon-btn paste-icon-btn"
+                    title="Paste from clipboard"
+                    onClick={pasteHero}
+                  >
+                    <IoClipboardSharp />
+                  </button>
+                  <div class="paste-input-wrapper">
+                    <input
+                      ref={el => (heroPasteRef = el)}
+                      type="text"
+                      class="paste-input"
+                      placeholder="Note, invoice, or Lightning Address..."
+                      value={heroValue()}
+                      onInput={e => setHeroValue(e.currentTarget.value)}
+                      onKeyDown={e => e.key === 'Enter' && handleHero()}
+                    />
+                    <Show when={heroValue() !== ''}>
+                      <button
+                        type="button"
+                        class="icon-btn paste-clear-btn"
+                        title="Clear"
+                        onClick={() => setHeroValue('')}
+                      >
+                        <IoCloseSharp />
+                      </button>
+                    </Show>
+                  </div>
+                  <button
+                    type="button"
+                    class="icon-btn paste-confirm-btn"
+                    title="Receive a note, or pay an invoice/address"
+                    disabled={heroValue() === ''}
+                    onClick={handleHero}
+                  >
+                    <IoReturnDownForwardSharp />
+                  </button>
+                </div>
+              </figure>
             </section>
             <Show when={showReceive()}>
               <ReceiveDialog
-                onClose={() => setOpenDialog(null)}
+                initialValue={receiveHandoffValue() ?? undefined}
+                onClose={closeReceive}
                 onMelt={openMelt}
               />
-            </Show>
-            <Show when={showSend()}>
-              <SendDialog onClose={() => setOpenDialog(null)} />
             </Show>
             <Show when={showMelt()}>
               <MeltDialog
                 initialInvoice={meltHandoffInvoice() ?? undefined}
-                onClose={() => {
-                  setOpenDialog(null)
-                  setMeltHandoffInvoice(null)
-                }}
+                initialAddress={meltHandoffAddress() ?? undefined}
+                onClose={closeMelt}
               />
             </Show>
 
@@ -1581,38 +1741,6 @@ const Wallet: Component = () => {
                   </Show>
                 </button>
                 <button
-                  class="icon-btn label-btn"
-                  disabled={!canLabelSelected()}
-                  title={
-                    canLabelSelected()
-                      ? 'Set a label on every selected note (private, for your own reference)'
-                      : 'Select notes to label'
-                  }
-                  onClick={openLabelInput}
-                >
-                  <IoPencilSharp />
-                  &nbsp;Label
-                  <Show when={selectedBearers().length > 1}>
-                    &nbsp;({selectedBearers().length})
-                  </Show>
-                </button>
-                <button
-                  class="icon-btn mark-spent-btn"
-                  disabled={!canMarkSpentSelected()}
-                  title={
-                    canMarkSpentSelected()
-                      ? 'Mark every selected note as spent - locks them without removing them, e.g. if you already handed them out some other way'
-                      : 'Select notes to mark as spent'
-                  }
-                  onClick={markSpentSelected}
-                >
-                  <IoBanSharp />
-                  &nbsp;Mark spent
-                  <Show when={selectedBearers().length > 1}>
-                    &nbsp;({selectedBearers().length})
-                  </Show>
-                </button>
-                <button
                   class="icon-btn split-single-btn"
                   disabled={!canSplitSingle() || offlineMode()}
                   title={
@@ -1682,38 +1810,97 @@ const Wallet: Component = () => {
                   <IoSwapHorizontalSharp />
                   &nbsp;Transfer
                 </button>
-                <button
-                  class="icon-btn export-btn"
-                  disabled={selected().size === 0}
-                  title={
-                    selected().size === 0
-                      ? 'Select notes to export'
-                      : 'Download the selected notes as a text file (bech32-encoded, one per line)'
-                  }
-                  onClick={exportSelected}
-                >
-                  <IoDownloadSharp />
-                  &nbsp;Export
-                  <Show when={selected().size > 0}>
-                    &nbsp;({selected().size})
+                <div class="more-menu" ref={el => (moreMenuRef = el)}>
+                  <button
+                    type="button"
+                    class="icon-btn more-btn"
+                    title="More actions - label, mark spent, export"
+                    onClick={() => setShowMoreMenu(v => !v)}
+                  >
+                    <IoEllipsisVerticalSharp />
+                    &nbsp;More
+                  </button>
+                  <Show when={showMoreMenu()}>
+                    <div class="more-menu-panel">
+                      <button
+                        class="icon-btn label-btn"
+                        disabled={!canLabelSelected()}
+                        title={
+                          canLabelSelected()
+                            ? 'Set a label on every selected note (private, for your own reference)'
+                            : 'Select notes to label'
+                        }
+                        onClick={() => {
+                          openLabelInput()
+                          setShowMoreMenu(false)
+                        }}
+                      >
+                        <IoPencilSharp />
+                        &nbsp;Label
+                        <Show when={selectedBearers().length > 1}>
+                          &nbsp;({selectedBearers().length})
+                        </Show>
+                      </button>
+                      <button
+                        class="icon-btn mark-spent-btn"
+                        disabled={!canMarkSpentSelected()}
+                        title={
+                          canMarkSpentSelected()
+                            ? 'Mark every selected note as spent - locks them without removing them, e.g. if you already handed them out some other way'
+                            : 'Select notes to mark as spent'
+                        }
+                        onClick={() => {
+                          markSpentSelected()
+                          setShowMoreMenu(false)
+                        }}
+                      >
+                        <IoBanSharp />
+                        &nbsp;Mark spent
+                        <Show when={selectedBearers().length > 1}>
+                          &nbsp;({selectedBearers().length})
+                        </Show>
+                      </button>
+                      <button
+                        class="icon-btn export-btn"
+                        disabled={selected().size === 0}
+                        title={
+                          selected().size === 0
+                            ? 'Select notes to export'
+                            : 'Download the selected notes as a text file (bech32-encoded, one per line)'
+                        }
+                        onClick={() => {
+                          exportSelected()
+                          setShowMoreMenu(false)
+                        }}
+                      >
+                        <IoDownloadSharp />
+                        &nbsp;Export
+                        <Show when={selected().size > 0}>
+                          &nbsp;({selected().size})
+                        </Show>
+                      </button>
+                      <button
+                        class="icon-btn qr-export-btn"
+                        disabled={selected().size === 0}
+                        title={
+                          selected().size === 0
+                            ? 'Select notes to download as QR codes'
+                            : 'Download an SVG QR code for each selected note'
+                        }
+                        onClick={() => {
+                          downloadQrSelected()
+                          setShowMoreMenu(false)
+                        }}
+                      >
+                        <IoQrCodeSharp />
+                        &nbsp;QR
+                        <Show when={selected().size > 0}>
+                          &nbsp;({selected().size})
+                        </Show>
+                      </button>
+                    </div>
                   </Show>
-                </button>
-                <button
-                  class="icon-btn qr-export-btn"
-                  disabled={selected().size === 0}
-                  title={
-                    selected().size === 0
-                      ? 'Select notes to download as QR codes'
-                      : 'Download an SVG QR code for each selected note'
-                  }
-                  onClick={downloadQrSelected}
-                >
-                  <IoQrCodeSharp />
-                  &nbsp;QR
-                  <Show when={selected().size > 0}>
-                    &nbsp;({selected().size})
-                  </Show>
-                </button>
+                </div>
                 <Show when={selected().size > 0}>
                   <span class="selection-count">
                     {selected().size} selected

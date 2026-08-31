@@ -1,5 +1,5 @@
 import type {Component} from 'solid-js'
-import {Show, For, createSignal, createMemo, onCleanup} from 'solid-js'
+import {Show, For, createSignal, createMemo, onMount, onCleanup} from 'solid-js'
 import {
   IoClipboardSharp,
   IoCloseSharp,
@@ -64,6 +64,9 @@ export type MeltDialogProps = {
   // detection (see meltHandoff.ts) - Wallet.tsx picks that up on mount and
   // opens this dialog with it already set, skipping the paste step
   initialInvoice?: string
+  // same idea, for a Lightning Address recognized by Wallet.tsx's own hero
+  // paste widget - looked up on mount just like a manually pasted address
+  initialAddress?: string
 }
 
 // same cadence as Mint.tsx's LUD-21 verify poll - a melt's own LUD-25 melt
@@ -231,6 +234,10 @@ const MeltDialog: Component<MeltDialogProps> = props => {
       setFetchingInvoice(false)
     }
   }
+
+  onMount(() => {
+    if (props.initialAddress) lookupLnAddress(props.initialAddress)
+  })
 
   const handleValue = (raw: string) => {
     const trimmed = raw.trim()

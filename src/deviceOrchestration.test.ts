@@ -879,7 +879,7 @@ describe('deviceMint', () => {
 })
 
 describe('deviceSettle failure leaves the raw output intact', () => {
-  // the call sites' settle-failure handling (SendDialog/Melt/BearerCard
+  // the call sites' settle-failure handling (Wallet.tsx/MeltDialog/BearerCard
   // track parts.change as an unverified mirror) relies on exactly this:
   // after a failed settle, the raw output is still a whole, valid note
   it('keeps the unsettled change note confirmed on the device and outstanding mint-side', async () => {
