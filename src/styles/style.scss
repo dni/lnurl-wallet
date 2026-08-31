@@ -1081,7 +1081,8 @@ nav {
 }
 
 // wraps the More toggle so its panel can anchor under it
-.more-menu {
+.more-menu,
+.currency-menu {
   position: relative;
   display: inline-flex;
 }
@@ -1275,6 +1276,16 @@ nav {
 .bearer-amount {
   font-weight: bold;
   font-size: 1.1em;
+}
+
+// a fiat estimate trailing a sats amount (see FiatValue.tsx) - muted and
+// smaller than the sats figure itself, which stays the actual, authoritative
+// value; this is only ever an approximation for orientation
+.fiat-value {
+  opacity: 0.7;
+  font-size: 0.85em;
+  font-weight: normal;
+  margin-left: 4px;
 }
 
 .bearer-pending {

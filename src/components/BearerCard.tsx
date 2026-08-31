@@ -42,6 +42,7 @@ import {
   isMintUnconfirmed
 } from '../trustedMints'
 import Qr from './Qr'
+import FiatValue from './FiatValue'
 
 export type BearerCardProps = {
   bearer: Bearer
@@ -228,6 +229,7 @@ const BearerCard: Component<BearerCardProps> = props => {
         <div class="bearer-title">
           <span class="bearer-amount">
             {msatToSats(props.bearer.amount)} sats
+            <FiatValue msat={props.bearer.amount} />
           </span>
           <Show when={props.bearer.label && !isSpent()}>
             <span class="bearer-label">{props.bearer.label}</span>

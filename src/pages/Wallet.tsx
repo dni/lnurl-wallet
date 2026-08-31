@@ -67,6 +67,7 @@ import ReceiveDialog from '../components/ReceiveDialog'
 import MeltDialog from '../components/MeltDialog'
 import ScanToggle from '../components/ScanToggle'
 import NfcToggle from '../components/NfcToggle'
+import FiatValue from '../components/FiatValue'
 
 const Wallet: Component = () => {
   const {
@@ -1547,6 +1548,7 @@ const Wallet: Component = () => {
                 <div class="wallet-stat">
                   <span class="wallet-stat-value">
                     {msatToSats(spendableTotal())} sats
+                    <FiatValue msat={spendableTotal()} />
                   </span>
                   <span class="wallet-stat-label">Total balance</span>
                 </div>
@@ -1568,6 +1570,7 @@ const Wallet: Component = () => {
                   <div class="wallet-stat">
                     <span class="wallet-stat-value">
                       {msatToSats(spentTotal())} sats
+                      <FiatValue msat={spentTotal()} />
                     </span>
                     <span class="wallet-stat-label">
                       Spent&nbsp;·&nbsp;{spentCount()}
