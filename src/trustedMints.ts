@@ -31,7 +31,7 @@ export type TrustedMint = {
   pendingMintPubkey?: string
   // best-effort node identity/capacity, cached from the mint-address
   // discovery endpoint (see lnurlcash.ts's fetchMintAddress) purely for
-  // display (Mints.tsx) - absent for a mint that doesn't support it, or one
+  // display (Mint.tsx) - absent for a mint that doesn't support it, or one
   // trusted before this wallet learned to ask. Never used for anything
   // security-relevant; mintPubkey above remains the only thing a note's
   // signature is ever checked against.
@@ -62,7 +62,7 @@ export type TrustedMintNodeInfo = {
 
 // distills a mint-address lookup (see lnurlcash.ts's fetchMintAddress) down
 // to just the cacheable display fields above - shared by Mint.tsx's lookup
-// flow and Mints.tsx's "add by address" widget, so both cache node info the
+// flow and Mint.tsx's "add by address" widget, so both cache node info the
 // same way rather than duplicating this shape-narrowing themselves.
 // `username` is independent of whether the mint-address endpoint itself
 // succeeded - it's cached even when info is null (no mint-address support,
@@ -172,7 +172,7 @@ export const getTrustedMintAddress = (server: string): string | null => {
 // the security-relevant one: the mint advertised a DIFFERENT key than the
 // pinned one, which was staged for review (pendingMintPubkey) instead of
 // silently replacing it. Callers should surface that loudly (see
-// WalletContext and Mints.tsx).
+// WalletContext and Mint.tsx).
 export type TrustKeyResult = 'added' | 'unchanged' | 'rekey-pending'
 
 // Called whenever this wallet ends up holding (or already holds) a bearer
@@ -263,7 +263,7 @@ export const grandfatherTrustedMint = (
 // Validates and throws instead of silently no-op'ing, since a human is
 // waiting on the result either way. `nodeInfo` is whatever the mint-address
 // lookup (if any) turned up alongside this pubkey - optional, since a
-// manual add (Mints.tsx) or a mint without that endpoint has none to give.
+// manual add (Mint.tsx) or a mint without that endpoint has none to give.
 // Same rule as lockTrustedMint for a server already pinned with a DIFFERENT
 // key: staged for review (nodeInfo still refreshes - it's display-only),
 // never overwritten in place.
@@ -353,7 +353,7 @@ export const dismissTrustedMintRekey = (server: string): void => {
   )
 }
 
-// refreshes just the cached display info (Mints.tsx) for a server already
+// refreshes just the cached display info (Mint.tsx) for a server already
 // in the list - never touches mintPubkey/addedAt/locked, and no-ops for a
 // server that isn't trusted yet (that's addTrustedMint's job, which takes
 // the same info directly alongside the pubkey it's trusting for the first

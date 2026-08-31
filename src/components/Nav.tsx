@@ -9,7 +9,6 @@ import {
   IoLockClosedSharp,
   IoSaveSharp,
   IoBookSharp,
-  IoShieldCheckmarkSharp,
   IoCloudOfflineSharp,
   IoHardwareChipSharp
 } from 'solid-icons/io'
@@ -57,22 +56,24 @@ const Nav = () => {
               &nbsp;Wallet
             </A>
           </Show>
+          {/* not gated on state()/offlineMode() like Melt below - trusted-
+          mint management lives at the bottom of this page too now (see
+          pages/Mint.tsx) and stays usable without an unlocked wallet or a
+          network connection, same as /backup below */}
+          <A
+            href="/mint"
+            class="nav-link"
+            title="Mint a note, or manage trusted mints"
+          >
+            <IoAddCircleSharp />
+            &nbsp;Mint
+          </A>
           <Show when={state() === 'unlocked'}>
-            <Show when={!offlineMode()}>
-              <A href="/mint" class="nav-link">
-                <IoAddCircleSharp />
-                &nbsp;Mint
-              </A>
-            </Show>
             <A href="/melt" class="nav-link">
               <IoFlameSharp />
               &nbsp;Melt
             </A>
           </Show>
-          <A href="/mints" class="nav-link" title="Trusted mints">
-            <IoShieldCheckmarkSharp />
-            &nbsp;Mints
-          </A>
           {/* not gated on state() === 'unlocked' - restoring a backup is
           exactly what a device with no wallet yet (state() === 'none') needs
           this link for, and hiding it there was the whole bug: after
