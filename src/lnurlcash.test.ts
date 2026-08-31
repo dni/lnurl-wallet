@@ -22,17 +22,22 @@ import {
   serverOf,
   noteEndpointOf,
   verifyNoteSignature,
+  verifyNoteSignatureHash,
   isPreimage,
   isBolt11Invoice,
   decodeBolt11AmountMsat,
   parseMintFee,
   applyMintFee,
+  withinMintFeeBand,
   grossUpForMintFee,
   mintAddressUrl,
   lightningAddressUsername,
   isAllowedServiceUrl,
   sameInvoice,
   canUseMintComment,
+  requireMintComment,
+  requireBoundMintQuote,
+  validateBoundMintReceipt,
   generateNoteSecret,
   hashK1,
   MIN_COMMENT_LENGTH_FOR_SECRET,
@@ -497,6 +502,14 @@ describe('LUD-12 comment protection (LUD-25 preimage-race mitigation)', () => {
     )
   })
 
+  it('refuses current mint creation without the mandatory comment capacity', () => {
+    expect(() => requireMintComment(payInfo(64))).not.toThrow()
+    expect(() => requireMintComment(payInfo(63))).toThrow(/commentAllowed: 64/)
+    expect(() => requireMintComment(payInfo(undefined))).toThrow(
+      /commentAllowed: 64/
+    )
+  })
+
   it('generateNoteSecret + hashK1 produce exactly a 64-char hex comment', () => {
     const secret = generateNoteSecret('mint.example.com')
     expect(isPreimage(secret)).toBe(true)
@@ -518,6 +531,14 @@ describe('LUD-25 mint fee arithmetic at the edges', () => {
     expect(gross).toBe(3_000_001)
     expect(applyMintFee(gross, fee)).toBe(1)
     expect(applyMintFee(gross - 1, fee)).toBe(0)
+  })
+
+  it('accepts exact-msat and whole-sat-rounded receipt fees', () => {
+    const fee = {baseFeeMsat: 5000, feePpm: 1000}
+    expect(withinMintFeeBand(56000, 50944, fee)).toBe(true)
+    expect(withinMintFeeBand(56000, 50000, fee)).toBe(true)
+    expect(withinMintFeeBand(56000, 49999, fee)).toBe(false)
+    expect(withinMintFeeBand(56000, 50945, fee)).toBe(false)
   })
 
   it('is minimal across a sweep of hostile fees, not just near ones', () => {
@@ -615,6 +636,9 @@ describe('offline signature verification', () => {
     const sigHex = signAsMint(priv, K1, amountMsat)
 
     expect(verifyNoteSignature(K1, amountMsat, sigHex, pubHex)).toBe(true)
+    expect(
+      verifyNoteSignatureHash(hashK1(K1), amountMsat, sigHex, pubHex)
+    ).toBe(true)
     expect(verifyNoteSignature(K1, amountMsat + 1, sigHex, pubHex)).toBe(false)
     expect(
       verifyNoteSignature('b'.repeat(64), amountMsat, sigHex, pubHex)
@@ -660,6 +684,41 @@ describe('offline signature verification', () => {
     expect(
       verifyNoteSignature(K1, 1000, 'ab'.repeat(10), 'ab'.repeat(33))
     ).toBe(false)
+  })
+
+  it('authenticates a settled bound-mint receipt from h without revealing k1', () => {
+    const priv = secp256k1.utils.randomSecretKey()
+    const pubHex = bytesToHex(secp256k1.getPublicKey(priv, true))
+    const amountMsat = 21000
+    const h = hashK1(K1)
+    const sig = signAsMint(priv, K1, amountMsat)
+    const quote = {
+      pr: 'lnbc21n1bound',
+      verify: 'https://mint.example/verify/1',
+      disposable: true,
+      mintToHash: true,
+      mint: {h, amountMsat}
+    }
+    const verification = {
+      settled: true,
+      preimage: 'ff'.repeat(32),
+      pr: quote.pr.toUpperCase(),
+      mint: {h, amountMsat, signature: sig}
+    }
+
+    expect(requireBoundMintQuote(quote, h, amountMsat)).toEqual(quote.mint)
+    expect(
+      validateBoundMintReceipt(quote, verification, h, amountMsat, pubHex)
+    ).toEqual({h, amountMsat, signature: sig})
+    expect(() =>
+      validateBoundMintReceipt(
+        quote,
+        {...verification, mint: {...verification.mint, h: 'bb'.repeat(32)}},
+        h,
+        amountMsat,
+        pubHex
+      )
+    ).toThrow(/does not match/)
   })
 
   it('rejects a malformed k1 without throwing', () => {

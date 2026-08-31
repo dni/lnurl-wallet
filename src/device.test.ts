@@ -451,7 +451,12 @@ describe('DeviceClient response validation', () => {
       created_at: 0,
       updated_at: 0
     }
-    const alsoGood = {...good, id: 'efefefef', state: 'pending'}
+    const alsoGood = {
+      ...good,
+      id: 'efefefef',
+      h: 'ab'.repeat(32),
+      state: 'pending'
+    }
     const transport = new FakeTransport()
     const client = new DeviceClient(transport)
     const promise = client.listNotes()
@@ -460,7 +465,14 @@ describe('DeviceClient response validation', () => {
     // missing field - all dropped, the conforming entries kept
     transport.respond({
       ok: true,
-      notes: [good, null, {...good, id: 'nope'}, {state: 'pending'}, alsoGood]
+      notes: [
+        good,
+        null,
+        {...good, id: 'nope'},
+        {...good, h: 'not-a-hash'},
+        {state: 'pending'},
+        alsoGood
+      ]
     })
     await expect(promise).resolves.toEqual({
       total: undefined,

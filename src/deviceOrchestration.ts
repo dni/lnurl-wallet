@@ -15,6 +15,7 @@ import {
   resolveMintInput,
   fetchPayRequest,
   buildNoteUrl,
+  hashK1,
   probeBurnedNote,
   AmbiguousMintError,
   type HashedMutationResult,
@@ -40,6 +41,9 @@ import {enqueuePendingDeviceOp, drainPendingDeviceOps} from './deviceQueue'
 
 export type DeviceMutationResult = {
   deviceId: string
+  // public sha256(secret), retained only where the companion needs to verify
+  // an offline signature without exporting a device-held k1
+  deviceHash?: string
   amountMsat: number
   // blank mirror url - see lnurlcash.ts's withoutK1 -
   // never carries a real k1
@@ -155,6 +159,7 @@ const rotateK1OnDevice = async (
   )
   return {
     deviceId: id,
+    deviceHash: h,
     amountMsat,
     url: withoutK1(note.url, amountMsat, signature),
     callback: note.callback,
@@ -291,6 +296,7 @@ export const deviceMerge = async (
   )
   return {
     deviceId: id,
+    deviceHash: h,
     amountMsat: totalAmountMsat,
     url: withoutK1(inputs[0].url, totalAmountMsat, signature),
     callback,
@@ -353,6 +359,7 @@ export const deviceSplit = async (
   return {
     target: {
       deviceId: id,
+      deviceHash: h,
       amountMsat,
       url: withoutK1(template, amountMsat, signature),
       callback,
@@ -360,6 +367,7 @@ export const deviceSplit = async (
     },
     change: {
       deviceId: id2,
+      deviceHash: h2,
       amountMsat: changeMsat,
       url: withoutK1(template, changeMsat, changeSignature),
       callback,
@@ -418,6 +426,7 @@ const importAndRotate = async (
   } catch (err) {
     throw new DeviceImportLeftBehindError(err, {
       deviceId: importedId,
+      deviceHash: hashK1(k1),
       amountMsat,
       url: withoutK1(noteUrlTemplate, amountMsat),
       callback
@@ -449,6 +458,60 @@ export const deviceMint = (
     amountMsat,
     label
   )
+
+// Preferred fresh-mint path: stage a vault-generated secret before any
+// invoice exists, then confirm it only after the companion has authenticated
+// the mint's settled receipt. Unlike deviceMint above, k1 never enters the
+// browser and there is no import-or-rotate round trip.
+export const stageDeviceBoundMint = (
+  client: DeviceClient,
+  label?: string
+): Promise<{deviceId: string; h: string}> =>
+  client
+    .newSecret([], label)
+    .then(({id, h}) => ({deviceId: id, h: h.toLowerCase()}))
+
+export const discardDeviceBoundMint = (
+  client: DeviceClient,
+  deviceId: string
+): Promise<void> => client.discard(deviceId)
+
+export const confirmDeviceBoundMint = async (
+  client: DeviceClient,
+  args: {
+    deviceId: string
+    h: string
+    withdrawLink: string
+    amountMsat: number
+    signature: string
+  }
+): Promise<DeviceMutationResult> => {
+  const noteUrl = fromLud17(args.withdrawLink.trim())
+  const host = noteEndpointOf(noteUrl)
+  await commitToDevice(
+    client,
+    [
+      {
+        deviceId: args.deviceId,
+        amountMsat: args.amountMsat,
+        host,
+        signature: args.signature
+      }
+    ],
+    []
+  )
+  return {
+    deviceId: args.deviceId,
+    deviceHash: args.h.toLowerCase(),
+    amountMsat: args.amountMsat,
+    url: withoutK1(noteUrl, args.amountMsat, args.signature),
+    // The receipt proves the note without revealing k1, so there is no
+    // withdrawRequest GET from which to learn the mutating callback yet.
+    // Device refresh fills it before the first spend.
+    callback: '',
+    signature: args.signature
+  }
+}
 
 // receiving a note from someone else: same custody move as minting, but
 // `noteUrl` is the received note's own url (already normalized by
@@ -583,6 +646,7 @@ export type AdoptedDeviceNote = {
   amountMsat: number
   mintPubkey?: string
   deviceId: string
+  deviceHash: string
 }
 
 // Bring a note the vault holds but this browser has no record of back into
@@ -595,24 +659,41 @@ export type AdoptedDeviceNote = {
 // mint knows what is actually outstanding now.
 export const adoptDeviceNote = async (
   client: DeviceClient,
-  note: {id: string; host: string; amountMsat: number}
+  note: {
+    id: string
+    h?: string
+    host: string
+    amountMsat: number
+    signature?: string
+  }
 ): Promise<AdoptedDeviceNote> => {
   const candidates = await noteEndpointCandidates(note.host)
   if (candidates.length === 0) {
     throw new Error('This note has no mint recorded on the device.')
   }
   const k1 = await client.exportSecret(note.id)
+  const h = hashK1(k1)
+  if (note.h && note.h.toLowerCase() !== h) {
+    throw new Error(
+      'The vault returned recovery metadata for a different note.'
+    )
+  }
   let lastError: unknown
   for (const endpoint of candidates) {
     const url = buildNoteUrl(endpoint, k1, note.amountMsat)
     try {
       const info = await fetchNoteInfo(url)
       return {
-        url: withoutK1(url, info.maxWithdrawable),
+        url: withoutK1(
+          url,
+          info.maxWithdrawable,
+          info.maxWithdrawable === note.amountMsat ? note.signature : undefined
+        ),
         callback: info.callback,
         amountMsat: info.maxWithdrawable,
         mintPubkey: info.mintPubkey,
-        deviceId: note.id
+        deviceId: note.id,
+        deviceHash: h
       }
     } catch (err) {
       lastError = err

@@ -46,6 +46,9 @@ export type Bearer = {
   // (see lnurlcash.ts's withoutK1) - it's a blank mirror, kept
   // only so this bearer displays like any other (amount/host/label/state)
   deviceId?: string
+  // sha256(device-held k1), public metadata used to verify a receipt-backed
+  // note signature without exporting the bearer secret
+  deviceHash?: string
   createdAt: number
   updatedAt: number
 }

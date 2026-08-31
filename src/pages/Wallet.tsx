@@ -392,7 +392,8 @@ const Wallet: Component = () => {
           amount: result.amountMsat,
           verified: true,
           mintPubkey: result.mintPubkey ?? bearer.mintPubkey,
-          deviceId: result.deviceId
+          deviceId: result.deviceId,
+          deviceHash: result.deviceHash
         })
         logActivity(
           'refresh',
@@ -416,7 +417,8 @@ const Wallet: Component = () => {
           amount: info.maxWithdrawable,
           verified: true,
           mintPubkey: info.mintPubkey ?? bearer.mintPubkey,
-          deviceId: migrated.deviceId
+          deviceId: migrated.deviceId,
+          deviceHash: migrated.deviceHash
         })
         logActivity(
           'refresh',
@@ -677,7 +679,8 @@ const Wallet: Component = () => {
             amount: msat,
             verified: true,
             mintPubkey: bearer.mintPubkey,
-            deviceId: parts.target.deviceId
+            deviceId: parts.target.deviceId,
+            deviceHash: parts.target.deviceHash
           })
           const remainder = await addBearer({
             url: settledChange.url,
@@ -685,7 +688,8 @@ const Wallet: Component = () => {
             amount: settledChange.amountMsat,
             verified: changeVerified,
             mintPubkey: bearer.mintPubkey,
-            deviceId: settledChange.deviceId
+            deviceId: settledChange.deviceId,
+            deviceHash: settledChange.deviceHash
           })
           removeBearer(remainderId)
           remainderId = remainder.id
@@ -941,7 +945,8 @@ const Wallet: Component = () => {
           amount: actualAmount,
           verified: true,
           mintPubkey: base.mintPubkey,
-          deviceId: settled.deviceId
+          deviceId: settled.deviceId,
+          deviceHash: settled.deviceHash
         })
       } else {
         let mergedK1: string
@@ -1092,7 +1097,8 @@ const Wallet: Component = () => {
           amount: msat,
           verified: true,
           mintPubkey: base.mintPubkey,
-          deviceId: parts.target.deviceId
+          deviceId: parts.target.deviceId,
+          deviceHash: parts.target.deviceHash
         })
         const settledChange = await deviceSettle(client, parts.change)
         targetAmount = msat
@@ -1103,7 +1109,8 @@ const Wallet: Component = () => {
           amount: settledChange.amountMsat,
           verified: true,
           mintPubkey: base.mintPubkey,
-          deviceId: settledChange.deviceId
+          deviceId: settledChange.deviceId,
+          deviceHash: settledChange.deviceHash
         })
       } else {
         let partK1 = ''

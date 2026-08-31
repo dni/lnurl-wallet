@@ -25,9 +25,9 @@ import {
   describeMintFee,
   probeBurnedNote,
   sameInvoice,
-  generateNoteSecret,
+  generateMintSecret,
   hashK1,
-  canUseMintComment,
+  requireMintComment,
   PendingNoteError,
   AmbiguousMutationError
 } from '../lnurlcash'
@@ -54,7 +54,7 @@ const TRANSFER_POLL_SECONDS = 5
 
 // moves a note's value to a different mint - there's no such primitive in
 // the protocol itself, only melt (burn + pay an invoice) and minting (pay a
-// payRequest, the preimage becomes a fresh k1). So a "transfer" here is:
+// payRequest bound to a fresh wallet-chosen k1). So a "transfer" here is:
 // request an invoice from the destination for exactly this note's value,
 // melt the source note to pay it (this wallet IS the payer, funded by the
 // note instead of an external wallet), then claim the destination note once
@@ -78,14 +78,9 @@ const TransferDialog: Component<TransferDialogProps> = props => {
 
   const [invoice, setInvoice] = createSignal<string | null>(null)
   const [verifyUrl, setVerifyUrl] = createSignal<string | null>(null)
-  // LUD-25 comment protection (see lnurlcash.ts's canUseMintComment): set
-  // only when the current invoice was requested with `comment=hashK1(this)`
-  // - the note's real k1 once paid, never the payment preimage. null means
-  // the destination didn't support it (or wasn't offered enough
-  // commentAllowed), the legacy no-comment fallback where the preimage
-  // itself is the secret - same as Mint.tsx's own getInvoice/claim.
+  // The wallet-chosen destination k1. It is null before an invoice exists;
+  // current transfer creation refuses an unnamed destination quote.
   const [mintSecret, setMintSecret] = createSignal<string | null>(null)
-  const [preimage, setPreimage] = createSignal('')
   const [claimed, setClaimed] = createSignal(false)
   const [sourceConfirmed, setSourceConfirmed] = createSignal(false)
 
@@ -190,20 +185,16 @@ const TransferDialog: Component<TransferDialogProps> = props => {
     if (!info?.withdrawLink) return
     setBusy(true)
     try {
-      // LUD-25 comment protection, same as Mint.tsx's getInvoice: if the
-      // destination advertises enough commentAllowed (LUD-12), generate the
-      // note's real secret now and send only its hash as `comment` - the
-      // melt's payment preimage never becomes the bearer secret, so it's
-      // safe to disclose (including via LUD-21 verify below). Otherwise the
-      // destination gets the plain no-comment mint, and the preimage IS the
-      // secret - see claimDestination's preimage path.
-      const secret = canUseMintComment(info)
-        ? generateNoteSecret(serverOf(info.withdrawLink || info.callback))
-        : null
+      // Refuse before requesting the destination invoice or spending the
+      // source note unless the output can be bound to our own secret.
+      requireMintComment(info)
+      const secret = generateMintSecret(
+        serverOf(info.withdrawLink || info.callback)
+      )
       const result = await requestInvoice(
         info.callback,
         props.sourceBearer.amount,
-        secret ? hashK1(secret) : undefined
+        hashK1(secret)
       )
       setMintSecret(secret)
       if (props.sourceBearer.deviceId) {
@@ -231,21 +222,19 @@ const TransferDialog: Component<TransferDialogProps> = props => {
     }
   }
 
-  // claims the destination note once its secret is known - either the
-  // wallet-generated one from a comment-protected invoice (see
-  // startTransfer/mintSecret), or the real payment preimage for a
-  // destination that doesn't support that. Same claim sequence as Mint.tsx:
+  // Claims the destination note with the wallet-generated secret from
+  // startTransfer. Same claim sequence as Mint.tsx:
   // verify (also settling the k1), rotate to close the exposure that GET
   // just created, then store it. If a vault is connected, that fresh secret
   // is generated and held there instead of in this browser (deviceMint -
   // import then rotate).
-  const claimDestination = async (preimageValue: string) => {
+  const claimDestination = async (noteSecret: string) => {
     const info = payRequest()
-    if (!info?.withdrawLink || !isPreimage(preimageValue)) return
+    if (!info?.withdrawLink || !isPreimage(noteSecret)) return
     try {
       const declaredUrl = buildNoteUrl(
         info.withdrawLink,
-        preimageValue,
+        noteSecret,
         props.sourceBearer.amount
       )
       const noteInfo = await fetchNoteInfo(declaredUrl)
@@ -257,7 +246,7 @@ const TransferDialog: Component<TransferDialogProps> = props => {
           info.withdrawLink,
           noteInfo.callback,
           noteEndpointOf(info.withdrawLink),
-          preimageValue,
+          noteSecret,
           noteInfo.maxWithdrawable
         )
         await addBearer({
@@ -266,7 +255,8 @@ const TransferDialog: Component<TransferDialogProps> = props => {
           amount: result.amountMsat,
           verified: true,
           mintPubkey: noteInfo.mintPubkey,
-          deviceId: result.deviceId
+          deviceId: result.deviceId,
+          deviceHash: result.deviceHash
         })
         setClaimed(true)
         stopPolling()
@@ -313,7 +303,7 @@ const TransferDialog: Component<TransferDialogProps> = props => {
               noteInfo.maxWithdrawable
             )
           } else if (outcome === 'unknown') {
-            // can't tell: the preimage note is stored below either way -
+            // can't tell: the original note is stored below either way -
             // track the possible rotated copy alongside it
             await addBearer({
               url: withNewK1(
@@ -358,7 +348,7 @@ const TransferDialog: Component<TransferDialogProps> = props => {
       // separately from the transfer it's actually part of
       if (rotationError) {
         notify(
-          `Transferred ${msatToSats(noteInfo.maxWithdrawable)} sats to ${serverOf(url)}, but could not rotate (${rotationError}) - the preimage was just transmitted, treat this note as exposed.`,
+          `Transferred ${msatToSats(noteInfo.maxWithdrawable)} sats to ${serverOf(url)}, but could not rotate (${rotationError}) - the note secret was just transmitted, treat this note as exposed.`,
           NotifyKind.ERROR
         )
       } else {
@@ -377,8 +367,8 @@ const TransferDialog: Component<TransferDialogProps> = props => {
   // once claimed, or once there's neither a destination verify endpoint to
   // poll NOR an unconfirmed source left to rotate-probe, a tick of
   // checkTransfer has nothing left it can do - the destination side is
-  // either resolved or waiting on a manually-pasted preimage (see the
-  // !verifyUrl() form below), and the source side already got its answer.
+  // either resolved or waiting for a manual claim with the wallet-held
+  // secret, and the source side already got its answer.
   // Without this, the button/timer kept "checking" forever with literally
   // no HTTP request going out - looked alive (spinner flips on and off)
   // while silently doing nothing, which is exactly the bug this guards
@@ -387,7 +377,7 @@ const TransferDialog: Component<TransferDialogProps> = props => {
   )
 
   // one tick checks both sides: whether the destination invoice settled
-  // (learning the preimage, then claiming) and - independently - whether
+  // (then claiming the bound note) and - independently - whether
   // the source note actually burned. Rotating it succeeding means it was
   // still there (the transfer failed, restore it); any other failure means
   // it's gone, which just leaves the destination claim (auto or manual) as
@@ -421,16 +411,11 @@ const TransferDialog: Component<TransferDialogProps> = props => {
               return
             }
             if (result.settled) {
-              // if this transfer used comment protection (see
-              // startTransfer), the note's real k1 is the wallet-held
-              // secret, not whatever preimage the destination discloses
-              // here - prefer it when present
+              // The note's real k1 is the wallet-held secret, not whatever
+              // settlement preimage the destination discloses here.
               const secret = mintSecret()
               if (secret) {
                 await claimDestination(secret)
-              } else if (result.preimage && isPreimage(result.preimage)) {
-                setPreimage(result.preimage)
-                await claimDestination(result.preimage)
               }
             }
           } catch {
@@ -646,36 +631,12 @@ const TransferDialog: Component<TransferDialogProps> = props => {
               </button>
             </Show>
           </div>
-          <Show
-            when={mintSecret()}
-            fallback={
-              <Show when={!verifyUrl()}>
-                <label>
-                  This mint doesn't support checking automatically - paste the
-                  preimage here if you learn it some other way
-                </label>
-                <input
-                  type="text"
-                  placeholder="payment preimage (64 hex characters)"
-                  value={preimage()}
-                  onInput={e => setPreimage(e.currentTarget.value)}
-                />
-                <div class="btns">
-                  <button
-                    disabled={!isPreimage(preimage()) || offlineMode()}
-                    onClick={() => claimDestination(preimage())}
-                  >
-                    Claim at destination
-                  </button>
-                </div>
-              </Show>
-            }
-          >
+          <Show when={mintSecret()}>
             {secret => (
               <>
                 <label>
-                  This mint supports comment-protected minting - nothing to
-                  paste, the note's secret never left this wallet.
+                  This current LUD-25 destination is bound to this wallet's
+                  secret - nothing to paste.
                   <Show when={verifyUrl()}>
                     {' '}
                     (or wait - this mint checks automatically)

@@ -3,7 +3,7 @@ import {sha256} from '@noble/hashes/sha2.js'
 import {secp256k1} from '@noble/curves/secp256k1.js'
 import {bytesToHex, hexToBytes, utf8ToBytes} from '@noble/hashes/utils.js'
 import {offlineMode} from './offlineMode'
-import {nextCashSecret} from './cashSecrets'
+import {nextCashSecret, requireRecoverableCashSecret} from './cashSecrets'
 import {msatToSats} from './helpers'
 
 // LUD-25 LNURLcash - bearer assets. Draft spec:
@@ -25,14 +25,11 @@ import {msatToSats} from './helpers'
 // {"status":"OK"} (plus sig/sig2, see Offline verification below).
 //
 // Minting: a LUD-06 payRequest may advertise `withdrawLink` (raw LUD-17 URL
-// of the withdraw endpoint) - the payment preimage of its paid invoice
-// becomes a valid k1 there. A Lightning payment preimage isn't delivered
-// payee-to-payer directly, so every routing node between WALLET and
-// SERVICE legitimately learns it before WALLET does - if SERVICE
-// advertises enough `commentAllowed` (LUD-12, see canUseMintComment),
-// WALLET closes that instead: it generates its own `secret`, sends only
-// `comment=hashK1(secret)` on the invoice request (requestInvoice), and
-// SERVICE credits the note as k1=secret once paid, never k1=P.
+// of the withdraw endpoint). The current LUD-25 draft profile requires the
+// payRequest to advertise `commentAllowed >= 64`; WALLET generates its own
+// `secret`, sends only `comment=hashK1(secret)` on the invoice request
+// (requestInvoice), and SERVICE credits the note as k1=secret once paid.
+// The Lightning payment preimage is settlement proof, never the new note.
 //
 // A melt's {"status":"OK"} only means the payment is now in flight - the
 // note isn't confirmed spent until it settles, and is restored to
@@ -439,18 +436,36 @@ export const generateNoteSecret = (domain: string): string =>
   nextCashSecret(domain) ??
   bytesToHex(crypto.getRandomValues(new Uint8Array(32)))
 
+// New mint invoices and cross-mint transfers must survive a reload after
+// payment. Unlike an ordinary mutation output, they cannot safely use the
+// in-memory random fallback: require a seed-derived secret whose counter was
+// persisted before the quote leaves this wallet.
+export const generateMintSecret = (domain: string): string =>
+  requireRecoverableCashSecret(domain)
+
 // exported so callers can hash the mint secret behind a LUD-12 `comment`
 // the same way (see MIN_COMMENT_LENGTH_FOR_SECRET) - it's the same
 // hex-in/hex-out sha256 either way, just applied to a not-yet-disclosed
 // secret instead of an existing k1
 export const hashK1 = (k1: string): string => bytesToHex(sha256(hexToBytes(k1)))
 
-const noteSignatureDigest = (k1: string, amountMsat: number): Uint8Array => {
-  const message = utf8ToBytes(`LNURLcash:${amountMsat}:${hashK1(k1)}`)
+const noteSignatureDigestForHash = (
+  h: string,
+  amountMsat: number
+): Uint8Array => {
+  if (!/^[0-9a-fA-F]{64}$/.test(h.trim())) {
+    throw new Error('A note hash must be 32 bytes of hex.')
+  }
+  const message = utf8ToBytes(
+    `LNURLcash:${amountMsat}:${h.trim().toLowerCase()}`
+  )
   return sha256(
     sha256(new Uint8Array([...LIGHTNING_SIGNED_MESSAGE_PREFIX, ...message]))
   )
 }
+
+const noteSignatureDigest = (k1: string, amountMsat: number): Uint8Array =>
+  noteSignatureDigestForHash(hashK1(k1), amountMsat)
 
 // recovers the signer's pubkey from (k1, amountMsat, signature) and checks
 // it against `mintPubkey` - true only if both match. `signature` is 65
@@ -463,9 +478,8 @@ const noteSignatureDigest = (k1: string, amountMsat: number): Uint8Array => {
 // costs nothing security-wise (recovering against the wrong one just
 // yields an unrelated pubkey that won't match mintPubkey) and means a note
 // verifies correctly regardless of which convention its issuer followed.
-export const verifyNoteSignature = (
-  k1: string,
-  amountMsat: number,
+const verifyNoteSignatureDigest = (
+  digest: Uint8Array,
   signatureHex: string,
   mintPubkeyHex: string
 ): boolean => {
@@ -476,14 +490,6 @@ export const verifyNoteSignature = (
     return false
   }
   if (wireSig.length !== 65) return false
-  // a malformed stored k1 (non-hex) makes sha256 hashing throw - an
-  // unverifiable signature is a "no", never a crash
-  let digest: Uint8Array
-  try {
-    digest = noteSignatureDigest(k1, amountMsat)
-  } catch {
-    return false
-  }
   const target = mintPubkeyHex.toLowerCase()
   const trailing = new Uint8Array([wireSig[64], ...wireSig.subarray(0, 64)])
   const leading = wireSig
@@ -505,6 +511,44 @@ export const verifyNoteSignature = (
     }
   }
   return false
+}
+
+export const verifyNoteSignature = (
+  k1: string,
+  amountMsat: number,
+  signatureHex: string,
+  mintPubkeyHex: string
+): boolean => {
+  try {
+    return verifyNoteSignatureDigest(
+      noteSignatureDigest(k1, amountMsat),
+      signatureHex,
+      mintPubkeyHex
+    )
+  } catch {
+    // A malformed stored k1 is unverifiable, never a render-time crash.
+    return false
+  }
+}
+
+// A sealed vault discloses h=sha256(k1), not k1. A bound-mint receipt signs
+// that same note id, so the companion can authenticate it without asking the
+// device to export the bearer secret.
+export const verifyNoteSignatureHash = (
+  h: string,
+  amountMsat: number,
+  signatureHex: string,
+  mintPubkeyHex: string
+): boolean => {
+  try {
+    return verifyNoteSignatureDigest(
+      noteSignatureDigestForHash(h, amountMsat),
+      signatureHex,
+      mintPubkeyHex
+    )
+  } catch {
+    return false
+  }
 }
 
 // ---- protocol requests ----
@@ -1069,8 +1113,9 @@ export type PayRequestInfo = {
   minSendable: number
   maxSendable: number
   metadata: string
-  // LUD-25: present when paying this mints a bearer note - the payment
-  // preimage becomes a valid k1 at this (raw LUD-17) withdraw endpoint
+  // LUD-25: present when paying this mints a bearer note at this raw
+  // LUD-17 withdraw endpoint. Current minting binds the note to a
+  // wallet-chosen secret through the mandatory callback comment.
   withdrawLink?: string
   // rarely present here in practice: a WALLET that pays the invoice can
   // recover SERVICE's node id straight from its own BOLT-11 signature, so
@@ -1083,28 +1128,36 @@ export type PayRequestInfo = {
   // means SERVICE didn't advertise one, which the spec says to read as
   // fee-free, not "unknown"
   mintFee?: MintFee
-  // LUD-12 (optional): number of characters SERVICE accepts in a `comment`
-  // on the callback - see canUseMintComment/MIN_COMMENT_LENGTH_FOR_SECRET
-  // for how this wallet uses it to protect a mint against the preimage
-  // race (Protecting a freshly minted note from a preimage race)
+  // LUD-12 capacity. It is optional for a generic payRequest, but a current
+  // LUD-25 mint payRequest must advertise at least 64 characters so WALLET
+  // can send the hex sha256 commitment naming the new note.
   commentAllowed?: number
+  // Additive ForgeSworn/Moneyer extension. Literal true means the mint also
+  // accepts the matching `h` field and may offer an authenticated receipt;
+  // it never substitutes for commentAllowed above.
+  mintToHash?: boolean
 }
 
-// LUD-25: "A mint payLink intending to support this SHOULD advertise a
-// commentAllowed of at least 64, enough for a hex-encoded 32-byte hash" -
-// exactly what generateNoteSecret + hashK1 produce
+// The current LUD-25 draft profile requires enough room for exactly what
+// generateNoteSecret + hashK1 produce: a hex-encoded 32-byte hash.
 export const MIN_COMMENT_LENGTH_FOR_SECRET = 64
 
 // true only if SERVICE's payRequest advertised enough `commentAllowed`
-// (LUD-12) to carry a hex-encoded 32-byte hash - the precondition for
-// minting with comment protection (see requestInvoice's `comment` param
-// and Mint.tsx). A SERVICE that omits commentAllowed, or advertises less
-// than this, can't be protected this way: WALLET falls back to the plain
-// no-comment mint, where the payment preimage P is the entire bearer
-// secret and LUD-21 `verify` MUST NOT be relied on (see Mint.tsx).
+// (LUD-12) to carry a hex-encoded 32-byte hash. Generic callers can inspect
+// this predicate; mint-creation paths must call requireMintComment below.
 export const canUseMintComment = (info: PayRequestInfo): boolean =>
   typeof info.commentAllowed === 'number' &&
   info.commentAllowed >= MIN_COMMENT_LENGTH_FOR_SECRET
+
+// Refuse before requesting an invoice: paying an unnamed mint invoice can
+// recreate the preimage-race design the current LUD-25 profile removes.
+export const requireMintComment = (info: PayRequestInfo): void => {
+  if (!canUseMintComment(info)) {
+    throw new Error(
+      'This mint cannot create current LUD-25 notes because it does not advertise commentAllowed: 64.'
+    )
+  }
+}
 
 // LUD-25 mint fees (optional): SERVICE signals what it withholds on minting
 // via an extra ["text/plain", "Mint fees: <base_fee_msat>,<fee_percent_ppm>"]
@@ -1161,6 +1214,20 @@ export const applyMintFee = (grossMsat: number, fee: MintFee): number => {
   return Math.max(0, grossMsat - fee.baseFeeMsat - proportional)
 }
 
+// Live mints differ on whether the advertised fee is withheld exactly in
+// msat or rounded up to a whole sat. A receipt amount inside this band is
+// compatible with either reading; anything outside it contradicts the quote.
+export const withinMintFeeBand = (
+  grossMsat: number,
+  netMsat: number,
+  fee: MintFee
+): boolean => {
+  const exactNet = applyMintFee(grossMsat, fee)
+  const exactFee = grossMsat - exactNet
+  const roundedNet = Math.max(0, grossMsat - Math.ceil(exactFee / 1000) * 1000)
+  return netMsat >= roundedNet && netMsat <= exactNet
+}
+
 // the inverse: the smallest invoice whose note still nets netMsat once
 // SERVICE's fee comes out. It has to be the smallest - anything above it
 // is the payer overpaying a fee for nothing - and flooring in applyMintFee
@@ -1215,7 +1282,41 @@ export const fetchPayRequest = async (url: string): Promise<PayRequestInfo> => {
   }
   const mintFee =
     typeof body.metadata === 'string' ? parseMintFee(body.metadata) : null
-  return {...body, mintFee: mintFee ?? undefined} as PayRequestInfo
+  return {
+    ...body,
+    mintFee: mintFee ?? undefined,
+    mintToHash: body.mintToHash === true,
+    commentAllowed:
+      typeof body.commentAllowed === 'number' ? body.commentAllowed : undefined
+  } as PayRequestInfo
+}
+
+export type BoundMintCommitment = {
+  h: string
+  amountMsat: number
+  signature?: string
+}
+
+const parseBoundMintCommitment = (
+  value: unknown
+): BoundMintCommitment | undefined => {
+  if (!value || typeof value !== 'object') return undefined
+  const raw = value as Record<string, unknown>
+  if (
+    typeof raw.h !== 'string' ||
+    !/^[0-9a-fA-F]{64}$/.test(raw.h) ||
+    typeof raw.amount !== 'number' ||
+    !Number.isSafeInteger(raw.amount) ||
+    raw.amount <= 0 ||
+    (raw.sig !== undefined && typeof raw.sig !== 'string')
+  ) {
+    return undefined
+  }
+  return {
+    h: raw.h.toLowerCase(),
+    amountMsat: raw.amount,
+    ...(typeof raw.sig === 'string' ? {signature: raw.sig} : {})
+  }
 }
 
 export type InvoiceResult = {
@@ -1227,24 +1328,32 @@ export type InvoiceResult = {
   // paid regardless) kept around and reused - per spec, disposable being
   // null/absent MUST be read as true, so only an explicit `false` counts
   disposable: boolean
+  // Per-quote acknowledgement and optional pre-settlement commitment for
+  // the additive bound-receipt extension.
+  mintToHash: boolean
+  mint?: BoundMintCommitment
 }
 
-// `comment` (LUD-12): when present, this is LUD-25's mint-time preimage-race
-// protection (Protecting a freshly minted note from a preimage race) -
-// callers pass `hashK1(secret)` for a wallet-generated secret, never the
-// secret itself over the wire before payment. Only meaningful when
-// canUseMintComment(payRequestInfo) is true; passing one to a SERVICE that
-// doesn't support LUD-12 is harmless (an ad-hoc field it will simply
-// ignore), but nothing here enforces that precondition - the caller (see
-// Mint.tsx) decides whether to protect a given mint this way.
+// `outputHash` names a current LUD-25 mint output. It is sent as the
+// mandatory LUD-12 comment and repeated as the additive `h` extension. The
+// parameter is omitted for ordinary Lightning payments.
 export const requestInvoice = async (
   payCallback: string,
   amountMsat: number,
-  comment?: string
+  outputHash?: string
 ): Promise<InvoiceResult> => {
   const cbUrl = new URL(payCallback)
   cbUrl.searchParams.set('amount', String(amountMsat))
-  if (comment !== undefined) cbUrl.searchParams.set('comment', comment)
+  if (outputHash !== undefined) {
+    if (!isPreimage(outputHash)) {
+      throw new Error(
+        'An output hash must be 32 bytes of hex - no invoice was requested.'
+      )
+    }
+    const h = outputHash.trim().toLowerCase()
+    cbUrl.searchParams.set('comment', h)
+    cbUrl.searchParams.set('h', h)
+  }
   const body = await lnurlFetch(cbUrl)
   if (typeof body?.pr !== 'string') {
     throw new Error('Service did not return an invoice.')
@@ -1262,7 +1371,9 @@ export const requestInvoice = async (
   return {
     pr: body.pr,
     verify: typeof body.verify === 'string' ? body.verify : undefined,
-    disposable: body.disposable !== false
+    disposable: body.disposable !== false,
+    mintToHash: body.mintToHash === true,
+    mint: parseBoundMintCommitment(body.mint)
   }
 }
 
@@ -1270,17 +1381,14 @@ export type VerifyResult = {
   settled: boolean
   preimage: string | null
   pr: string
+  mint?: BoundMintCommitment
 }
 
 // LUD-21: polls whether an invoice from requestInvoice has settled, via the
-// URL it optionally returned as `verify`. `preimage` is only ever populated
-// by a service that chooses to return it - for lnurlcash specifically, the
-// preimage IS the bearer secret whenever no comment protection was used,
-// so a service SHOULD withhold it here (a verify GET proves nothing about
-// who's asking, just that they know the payment hash embedded in the URL)
-// and let the payer's own wallet be the only source of it. Treat a
-// returned preimage as a convenience, never a guarantee that any given
-// service provides one.
+// URL it optionally returned as `verify`. `preimage` is only populated by a
+// service that chooses to return it. For current comment-bound minting it is
+// safe settlement proof and is not the note secret; callers must still bind
+// the response to the exact requested invoice with sameInvoice.
 export const fetchInvoiceVerification = async (
   verifyUrl: string
 ): Promise<VerifyResult> => {
@@ -1291,8 +1399,79 @@ export const fetchInvoiceVerification = async (
   return {
     settled: body.settled,
     preimage: typeof body.preimage === 'string' ? body.preimage : null,
-    pr: body.pr
+    pr: body.pr,
+    mint: parseBoundMintCommitment(body.mint)
   }
+}
+
+// Refuse before an invoice is displayed unless the mint committed this exact
+// quote to the staged device hash and a fee-compatible net amount. A
+// pre-settlement signature would falsely claim value already exists.
+export const requireBoundMintQuote = (
+  invoice: InvoiceResult,
+  expectedH: string,
+  grossMsat: number,
+  fee?: MintFee
+): BoundMintCommitment => {
+  const h = expectedH.trim().toLowerCase()
+  if (!isPreimage(h)) throw new Error('The expected mint output is malformed.')
+  const commitment = invoice.mint
+  if (!invoice.mintToHash || !invoice.verify || !commitment) {
+    throw new Error(
+      'The mint did not offer an authenticated device-bound receipt for this quote.'
+    )
+  }
+  if (commitment.h !== h) {
+    throw new Error('The mint committed the quote to a different output.')
+  }
+  const amountAccepted = fee
+    ? withinMintFeeBand(grossMsat, commitment.amountMsat, fee)
+    : commitment.amountMsat === grossMsat
+  if (!amountAccepted) {
+    throw new Error(
+      'The mint committed the quote to an unexpected note amount.'
+    )
+  }
+  if (commitment.signature !== undefined) {
+    throw new Error('The mint signed an output before its invoice settled.')
+  }
+  return commitment
+}
+
+// Authenticate the settled receipt without k1: the signature is over the
+// already-known output hash. Invoice, hash and amount must all repeat the
+// pre-payment commitment before the device can move PENDING -> CONFIRMED.
+export const validateBoundMintReceipt = (
+  invoice: InvoiceResult,
+  verification: VerifyResult,
+  expectedH: string,
+  expectedAmountMsat: number,
+  mintPubkey: string
+): Required<BoundMintCommitment> => {
+  if (!verification.settled) throw new Error('The invoice has not settled.')
+  if (!sameInvoice(invoice.pr, verification.pr)) {
+    throw new Error('The settlement receipt names a different invoice.')
+  }
+  const receipt = verification.mint
+  if (
+    !receipt ||
+    receipt.h !== expectedH.trim().toLowerCase() ||
+    receipt.amountMsat !== expectedAmountMsat
+  ) {
+    throw new Error('The settlement receipt does not match the mint quote.')
+  }
+  if (
+    !receipt.signature ||
+    !verifyNoteSignatureHash(
+      receipt.h,
+      receipt.amountMsat,
+      receipt.signature,
+      mintPubkey
+    )
+  ) {
+    throw new Error('The settled mint receipt has an invalid signature.')
+  }
+  return {...receipt, signature: receipt.signature}
 }
 
 // bolt11 is bech32 - case-insensitive - so invoice equality is a
