@@ -106,8 +106,6 @@ import NfcToggle from '../components/NfcToggle'
 import RequireWallet from '../components/RequireWallet'
 import Dialog from '../components/Dialog'
 
-type Mode = 'invoice' | 'preimage'
-
 // LUD-21 auto-poll interval, in seconds - both the countdown shown on the
 // button and the cadence of the automatic check
 const VERIFY_POLL_SECONDS = 5
@@ -143,7 +141,6 @@ const Mint: Component = () => {
 
   const [mintInput, setMintInput] = createSignal('')
   const [payRequest, setPayRequest] = createSignal<PayRequestInfo | null>(null)
-  const [mode, setMode] = createSignal<Mode>('invoice')
   const [amountSats, setAmountSats] = createSignal('')
   const [invoice, setInvoice] = createSignal<string | null>(null)
   // net note value the holder asked for, and the (possibly grossed-up, see
@@ -160,7 +157,6 @@ const Mint: Component = () => {
   // recovery metadata; the corresponding k1 never leaves the vault.
   const [deviceMintAttempt, setDeviceMintAttempt] =
     createSignal<PendingDeviceMint | null>(null)
-  const [directPreimage, setDirectPreimage] = createSignal('')
   const [busy, setBusy] = createSignal(false)
 
   // set when a lookup discovers a mintPubkey for a server this wallet has
@@ -266,7 +262,6 @@ const Mint: Component = () => {
     setDeviceMintAttempt(pending)
     setMintInput(pending.mintInput)
     setPayRequest(pending.payRequest)
-    setMode('invoice')
     setInvoice(pending.invoice.pr)
     setInvoicedMsat(pending.amountMsat)
     setInvoicedGrossMsat(pending.grossMsat)
@@ -302,9 +297,7 @@ const Mint: Component = () => {
 
   const proceedWithPayRequest = (info: PayRequestInfo) => {
     setPayRequest(info)
-    setMode('invoice')
     setInvoice(null)
-    setDirectPreimage('')
     setMintSecret(null)
     setDeviceMintAttempt(null)
     stopPolling()
@@ -325,8 +318,6 @@ const Mint: Component = () => {
     setVerifyUrl(null)
     setPayRequest(null)
     setInvoice(null)
-    setMode('invoice')
-    setDirectPreimage('')
     setMintSecret(null)
   }
 
@@ -711,17 +702,17 @@ const Mint: Component = () => {
     }
   }
 
-  // Shared by the current wallet-secret claim and the explicit legacy
-  // "I already have a preimage" recovery path. It rotates unconditionally
-  // after verifying, with no separate confirmation step.
-  // expectedNetMsat/grossPaidMsat are only known coming from this page's own
-  // "Create new invoice" flow (see getInvoice) - the direct-preimage path
-  // (claimDirect) has no invoice of its own to compare against, so both are
-  // left undefined there and the checks below are skipped entirely
+  // Shared by the manual "Claim note" button and checkVerify's automatic
+  // claim once LUD-21 verify confirms settlement - rotates unconditionally
+  // right after the informational GET below, in both cases, no separate
+  // confirmation step. noteSecret is always the wallet-held one from
+  // getInvoice (comment protection, see the top-of-file comment);
+  // expectedNetMsat/grossPaidMsat come from that same invoice request, so
+  // both are always known here
   const claim = async (
     noteSecret: string,
-    expectedNetMsat?: number,
-    grossPaidMsat?: number
+    expectedNetMsat: number,
+    grossPaidMsat: number
   ) => {
     const info = payRequest()
     if (!info?.withdrawLink) return
@@ -746,23 +737,18 @@ const Mint: Component = () => {
       // is worth exactly maxWithdrawable regardless - better to say so
       // plainly than let a silent mismatch pass
       const noteInfo = await fetchNoteInfo(declaredUrl)
-      if (
-        expectedNetMsat !== undefined &&
-        noteInfo.maxWithdrawable !== expectedNetMsat
-      ) {
+      if (noteInfo.maxWithdrawable !== expectedNetMsat) {
         notify(
           `Amount changed: expected a ${msatToSats(expectedNetMsat)} sat note, the service reports ${msatToSats(noteInfo.maxWithdrawable)} sats.`,
           NotifyKind.ERROR
         )
       }
-      if (grossPaidMsat !== undefined) {
-        const feePaidMsat = grossPaidMsat - noteInfo.maxWithdrawable
-        if (feePaidMsat > 0) {
-          notify(
-            `Mint fee paid: ${msatToSats(feePaidMsat)} sats (paid ${msatToSats(grossPaidMsat)}, note is worth ${msatToSats(noteInfo.maxWithdrawable)}).`,
-            NotifyKind.SUCCESS
-          )
-        }
+      const feePaidMsat = grossPaidMsat - noteInfo.maxWithdrawable
+      if (feePaidMsat > 0) {
+        notify(
+          `Mint fee paid: ${msatToSats(feePaidMsat)} sats (paid ${msatToSats(grossPaidMsat)}, note is worth ${msatToSats(noteInfo.maxWithdrawable)}).`,
+          NotifyKind.SUCCESS
+        )
       }
       const mintPubkey = noteInfo.mintPubkey
 
@@ -914,12 +900,6 @@ const Mint: Component = () => {
       setBusy(false)
     }
   }
-
-  // no amount needed here - unlike requesting a fresh invoice, the note's
-  // real value comes from the service's own verification inside claim(),
-  // which always sets the authoritative maxWithdrawable before the bearer
-  // is ever stored
-  const claimDirect = () => claim(directPreimage())
 
   // ---- trusted-mint management (formerly pages/Mints.tsx) ----
 
@@ -1290,27 +1270,6 @@ const Mint: Component = () => {
                   {info => (
                     <>
                       <figure class="setup-card">
-                        <div class="tabs">
-                          <button
-                            classList={{active: mode() === 'invoice'}}
-                            onClick={() => {
-                              setMode('invoice')
-                              setDirectPreimage('')
-                            }}
-                          >
-                            Create new invoice
-                          </button>
-                          <button
-                            classList={{active: mode() === 'preimage'}}
-                            onClick={() => {
-                              setMode('preimage')
-                              setInvoice(null)
-                              setDirectPreimage('')
-                            }}
-                          >
-                            Recover legacy preimage note
-                          </button>
-                        </div>
                         <Show when={info().mintFee}>
                           {fee => (
                             <p class="warning">
@@ -1323,92 +1282,51 @@ const Mint: Component = () => {
                             </p>
                           )}
                         </Show>
-                        <Show
-                          when={mode() === 'preimage'}
-                          fallback={
-                            <>
-                              <label>
-                                Note value (sats,{' '}
-                                {msatToSats(info().minSendable)} -{' '}
-                                {msatToSats(
-                                  info().mintFee
-                                    ? floorMsatToSat(
-                                        applyMintFee(
-                                          info().maxSendable,
-                                          info().mintFee!
-                                        )
-                                      )
-                                    : info().maxSendable
-                                )}
+                        <label>
+                          Note value (sats, {msatToSats(info().minSendable)} -{' '}
+                          {msatToSats(
+                            info().mintFee
+                              ? floorMsatToSat(
+                                  applyMintFee(
+                                    info().maxSendable,
+                                    info().mintFee!
+                                  )
                                 )
-                              </label>
-                              <input
-                                type="number"
-                                min="1"
-                                placeholder="amount in sats"
-                                value={amountSats()}
-                                onInput={e =>
-                                  setAmountSats(e.currentTarget.value)
-                                }
-                              />
-                              <Show when={amountBreakdown()}>
-                                {amount => (
-                                  <Show when={amount().feeMsat > 0}>
-                                    <p class="bearer-hint">
-                                      Invoice: {msatToSats(amount().grossMsat)}{' '}
-                                      sats (includes a{' '}
-                                      {msatToSats(amount().feeMsat)} sat mint
-                                      fee) - note:{' '}
-                                      {msatToSats(amount().netMsat)} sats
-                                    </p>
-                                  </Show>
-                                )}
-                              </Show>
-                              <div class="btns">
-                                <button
-                                  disabled={busy() || offlineMode()}
-                                  onClick={getInvoice}
-                                >
-                                  <Show when={busy()}>
-                                    <IoRefreshSharp class="spin" />
-                                    &nbsp;
-                                  </Show>
-                                  Get invoice
-                                </button>
-                              </div>
-                            </>
-                          }
-                        >
-                          <label>
-                            Legacy payment preimage - only for recovering a
-                            pre-comment note created elsewhere; its value comes
-                            straight from the mint, so no amount is needed
-                          </label>
-                          <input
-                            type="text"
-                            placeholder="payment preimage (64 hex characters)"
-                            value={directPreimage()}
-                            onInput={e =>
-                              setDirectPreimage(e.currentTarget.value)
-                            }
-                          />
-                          <div class="btns">
-                            <button
-                              disabled={
-                                busy() ||
-                                !isPreimage(directPreimage()) ||
-                                offlineMode()
-                              }
-                              onClick={claimDirect}
-                            >
-                              <Show when={busy()}>
-                                <IoRefreshSharp class="spin" />
-                                &nbsp;
-                              </Show>
-                              Claim note
-                            </button>
-                          </div>
+                              : info().maxSendable
+                          )}
+                          )
+                        </label>
+                        <input
+                          type="number"
+                          min="1"
+                          placeholder="amount in sats"
+                          value={amountSats()}
+                          onInput={e => setAmountSats(e.currentTarget.value)}
+                        />
+                        <Show when={amountBreakdown()}>
+                          {amount => (
+                            <Show when={amount().feeMsat > 0}>
+                              <p class="bearer-hint">
+                                Invoice: {msatToSats(amount().grossMsat)} sats
+                                (includes a {msatToSats(amount().feeMsat)} sat
+                                mint fee) - note: {msatToSats(amount().netMsat)}{' '}
+                                sats
+                              </p>
+                            </Show>
+                          )}
                         </Show>
+                        <div class="btns">
+                          <button
+                            disabled={busy() || offlineMode()}
+                            onClick={getInvoice}
+                          >
+                            <Show when={busy()}>
+                              <IoRefreshSharp class="spin" />
+                              &nbsp;
+                            </Show>
+                            Get invoice
+                          </button>
+                        </div>
                       </figure>
                       <Show when={invoice()}>
                         <figure class="setup-card">
