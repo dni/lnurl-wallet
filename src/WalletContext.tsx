@@ -301,7 +301,13 @@ export const WalletProvider = (props: {children: JSX.Element}) => {
     const updated: Bearer = {...current, ...changes, updatedAt: Date.now()}
     await persistBearer(requireKey(), updated)
     setBearers(prev => prev.map(b => (b.id === id ? updated : b)))
-    if (updated.mintPubkey) {
+    // only a fresh url (a rotated/settled k1 from a live response) actually
+    // corroborates this mint's key - a bare {spent: true}/{label: ...}
+    // update is local bookkeeping, not a live response, and must not
+    // re-lock a mint the reconciliation effect above just unlocked (spending
+    // a mint's last note would otherwise re-lock it in the same tick,
+    // permanently defeating "removeable once no notes are held")
+    if (changes.url !== undefined && updated.mintPubkey) {
       notifyIfRekeyPending(serverOf(updated.url), updated.mintPubkey)
     }
   }

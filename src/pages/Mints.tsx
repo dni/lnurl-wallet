@@ -12,6 +12,7 @@ import {
   IoOpenSharp
 } from 'solid-icons/io'
 
+import {useWallet} from '../WalletContext'
 import type {TrustedMint, TrustedMintNodeInfo} from '../trustedMints'
 import {
   trustedMints,
@@ -44,9 +45,19 @@ import ScanToggle from '../components/ScanToggle'
 import NfcToggle from '../components/NfcToggle'
 
 const Mints: Component = () => {
+  const {bearers} = useWallet()
   const [server, setServer] = createSignal('')
   const [pubkey, setPubkey] = createSignal('')
   const [confirmDelete, setConfirmDelete] = createSignal<string | null>(null)
+
+  // computed straight from live bearer state rather than trusting
+  // TrustedMint.locked - that flag is reconciled elsewhere (see
+  // WalletContext's unlock effect) but is still a persisted, mutable field
+  // several code paths touch; checking bearers() directly here means the
+  // Remove button's visibility can never drift out of sync with what's
+  // actually held
+  const hasNotesFrom = (mintServer: string): boolean =>
+    bearers().some(b => !b.spent && serverOf(b.url) === mintServer)
 
   // "add by address" - a best-effort automated alternative to the manual
   // form below: looks up a mint's own mint-address discovery endpoint (see
@@ -374,7 +385,7 @@ const Mints: Component = () => {
                       </a>
                     </div>
                     <Show
-                      when={!mint.locked}
+                      when={!hasNotesFrom(mint.server)}
                       fallback={
                         <p class="mint-locked">
                           <IoLockClosedSharp />
