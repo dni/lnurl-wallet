@@ -10,7 +10,8 @@ import {
   IoBookSharp,
   IoCloudOfflineSharp,
   IoHardwareChipSharp,
-  IoCashSharp
+  IoCashSharp,
+  IoReceiptSharp
 } from 'solid-icons/io'
 import {useWallet} from '../WalletContext'
 import {useDevice} from '../DeviceContext'
@@ -165,6 +166,15 @@ const Nav = () => {
             <IoBookSharp />
             <span class="nav-label">&nbsp;Docs</span>
           </A>
+          <Show when={state() !== 'none'}>
+            <A
+              href="/activity"
+              title="Activity log - a history of every mint, split, combine, melt and transfer"
+            >
+              <IoReceiptSharp />
+              <span class="nav-label">&nbsp;Activity</span>
+            </A>
+          </Show>
           <Show when={state() === 'unlocked' && encrypted()}>
             <a href="#lock" title="Lock wallet" onClick={lock_action}>
               <IoLockClosedSharp />
