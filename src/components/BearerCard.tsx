@@ -132,12 +132,29 @@ const BearerCard: Component<BearerCardProps> = props => {
       : verifyNoteSignature(k1(), props.bearer.amount, sig, mintPubkey)
   })
 
+  // single-note version of Wallet.tsx's markSpentSelected - a quick, direct
+  // lock right from the card, for when handing a note over some other way
+  // (in person, a different app) doesn't go through Unveil's own Done step
+  const markSpent = async () => {
+    updateBearer(props.bearer.id, {spent: true})
+    if (props.bearer.deviceId) {
+      await markDeviceNoteSpent(deviceClient(), props.bearer.deviceId)
+    }
+    logActivity(
+      'spent',
+      `Marked ${msatToSats(props.bearer.amount)} sats from ${serverOf(props.bearer.url)} as spent.`,
+      props.bearer.label
+    )
+    notify('Marked as spent.', NotifyKind.SUCCESS)
+  }
+
   const unspend = () => {
     updateBearer(props.bearer.id, {spent: false})
     setConfirmUnspend(false)
     logActivity(
       'unspent',
-      `Unspent ${msatToSats(props.bearer.amount)} sats from ${serverOf(props.bearer.url)}.`
+      `Unspent ${msatToSats(props.bearer.amount)} sats from ${serverOf(props.bearer.url)}.`,
+      props.bearer.label
     )
     notify('Unspent - actions are available again.', NotifyKind.SUCCESS)
   }
@@ -184,7 +201,8 @@ const BearerCard: Component<BearerCardProps> = props => {
     cancelUnveil()
     logActivity(
       'transfer',
-      `Handed over ${msatToSats(props.bearer.amount)} sats from ${serverOf(props.bearer.url)}.`
+      `Handed over ${msatToSats(props.bearer.amount)} sats from ${serverOf(props.bearer.url)}.`,
+      props.bearer.label
     )
     notify('Marked as handed over and spent.', NotifyKind.SUCCESS)
   }
@@ -210,36 +228,38 @@ const BearerCard: Component<BearerCardProps> = props => {
           <span class="bearer-amount">
             {msatToSats(props.bearer.amount)} sats
           </span>
-          <Show when={props.bearer.label}>
+          <Show when={props.bearer.label && !isSpent()}>
             <span class="bearer-label">{props.bearer.label}</span>
           </Show>
-          <Show when={!props.bearer.verified}>
-            <span class="bearer-pending">unverified</span>
-          </Show>
-          <Show when={offlineVerified()}>
-            <span
-              class="bearer-signed"
-              title="Signature checks out against this mint's published pubkey"
-            >
-              <IoShieldCheckmarkSharp />
-              &nbsp;signed
-            </span>
-          </Show>
-          <Show when={props.bearer.deviceId}>
-            <span
-              class="bearer-device"
-              title="This note's secret lives on your paired vault, not this browser"
-            >
-              <IoHardwareChipSharp />
-              &nbsp;on device
-            </span>
-          </Show>
-          <Show when={isSpent()}>
-            <span class="bearer-spent" title="Locally locked - see below">
-              <IoBanSharp />
-              &nbsp;spent
-            </span>
-          </Show>
+          <div class="bearer-badges">
+            <Show when={!props.bearer.verified}>
+              <span class="bearer-pending">unverified</span>
+            </Show>
+            <Show when={offlineVerified()}>
+              <span
+                class="bearer-signed"
+                title="Signature checks out against this mint's published pubkey"
+              >
+                <IoShieldCheckmarkSharp />
+                &nbsp;signed
+              </span>
+            </Show>
+            <Show when={props.bearer.deviceId}>
+              <span
+                class="bearer-device"
+                title="This note's secret lives on your paired vault, not this browser"
+              >
+                <IoHardwareChipSharp />
+                &nbsp;on device
+              </span>
+            </Show>
+            <Show when={isSpent()}>
+              <span class="bearer-spent" title="Locally locked - see below">
+                <IoBanSharp />
+                &nbsp;spent
+              </span>
+            </Show>
+          </div>
           <span class="bearer-server">{serverOf(props.bearer.url)}</span>
         </div>
       </div>
@@ -269,6 +289,22 @@ const BearerCard: Component<BearerCardProps> = props => {
           fallback={
             <div class="btns">
               <div class="bearer-actions">
+                <button
+                  class="icon-btn"
+                  title="Copy this note to clipboard"
+                  onClick={() =>
+                    copyToClipboard(toBech32Lnurl(props.bearer.url))
+                  }
+                >
+                  <IoCopySharp />
+                </button>
+                <button
+                  class="icon-btn"
+                  title="Mark as spent - locks this note without removing it, e.g. if you already handed it out some other way"
+                  onClick={markSpent}
+                >
+                  <IoBanSharp />
+                </button>
                 <button
                   class="icon-btn"
                   title="Unveil to hand over"
@@ -355,7 +391,8 @@ const BearerCard: Component<BearerCardProps> = props => {
               removeBearer(props.bearer.id)
               logActivity(
                 'deleted',
-                `Cleared a spent ${msatToSats(props.bearer.amount)} sat note from ${serverOf(props.bearer.url)}.`
+                `Cleared a spent ${msatToSats(props.bearer.amount)} sat note from ${serverOf(props.bearer.url)}.`,
+                props.bearer.label
               )
               notify('Spent note cleared.', NotifyKind.SUCCESS)
             }}

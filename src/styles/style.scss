@@ -122,15 +122,21 @@ h2 {
   gap: 4px;
 }
 
-// Receive/Send/Mint/Melt - the wallet's primary shortcuts, sized up from
-// the app's default buttons the same way the note-action toolbar is, so
-// the header reads as the page's main call to action rather than blending
-// into the smaller controls beneath it
+// Mint - the wallet's one remaining explicit shortcut, sized up from the
+// app's default buttons the same way the note-action toolbar is, so it
+// still reads as a primary call to action even standing alone next to the
+// scan/NFC/paste widget (.hero-paste-widget) that replaced Receive/Send/Melt
 .wallet-hero-btn {
   padding: 12px 22px;
   font-size: 1.1em;
   margin-right: 10px;
   margin-bottom: 10px;
+}
+
+// centers the hero's scan/NFC/paste widget under the Mint button, in both
+// the empty-state (.hero-actions) and populated-state (.btns) hero
+.hero-paste-widget {
+  margin: 0 auto;
 }
 
 .activity-list {
@@ -157,9 +163,24 @@ h2 {
   opacity: 0.8;
 }
 
-.activity-message {
+.activity-message-group {
+  display: flex;
+  flex-direction: column;
   flex: 1;
   min-width: 0;
+  gap: 2px;
+}
+
+.activity-message {
+  overflow-wrap: anywhere;
+}
+
+// the acted-on note's own label (see ActivityEvent.label) - same styling
+// language as BearerCard's .bearer-label, so it reads as "yours" here too
+.activity-label {
+  font-size: 0.85em;
+  font-style: italic;
+  opacity: 0.75;
   overflow-wrap: anywhere;
 }
 
@@ -168,6 +189,24 @@ h2 {
   font-size: 0.85em;
   opacity: 0.7;
   white-space: nowrap;
+}
+
+// back button + title + (pushed right) clear-log button - its own row
+// rather than reusing .wallet-hero-header, whose justify-content: flex-end
+// is tuned for Wallet.tsx's own icon-only pair and would bunch this page's
+// title in with them instead of anchoring it next to the back button
+.activity-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  h2 {
+    margin: 0;
+  }
+}
+
+.activity-clear-btn {
+  margin-left: auto;
 }
 
 .wallet-stats {
@@ -223,9 +262,6 @@ h4 {
   // matches the vertical padding buttons get from the shared button rule,
   // so it sits on the same baseline instead of looking vertically adrift
   padding: 6px 0;
-  // pushes it to the far right of the (flex) .btns row it sits in, same
-  // trick as .bearer-actions
-  margin-left: auto;
 }
 
 .switch {
@@ -990,47 +1026,69 @@ nav {
   margin-bottom: 16px;
 }
 
-// sits at the right edge of .selection-toolbar's own .btns row (which is
-// display:flex - margin-left:auto on the first of this trailing pair pushes
-// both it and the clear button all the way over, same trick
-// .wallet-hero-actions/.bearer-actions use), instead of its own row above
-// the action buttons
-.selection-count {
-  opacity: 0.85;
-  font-size: 0.9em;
-  margin-left: auto;
-}
-
-// Refresh, Label, Mark spent, Split, Combine, Combine & split, Transfer,
-// Export - a size up from the app's default buttons, since this is the
-// primary action row for whatever's selected. Refresh/Label/Mark spent act
-// on every selected note at once; Split stays limited to exactly one (all
-// moved here from BearerCard so every note-level action lives in one bar
-// alongside Combine/Combine & split/Transfer, instead of being split
-// between each card and this toolbar) - Export/QR (download the selection
-// as a text file, or one SVG QR code per note) trail the row, after Transfer
+// Refresh, Split, Combine, Combine & split, Transfer, More, Clear selection
+// - a size up from the app's default buttons, since this is the primary
+// action row for whatever's selected (all moved here from BearerCard so
+// every note-level action lives in one bar). Label/Mark spent/Export/QR -
+// acted on far less often than these - are tucked behind More instead of
+// crowding this row (see .more-menu below). Clear selection trails the row
+// (last place) but stays inline with everything else here rather than
+// pushed off to the far edge - same left-aligned reasoning as the list
+// controls' own Show spent/Group by mint toggles
 .refresh-btn,
-.label-btn,
-.mark-spent-btn,
 .split-single-btn,
 .combine-btn,
 .split-btn,
 .transfer-btn,
-.export-btn,
-.qr-export-btn {
+.more-btn,
+.clear-selection-btn {
   padding: 10px 18px;
   font-size: 1.05em;
 }
 
-.label-btn,
-.mark-spent-btn,
 .split-single-btn,
 .combine-btn,
 .split-btn,
 .transfer-btn,
-.export-btn,
-.qr-export-btn {
+.more-btn,
+.clear-selection-btn {
   margin-left: 8px;
+}
+
+// wraps the More toggle so its panel can anchor under it
+.more-menu {
+  position: relative;
+  display: inline-flex;
+}
+
+.more-menu-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 200px;
+  background: $bg;
+  border: 1px solid rgba($font-color, 0.3);
+  border-radius: 8px;
+  padding: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+  // Label/Mark spent/Export/QR as full-width, left-aligned rows instead of
+  // the toolbar's usual inline pill buttons
+  button {
+    width: 100%;
+    margin: 0;
+    justify-content: flex-start;
+    background: none;
+    &:hover:not(:disabled) {
+      background-color: rgba(
+        color.adjust($accent-base, $lightness: -10%),
+        $transparency
+      );
+    }
+  }
 }
 
 .search-input-wrapper {
@@ -1177,6 +1235,16 @@ nav {
   display: flex;
   flex-direction: column;
   min-width: 0;
+}
+
+// unverified/signed/on device/spent - one horizontal row of badges instead
+// of each on its own line, so e.g. spent sits right next to signed rather
+// than stacked under it
+.bearer-badges {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .bearer-amount {

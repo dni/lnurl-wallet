@@ -143,6 +143,11 @@ export type ActivityEvent = {
   kind: ActivityKind
   message: string
   createdAt: number
+  // the acted-on note's own label at the time (see Bearer.label) - purely
+  // for display, so a log entry can be tied back to "which note" by the
+  // holder's own nickname for it instead of just server + amount. Absent
+  // when no single note was the obvious subject, or it had no label set
+  label?: string
 }
 
 export type EncryptedActivityRecord = {id: string} & EncryptedRecordParts

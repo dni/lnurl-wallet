@@ -9,7 +9,7 @@ export type DialogProps = {
 }
 
 // shared modal chrome (backdrop + panel + top-right close button) for every
-// dialog in the wallet (ReceiveDialog, SendDialog, TransferDialog, Mint's
+// dialog in the wallet (ReceiveDialog, MeltDialog, TransferDialog, Mint's
 // invoice card) - previously each rendered its own bare <figure
 // class="setup-card"> straight into the page flow, with no overlay/backdrop
 // and only an in-form "Cancel" button to close it. Portal'd to <body> so it

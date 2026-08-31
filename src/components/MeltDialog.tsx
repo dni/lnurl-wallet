@@ -1,5 +1,5 @@
 import type {Component} from 'solid-js'
-import {Show, For, createSignal, createMemo, onCleanup} from 'solid-js'
+import {Show, For, createSignal, createMemo, onMount, onCleanup} from 'solid-js'
 import {
   IoClipboardSharp,
   IoCloseSharp,
@@ -64,6 +64,9 @@ export type MeltDialogProps = {
   // detection (see meltHandoff.ts) - Wallet.tsx picks that up on mount and
   // opens this dialog with it already set, skipping the paste step
   initialInvoice?: string
+  // same idea, for a Lightning Address recognized by Wallet.tsx's own hero
+  // paste widget - looked up on mount just like a manually pasted address
+  initialAddress?: string
 }
 
 // same cadence as Mint.tsx's LUD-21 verify poll - a melt's own LUD-25 melt
@@ -165,7 +168,8 @@ const MeltDialog: Component<MeltDialogProps> = props => {
       }
       logActivity(
         'melt',
-        `Melted ${msatToSats(note.amount)} sats from ${serverOf(note.url)} to pay an invoice. Verify: ${url}.`
+        `Melted ${msatToSats(note.amount)} sats from ${serverOf(note.url)} to pay an invoice. Verify: ${url}.`,
+        note.label
       )
       notify('Payment confirmed - the note is gone.', NotifyKind.SUCCESS)
       props.onClose()
@@ -231,6 +235,10 @@ const MeltDialog: Component<MeltDialogProps> = props => {
       setFetchingInvoice(false)
     }
   }
+
+  onMount(() => {
+    if (props.initialAddress) lookupLnAddress(props.initialAddress)
+  })
 
   const handleValue = (raw: string) => {
     const trimmed = raw.trim()
@@ -545,7 +553,8 @@ const MeltDialog: Component<MeltDialogProps> = props => {
     // refresh with the vault connected reconciles it
     logActivity(
       'melt',
-      `Melted ${msatToSats(note.amount)} sats from ${serverOf(note.url)} to pay an invoice.`
+      `Melted ${msatToSats(note.amount)} sats from ${serverOf(note.url)} to pay an invoice.`,
+      note.label
     )
     notify(
       "Payment requested and the note is locked as spent - this mint doesn't support checking automatically." +
@@ -592,7 +601,8 @@ const MeltDialog: Component<MeltDialogProps> = props => {
           await updateBearer(current.id, {spent: true})
           logActivity(
             'spent',
-            `${serverOf(current.url)} reports ${msatToSats(current.amount)} sats as already spent - marked spent locally.`
+            `${serverOf(current.url)} reports ${msatToSats(current.amount)} sats as already spent - marked spent locally.`,
+            current.label
           )
         }
         throw err

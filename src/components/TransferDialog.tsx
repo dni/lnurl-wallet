@@ -278,7 +278,8 @@ const TransferDialog: Component<TransferDialogProps> = props => {
         }
         logActivity(
           'transfer',
-          `Transferred ${msatToSats(result.amountMsat)} sats from ${serverOf(props.sourceBearer.url)} to ${serverOf(result.url)}.`
+          `Transferred ${msatToSats(result.amountMsat)} sats from ${serverOf(props.sourceBearer.url)} to ${serverOf(result.url)}.`,
+          props.sourceBearer.label
         )
         notify(
           `Transferred ${msatToSats(result.amountMsat)} sats to ${serverOf(result.url)}.`,
@@ -351,7 +352,8 @@ const TransferDialog: Component<TransferDialogProps> = props => {
       }
       logActivity(
         'transfer',
-        `Transferred ${msatToSats(noteInfo.maxWithdrawable)} sats from ${serverOf(props.sourceBearer.url)} to ${serverOf(url)}.`
+        `Transferred ${msatToSats(noteInfo.maxWithdrawable)} sats from ${serverOf(props.sourceBearer.url)} to ${serverOf(url)}.`,
+        props.sourceBearer.label
       )
       // one toast, not two - the note landed either way, so a failed
       // rotate is folded into the same message rather than shown

@@ -1,6 +1,7 @@
 import type {Component} from 'solid-js'
 import {Show, For, createSignal} from 'solid-js'
 import {Dynamic} from 'solid-js/web'
+import {A} from '@solidjs/router'
 import {
   IoCashSharp,
   IoGitBranchSharp,
@@ -12,7 +13,8 @@ import {
   IoBanSharp,
   IoArrowUndoSharp,
   IoTrashSharp,
-  IoReceiptSharp
+  IoReceiptSharp,
+  IoArrowBackSharp
 } from 'solid-icons/io'
 
 import {useWallet} from '../WalletContext'
@@ -49,11 +51,14 @@ const Activity: Component = () => {
   return (
     <RequireWallet>
       <div id="activity" class="page">
-        <div class="wallet-hero-header">
+        <div class="activity-header">
+          <A href="/wallet" class="icon-btn" title="Back to wallet">
+            <IoArrowBackSharp />
+          </A>
           <h2>Activity log</h2>
           <Show when={activity().length > 0}>
             <button
-              class="icon-btn"
+              class="icon-btn activity-clear-btn"
               title="Clear the activity log"
               onClick={() => setConfirmClear(true)}
             >
@@ -89,7 +94,12 @@ const Activity: Component = () => {
                       component={KIND_ICON[event.kind] ?? IoReceiptSharp}
                     />
                   </span>
-                  <span class="activity-message">{event.message}</span>
+                  <span class="activity-message-group">
+                    <span class="activity-message">{event.message}</span>
+                    <Show when={event.label}>
+                      <span class="activity-label">{event.label}</span>
+                    </Show>
+                  </span>
                   <span
                     class="activity-time"
                     title={formatDate(event.createdAt)}

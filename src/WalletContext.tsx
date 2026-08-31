@@ -112,7 +112,7 @@ export type WalletContextType = {
   // fire-and-forget from a caller's point of view - failures are swallowed
   // (see logActivity) so a full log can never block or fail the action it's
   // recording
-  logActivity: (kind: ActivityKind, message: string) => void
+  logActivity: (kind: ActivityKind, message: string, label?: string) => void
   clearActivity: () => void
 }
 
@@ -352,13 +352,14 @@ export const WalletProvider = (props: {children: JSX.Element}) => {
   // succeeded (the note was split/melted/whatever) must never surface an
   // error, or leave itself un-undoable, just because the log entry for it
   // couldn't be written
-  const logActivity = (kind: ActivityKind, message: string) => {
+  const logActivity = (kind: ActivityKind, message: string, label?: string) => {
     if (!aesKey) return
     const event: ActivityEvent = {
       id: newActivityId(),
       kind,
       message,
-      createdAt: Date.now()
+      createdAt: Date.now(),
+      ...(label ? {label} : {})
     }
     setActivity(prev => [event, ...prev])
     persistActivityEvent(aesKey, event).catch(() => {})
