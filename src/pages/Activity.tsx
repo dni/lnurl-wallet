@@ -14,7 +14,8 @@ import {
   IoArrowUndoSharp,
   IoTrashSharp,
   IoReceiptSharp,
-  IoArrowBackSharp
+  IoArrowBackSharp,
+  IoOpenSharp
 } from 'solid-icons/io'
 
 import {useWallet} from '../WalletContext'
@@ -37,6 +38,22 @@ const KIND_ICON: Record<ActivityKind, Component> = {
   spent: IoBanSharp,
   unspent: IoArrowUndoSharp,
   deleted: IoTrashSharp
+}
+
+// mint/melt messages end with a raw " Verify: <url>." (see Mint.tsx and
+// MeltDialog.tsx's own logActivity calls) - pulled back out here rather
+// than adding a structured field to ActivityEvent, so the message itself
+// stays the simple opaque sentence storage.ts's own comment describes.
+// Non-greedy up to the final literal '.' so it captures the full url, not
+// the sentence-ending period after it
+const VERIFY_SUFFIX = / Verify: (\S+?)\.$/
+
+const splitVerifyUrl = (
+  message: string
+): {text: string; verifyUrl: string | null} => {
+  const match = message.match(VERIFY_SUFFIX)
+  if (!match) return {text: message, verifyUrl: null}
+  return {text: message.slice(0, match.index), verifyUrl: match[1]}
 }
 
 const Activity: Component = () => {
@@ -87,27 +104,46 @@ const Activity: Component = () => {
         >
           <ul class="activity-list">
             <For each={activity()}>
-              {event => (
-                <li class="activity-item">
-                  <span class="activity-icon">
-                    <Dynamic
-                      component={KIND_ICON[event.kind] ?? IoReceiptSharp}
-                    />
-                  </span>
-                  <span class="activity-message-group">
-                    <span class="activity-message">{event.message}</span>
-                    <Show when={event.label}>
-                      <span class="activity-label">{event.label}</span>
-                    </Show>
-                  </span>
-                  <span
-                    class="activity-time"
-                    title={formatDate(event.createdAt)}
-                  >
-                    {formatRelativeTime(event.createdAt)}
-                  </span>
-                </li>
-              )}
+              {event => {
+                const {text, verifyUrl} = splitVerifyUrl(event.message)
+                return (
+                  <li class="activity-item">
+                    <span class="activity-icon">
+                      <Dynamic
+                        component={KIND_ICON[event.kind] ?? IoReceiptSharp}
+                      />
+                    </span>
+                    <span class="activity-message-group">
+                      <span class="activity-message">
+                        {text}
+                        <Show when={verifyUrl}>
+                          {url => (
+                            <a
+                              class="activity-verify-link"
+                              href={url()}
+                              target="_blank"
+                              rel="noreferrer"
+                              title="Open the payment verification link"
+                            >
+                              <IoOpenSharp />
+                              &nbsp;Verify
+                            </a>
+                          )}
+                        </Show>
+                      </span>
+                      <Show when={event.label}>
+                        <span class="activity-label">{event.label}</span>
+                      </Show>
+                    </span>
+                    <span
+                      class="activity-time"
+                      title={formatDate(event.createdAt)}
+                    >
+                      {formatRelativeTime(event.createdAt)}
+                    </span>
+                  </li>
+                )
+              }}
             </For>
           </ul>
         </Show>

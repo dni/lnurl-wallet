@@ -254,7 +254,10 @@ const BearerCard: Component<BearerCardProps> = props => {
               </span>
             </Show>
             <Show when={isSpent()}>
-              <span class="bearer-spent" title="Locally locked - see below">
+              <span
+                class="bearer-spent"
+                title="Locked as spent - refresh and split (in the toolbar above) are disabled so this copy can't be reused by accident."
+              >
                 <IoBanSharp />
                 &nbsp;spent
               </span>
@@ -359,12 +362,6 @@ const BearerCard: Component<BearerCardProps> = props => {
             )}
           </Show>
         </Show>
-      </Show>
-      <Show when={isSpent() && !confirmUnspend()}>
-        <p class="bearer-hint">
-          Locked as spent - refresh and split (in the toolbar above) are
-          disabled so this copy can't be reused by accident.
-        </p>
       </Show>
       <Show when={confirmUnspend()}>
         <p class="warning">
