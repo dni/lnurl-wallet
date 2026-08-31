@@ -133,10 +133,13 @@ h2 {
   margin-bottom: 10px;
 }
 
-// centers the hero's scan/NFC/paste widget under the Mint button, in both
-// the empty-state (.hero-actions) and populated-state (.btns) hero
+// sits on the same row as the Mint button, in both the empty-state
+// (.hero-actions) and populated-state (.btns) hero - grows to fill the rest
+// of the row instead of .paste-widget's own fixed width: 100%, which would
+// otherwise claim the whole row on its own and push Mint above it
 .hero-paste-widget {
-  margin: 0 auto;
+  width: auto;
+  flex: 1 1 320px;
 }
 
 .activity-list {
@@ -182,6 +185,20 @@ h2 {
   font-style: italic;
   opacity: 0.75;
   overflow-wrap: anywhere;
+}
+
+// shortened stand-in for the raw verify url stripped out of the message
+// text (see Activity.tsx's splitVerifyUrl) - opens it in a new tab rather
+// than navigating away from the log
+.activity-verify-link {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 6px;
+  font-size: 0.9em;
+  opacity: 0.85;
+  &:hover {
+    opacity: 1;
+  }
 }
 
 .activity-time {
@@ -977,6 +994,14 @@ nav {
   .hero-actions {
     flex-direction: column;
     align-items: stretch;
+  }
+  // flex-basis applies to the main axis - once .hero-actions/.btns stack
+  // into a column above, a leftover 320px flex-basis would set a preferred
+  // height instead of width. Reset to a plain full-width block, same as
+  // .paste-widget's own default, now that there's no row to share
+  .hero-paste-widget {
+    flex: none;
+    width: 100%;
   }
 }
 

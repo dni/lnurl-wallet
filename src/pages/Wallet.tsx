@@ -1447,51 +1447,57 @@ const Wallet: Component = () => {
                     <IoAddCircleSharp />
                     &nbsp;Mint
                   </A>
-                </div>
-                <figure class="paste-widget hero-paste-widget">
-                  <div class="paste-input-row">
-                    <ScanToggle onScan={onHeroScan} accept={isValidHeroInput} />
-                    <NfcToggle onScan={onHeroScan} accept={isValidHeroInput} />
-                    <button
-                      type="button"
-                      class="icon-btn paste-icon-btn"
-                      title="Paste from clipboard"
-                      onClick={pasteHero}
-                    >
-                      <IoClipboardSharp />
-                    </button>
-                    <div class="paste-input-wrapper">
-                      <input
-                        ref={el => (heroPasteRef = el)}
-                        type="text"
-                        class="paste-input"
-                        placeholder="Note, invoice, or Lightning Address..."
-                        value={heroValue()}
-                        onInput={e => setHeroValue(e.currentTarget.value)}
-                        onKeyDown={e => e.key === 'Enter' && handleHero()}
+                  <figure class="paste-widget hero-paste-widget">
+                    <div class="paste-input-row">
+                      <ScanToggle
+                        onScan={onHeroScan}
+                        accept={isValidHeroInput}
                       />
-                      <Show when={heroValue() !== ''}>
-                        <button
-                          type="button"
-                          class="icon-btn paste-clear-btn"
-                          title="Clear"
-                          onClick={() => setHeroValue('')}
-                        >
-                          <IoCloseSharp />
-                        </button>
-                      </Show>
+                      <NfcToggle
+                        onScan={onHeroScan}
+                        accept={isValidHeroInput}
+                      />
+                      <button
+                        type="button"
+                        class="icon-btn paste-icon-btn"
+                        title="Paste from clipboard"
+                        onClick={pasteHero}
+                      >
+                        <IoClipboardSharp />
+                      </button>
+                      <div class="paste-input-wrapper">
+                        <input
+                          ref={el => (heroPasteRef = el)}
+                          type="text"
+                          class="paste-input"
+                          placeholder="Note, invoice, or Lightning Address..."
+                          value={heroValue()}
+                          onInput={e => setHeroValue(e.currentTarget.value)}
+                          onKeyDown={e => e.key === 'Enter' && handleHero()}
+                        />
+                        <Show when={heroValue() !== ''}>
+                          <button
+                            type="button"
+                            class="icon-btn paste-clear-btn"
+                            title="Clear"
+                            onClick={() => setHeroValue('')}
+                          >
+                            <IoCloseSharp />
+                          </button>
+                        </Show>
+                      </div>
+                      <button
+                        type="button"
+                        class="icon-btn paste-confirm-btn"
+                        title="Receive a note, or pay an invoice/address"
+                        disabled={heroValue() === ''}
+                        onClick={handleHero}
+                      >
+                        <IoReturnDownForwardSharp />
+                      </button>
                     </div>
-                    <button
-                      type="button"
-                      class="icon-btn paste-confirm-btn"
-                      title="Receive a note, or pay an invoice/address"
-                      disabled={heroValue() === ''}
-                      onClick={handleHero}
-                    >
-                      <IoReturnDownForwardSharp />
-                    </button>
-                  </div>
-                </figure>
+                  </figure>
+                </div>
                 <Show when={showReceive()}>
                   <ReceiveDialog
                     initialValue={receiveHandoffValue() ?? undefined}
@@ -1574,51 +1580,51 @@ const Wallet: Component = () => {
                   <IoAddCircleSharp />
                   &nbsp;Mint
                 </A>
-              </div>
-              <figure class="paste-widget hero-paste-widget">
-                <div class="paste-input-row">
-                  <ScanToggle onScan={onHeroScan} accept={isValidHeroInput} />
-                  <NfcToggle onScan={onHeroScan} accept={isValidHeroInput} />
-                  <button
-                    type="button"
-                    class="icon-btn paste-icon-btn"
-                    title="Paste from clipboard"
-                    onClick={pasteHero}
-                  >
-                    <IoClipboardSharp />
-                  </button>
-                  <div class="paste-input-wrapper">
-                    <input
-                      ref={el => (heroPasteRef = el)}
-                      type="text"
-                      class="paste-input"
-                      placeholder="Note, invoice, or Lightning Address..."
-                      value={heroValue()}
-                      onInput={e => setHeroValue(e.currentTarget.value)}
-                      onKeyDown={e => e.key === 'Enter' && handleHero()}
-                    />
-                    <Show when={heroValue() !== ''}>
-                      <button
-                        type="button"
-                        class="icon-btn paste-clear-btn"
-                        title="Clear"
-                        onClick={() => setHeroValue('')}
-                      >
-                        <IoCloseSharp />
-                      </button>
-                    </Show>
+                <figure class="paste-widget hero-paste-widget">
+                  <div class="paste-input-row">
+                    <ScanToggle onScan={onHeroScan} accept={isValidHeroInput} />
+                    <NfcToggle onScan={onHeroScan} accept={isValidHeroInput} />
+                    <button
+                      type="button"
+                      class="icon-btn paste-icon-btn"
+                      title="Paste from clipboard"
+                      onClick={pasteHero}
+                    >
+                      <IoClipboardSharp />
+                    </button>
+                    <div class="paste-input-wrapper">
+                      <input
+                        ref={el => (heroPasteRef = el)}
+                        type="text"
+                        class="paste-input"
+                        placeholder="Note, invoice, or Lightning Address..."
+                        value={heroValue()}
+                        onInput={e => setHeroValue(e.currentTarget.value)}
+                        onKeyDown={e => e.key === 'Enter' && handleHero()}
+                      />
+                      <Show when={heroValue() !== ''}>
+                        <button
+                          type="button"
+                          class="icon-btn paste-clear-btn"
+                          title="Clear"
+                          onClick={() => setHeroValue('')}
+                        >
+                          <IoCloseSharp />
+                        </button>
+                      </Show>
+                    </div>
+                    <button
+                      type="button"
+                      class="icon-btn paste-confirm-btn"
+                      title="Receive a note, or pay an invoice/address"
+                      disabled={heroValue() === ''}
+                      onClick={handleHero}
+                    >
+                      <IoReturnDownForwardSharp />
+                    </button>
                   </div>
-                  <button
-                    type="button"
-                    class="icon-btn paste-confirm-btn"
-                    title="Receive a note, or pay an invoice/address"
-                    disabled={heroValue() === ''}
-                    onClick={handleHero}
-                  >
-                    <IoReturnDownForwardSharp />
-                  </button>
-                </div>
-              </figure>
+                </figure>
+              </div>
             </section>
             <Show when={showReceive()}>
               <ReceiveDialog
@@ -1700,40 +1706,26 @@ const Wallet: Component = () => {
                   </Show>
                 </button>
                 <Show when={spentCount() > 0}>
-                  <label
-                    class="switch-control"
+                  <button
+                    type="button"
+                    classList={{active: showSpent()}}
                     title="Spent notes are locally locked (melted, or marked by hand) - this just shows or hides them, it doesn't change anything about them"
+                    onClick={() => setShowSpent(v => !v)}
                   >
                     <IoBanSharp />
-                    <span>
-                      Show spent
-                      <Show when={!showSpent()}>&nbsp;({spentCount()})</Show>
-                    </span>
-                    <span class="switch">
-                      <input
-                        type="checkbox"
-                        checked={showSpent()}
-                        onChange={e => setShowSpent(e.currentTarget.checked)}
-                      />
-                      <span class="switch-track"></span>
-                    </span>
-                  </label>
+                    &nbsp;Show spent
+                    <Show when={!showSpent()}>&nbsp;({spentCount()})</Show>
+                  </button>
                 </Show>
-                <label
-                  class="switch-control"
+                <button
+                  type="button"
+                  classList={{active: groupByMint()}}
                   title="Show notes grouped under their issuing mint instead of one flat list"
+                  onClick={() => setGroupByMint(v => !v)}
                 >
                   <IoLayersSharp />
-                  <span>Group by mint</span>
-                  <span class="switch">
-                    <input
-                      type="checkbox"
-                      checked={groupByMint()}
-                      onChange={e => setGroupByMint(e.currentTarget.checked)}
-                    />
-                    <span class="switch-track"></span>
-                  </span>
-                </label>
+                  &nbsp;Group by mint
+                </button>
                 <button
                   type="button"
                   class="refresh-all-btn"
@@ -1814,7 +1806,7 @@ const Wallet: Component = () => {
                     offlineMode()
                       ? 'Offline mode is on'
                       : canCombine()
-                        ? 'Combine the selected notes into one'
+                        ? 'Combine the selected notes into one. If this mint charges a fee, combining refunds part of what was already withheld when these notes were minted - you get back all but one base fee.'
                         : 'Select 2+ verified, unspent notes from the same mint to combine'
                   }
                   onClick={combineSelected}
@@ -1834,7 +1826,7 @@ const Wallet: Component = () => {
                     offlineMode()
                       ? 'Offline mode is on'
                       : canCombine()
-                        ? 'Combine the selected notes and split off an amount, leaving the rest as change'
+                        ? 'Combine the selected notes and split off an amount, leaving the rest as change. If this mint charges a fee, combining refunds part of what was already withheld when these notes were minted - you get back all but one base fee.'
                         : 'Select 2+ verified, unspent notes from the same mint to combine & split'
                   }
                   onClick={() => setShowSplitInput(v => !v)}
@@ -1965,13 +1957,6 @@ const Wallet: Component = () => {
                   </button>
                 </Show>
               </div>
-              <Show when={canCombine()}>
-                <p class="bearer-hint">
-                  If this mint charges a fee, combining refunds part of what was
-                  already withheld when these notes were minted - you get back
-                  all but one base fee.
-                </p>
-              </Show>
               <Show when={showSplitInput() && canCombine()}>
                 <div class="form-item">
                   <label>
