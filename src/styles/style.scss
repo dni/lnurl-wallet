@@ -196,6 +196,20 @@ h4 {
   margin-bottom: 6px;
 }
 
+// a question-mark icon carrying its explanation as a native title tooltip,
+// in place of an always-visible description paragraph - e.g. Mint.tsx's
+// "Public mints"/"Your storeable mints" headings
+.help-icon {
+  display: inline-flex;
+  vertical-align: middle;
+  margin-left: 6px;
+  opacity: 0.6;
+  cursor: help;
+  &:hover {
+    opacity: 1;
+  }
+}
+
 // a labeled on/off switch - used for the wallet page's show/hide spent
 // notes control, generic enough to reuse anywhere else a toggle fits better
 // than a checkbox
@@ -1314,13 +1328,16 @@ nav {
   }
 }
 
-// pairs a storeable-mint/address button with its own remove icon so the
-// two stay glued together when .mint-picker wraps, instead of the icon
-// landing on its own at the start of the next line
+// pairs a storeable-mint/address button with its own remove/website icon so
+// the two stay glued together when .mint-picker wraps, instead of the icon
+// landing on its own at the start of the next line - the gap is still
+// tighter than .mint-picker's own 8px between separate entries (so the pair
+// still reads as one unit), but large enough to actually read as a margin
+// rather than the icon sitting flush against the button
 .mint-picker-entry {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
+  gap: 6px;
 }
 
 // TransferDialog puts a .mint-picker directly under a .btns row (Mint.tsx's
