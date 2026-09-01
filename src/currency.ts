@@ -8,12 +8,13 @@ export type Currency = 'none' | 'usd' | 'eur' | 'gbp'
 
 const STORAGE_KEY = 'lnurlcash_currency'
 
-// LNbits' own price aggregator - polls several exchanges (Coinbase, Kraken,
-// Bitfinex, ...) and serves the cached median BTC price per currency. Covers
-// USD/EUR/GBP directly (see its own /rates response), so no separate fx
-// conversion API is needed on top - each is a real exchange-derived price,
-// not a synthetic USD->EUR/GBP conversion
-const RATES_URL = 'https://price.lnbits.com/rates'
+// same price aggregator LNbits itself runs (polls several exchanges -
+// Coinbase, Kraken, Bitfinex, ... - and serves the cached median BTC price
+// per currency), just under this project's own domain. Covers USD/EUR/GBP
+// directly (see its own /rates response), so no separate fx conversion API
+// is needed on top - each is a real exchange-derived price, not a synthetic
+// USD->EUR/GBP conversion
+const RATES_URL = 'https://price.lnurlcash.com/rates'
 
 // matches the aggregator's own default background-refresh cadence - polling
 // faster than that would just re-fetch its same cached snapshot
