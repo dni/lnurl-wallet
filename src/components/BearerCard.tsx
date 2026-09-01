@@ -8,8 +8,7 @@ import {
   IoHardwareChipSharp,
   IoEyeSharp,
   IoCopySharp,
-  IoRefreshSharp,
-  IoCheckmarkSharp
+  IoRefreshSharp
 } from 'solid-icons/io'
 
 import type {Bearer} from '../storage'
@@ -316,7 +315,7 @@ const BearerCard: Component<BearerCardProps> = props => {
                   title="Mark as spent - locks this note without removing it, e.g. if you already handed it out some other way"
                   onClick={markSpent}
                 >
-                  <IoCheckmarkSharp />
+                  <IoRefreshSharp />
                 </button>
               </div>
             </div>

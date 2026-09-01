@@ -23,8 +23,7 @@ import {
   IoQrCodeSharp,
   IoClipboardSharp,
   IoReturnDownForwardSharp,
-  IoEllipsisVerticalSharp,
-  IoChevronDownSharp
+  IoEllipsisVerticalSharp
 } from 'solid-icons/io'
 
 import {useWallet, groupByServer} from '../WalletContext'
@@ -119,11 +118,9 @@ const Wallet: Component = () => {
   const [showMoreMenu, setShowMoreMenu] = createSignal(false)
   let moreMenuRef: HTMLDivElement | null = null
   // same idea, for the filter/list toolbar's own More (Group by mint/
-  // Refresh all/Remove all spent) and its "Select all from a mint" dropdown
+  // Refresh all/Remove all spent)
   const [showListMoreMenu, setShowListMoreMenu] = createSignal(false)
   let listMoreMenuRef: HTMLDivElement | null = null
-  const [showMintSelectMenu, setShowMintSelectMenu] = createSignal(false)
-  let mintSelectMenuRef: HTMLDivElement | null = null
   onMount(() => {
     const onDocClick = (e: MouseEvent) => {
       const target = e.target as Node
@@ -132,9 +129,6 @@ const Wallet: Component = () => {
       }
       if (listMoreMenuRef && !listMoreMenuRef.contains(target)) {
         setShowListMoreMenu(false)
-      }
-      if (mintSelectMenuRef && !mintSelectMenuRef.contains(target)) {
-        setShowMintSelectMenu(false)
       }
     }
     document.addEventListener('mousedown', onDocClick)
@@ -264,11 +258,6 @@ const Wallet: Component = () => {
     spentBearers().reduce((sum, b) => sum + b.amount, 0)
   )
   const mintCount = createMemo(() => groupByServer(spendableBearers()).length)
-  // every mint currently holding at least one note - this is the source
-  // list for the "select all from a mint" picker below
-  const serverNames = createMemo(() =>
-    groupByServer(bearers()).map(([server]) => server)
-  )
 
   // notes no longer live in per-mint sections - one flat list for the
   // whole wallet, always ordered by the chosen sort criteria below
@@ -359,19 +348,6 @@ const Wallet: Component = () => {
       }
       return next
     })
-  }
-
-  // "select all from a mint" - replaces the current selection with every
-  // unspent note from the chosen mint, rather than adding to it: it's a
-  // fresh, explicit action each time (combine/split/transfer only ever
-  // work on a single mint's notes anyway, so mixing in a prior selection
-  // from a different mint would just leave everything disabled)
-  const selectAllFromServer = (server: string) => {
-    if (!server) return
-    const ids = bearers()
-      .filter(b => serverOf(b.url) === server && !b.spent)
-      .map(b => b.id)
-    setSelected(new Set(ids))
   }
 
   // combine/split/transfer all require every selected note to share one
@@ -1666,35 +1642,6 @@ const Wallet: Component = () => {
                     >
                       <IoCloseSharp />
                     </button>
-                  </Show>
-                </div>
-                <span class="list-controls-label">Select:</span>
-                <div class="more-menu" ref={el => (mintSelectMenuRef = el)}>
-                  <button
-                    type="button"
-                    disabled={serverNames().length === 0}
-                    title="Select every unspent note from one mint"
-                    onClick={() => setShowMintSelectMenu(v => !v)}
-                  >
-                    All from...
-                    <IoChevronDownSharp />
-                  </button>
-                  <Show when={showMintSelectMenu()}>
-                    <div class="more-menu-panel">
-                      <For each={serverNames()}>
-                        {server => (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              selectAllFromServer(server)
-                              setShowMintSelectMenu(false)
-                            }}
-                          >
-                            {server}
-                          </button>
-                        )}
-                      </For>
-                    </div>
                   </Show>
                 </div>
                 <span class="list-controls-label">Sort:</span>
