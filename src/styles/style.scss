@@ -1326,13 +1326,13 @@ nav {
   // a size up from the app's default icon-btn, since these are a note
   // card's own primary actions (Unveil/Copy/Mark spent, Unspend/Clear) -
   // and the default/hover background negated from the app's usual button
-  // (which starts visible and darkens on hover): transparent by default, so
-  // the row reads as quiet icons rather than a cluster of pills, and only
-  // picks up the normal button background once actually hovered
+  // (which starts visible and darkens on hover): a faint black tint by
+  // default (just enough to read as an indented well, not a solid pill),
+  // picking up the normal button background once actually hovered
   .icon-btn {
     padding: 11px;
     font-size: 1.1em;
-    background-color: transparent;
+    background-color: rgba(0, 0, 0, 0.2);
     &:hover {
       background-color: rgba($accent-base, $transparency);
     }
