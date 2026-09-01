@@ -1858,9 +1858,6 @@ const Wallet: Component = () => {
                     <IoRefreshSharp class="spin" />
                   </Show>
                   &nbsp;Combine
-                  <Show when={selectedEligible().length > 0}>
-                    &nbsp;({selectedEligible().length})
-                  </Show>
                 </button>
                 <button
                   class="icon-btn split-btn"
@@ -1878,9 +1875,6 @@ const Wallet: Component = () => {
                     <IoRefreshSharp class="spin" />
                   </Show>
                   &nbsp;Combine &amp; split
-                  <Show when={selectedEligible().length > 0}>
-                    &nbsp;({selectedEligible().length})
-                  </Show>
                 </button>
                 <button
                   class="icon-btn transfer-btn"
