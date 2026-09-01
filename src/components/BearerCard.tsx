@@ -47,6 +47,10 @@ export type BearerCardProps = {
   bearer: Bearer
   selected: boolean
   onSelect: (selected: boolean) => void
+  // Wallet.tsx's own refreshOneBearer - lives there since it already
+  // encapsulates the full device/rotate-on-refresh flow shared with the
+  // selection toolbar's own Refresh action; not worth duplicating here
+  onRefresh: (bearer: Bearer) => Promise<void>
 }
 
 const BearerCard: Component<BearerCardProps> = props => {
@@ -54,6 +58,7 @@ const BearerCard: Component<BearerCardProps> = props => {
   const {client: deviceClient} = useDevice()
   const [confirmDelete, setConfirmDelete] = createSignal(false)
   const [confirmUnspend, setConfirmUnspend] = createSignal(false)
+  const [refreshing, setRefreshing] = createSignal(false)
   // whether the "hand this note over" panel is open at all - separate from
   // revealedUrl below, since a device-backed note opens the panel before
   // its secret is actually known (see revealDeviceNote)
@@ -133,20 +138,17 @@ const BearerCard: Component<BearerCardProps> = props => {
       : verifyNoteSignature(k1(), props.bearer.amount, sig, mintPubkey)
   })
 
-  // single-note version of Wallet.tsx's markSpentSelected - a quick, direct
-  // lock right from the card, for when handing a note over some other way
-  // (in person, a different app) doesn't go through Unveil's own Done step
-  const markSpent = async () => {
-    updateBearer(props.bearer.id, {spent: true})
-    if (props.bearer.deviceId) {
-      await markDeviceNoteSpent(deviceClient(), props.bearer.deviceId)
+  // a quick, direct refresh right from the card - same
+  // fetch-value-then-rotate flow Wallet.tsx's own toolbar Refresh runs on a
+  // selection, just for this one note without needing to select it first
+  const refreshThisNote = async () => {
+    if (refreshing()) return
+    setRefreshing(true)
+    try {
+      await props.onRefresh(props.bearer)
+    } finally {
+      setRefreshing(false)
     }
-    logActivity(
-      'spent',
-      `Marked ${msatToSats(props.bearer.amount)} sats from ${serverOf(props.bearer.url)} as spent.`,
-      props.bearer.label
-    )
-    notify('Marked as spent.', NotifyKind.SUCCESS)
   }
 
   const unspend = () => {
@@ -312,10 +314,13 @@ const BearerCard: Component<BearerCardProps> = props => {
                 </button>
                 <button
                   class="icon-btn bearer-action-right"
-                  title="Mark as spent - locks this note without removing it, e.g. if you already handed it out some other way"
-                  onClick={markSpent}
+                  disabled={refreshing()}
+                  title="Refresh value from the service, then rotate (the GET necessarily exposes k1)"
+                  onClick={refreshThisNote}
                 >
-                  <IoRefreshSharp />
+                  <Show when={refreshing()} fallback={<IoRefreshSharp />}>
+                    <IoRefreshSharp class="spin" />
+                  </Show>
                 </button>
               </div>
             </div>
