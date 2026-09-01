@@ -339,17 +339,6 @@ const Wallet: Component = () => {
     })
   }
 
-  const selectMany = (ids: string[], isSelected: boolean) => {
-    setSelected(prev => {
-      const next = new Set(prev)
-      for (const id of ids) {
-        if (isSelected) next.add(id)
-        else next.delete(id)
-      }
-      return next
-    })
-  }
-
   // combine/split/transfer all require every selected note to share one
   // issuing mint - toggleSelect above is what actually enforces that as
   // notes are picked, this just reads back the mint that's currently
@@ -643,6 +632,7 @@ const Wallet: Component = () => {
     } finally {
       setRefreshing(false)
     }
+    setSelected(new Set<string>())
   }
 
   // every unspent note in the wallet, regardless of selection - same
@@ -709,6 +699,7 @@ const Wallet: Component = () => {
     }
     setShowLabelInput(false)
     setLabelInputValue('')
+    setSelected(new Set<string>())
     notify(
       `Labeled ${picked.length} note${picked.length === 1 ? '' : 's'}.`,
       NotifyKind.SUCCESS
@@ -1167,10 +1158,7 @@ const Wallet: Component = () => {
           )
         }
       }
-      selectMany(
-        picked.map(b => b.id),
-        false
-      )
+      setSelected(new Set<string>())
       // LUD-25 refunds (n - 1) * base_fee_msat on an n-note merge - the per-
       // note figure is exactly that division, same "X per unit (Y total)"
       // framing as BearerCard's split, so a combine of several notes
@@ -1341,10 +1329,7 @@ const Wallet: Component = () => {
           )
         }
       }
-      selectMany(
-        picked.map(b => b.id),
-        false
-      )
+      setSelected(new Set<string>())
       const feeMsat = sum - msat - changeAmount
       const feeNote =
         feeMsat > 0
@@ -2122,7 +2107,10 @@ const Wallet: Component = () => {
         {bearer => (
           <TransferDialog
             sourceBearer={bearer()}
-            onClose={() => setTransferSource(null)}
+            onClose={() => {
+              setTransferSource(null)
+              setSelected(new Set<string>())
+            }}
           />
         )}
       </Show>
