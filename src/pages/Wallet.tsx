@@ -2086,6 +2086,7 @@ const Wallet: Component = () => {
                         onSelect={isSelected =>
                           toggleSelect(bearer.id, isSelected)
                         }
+                        onRefresh={refreshOneBearer}
                       />
                     )}
                   </For>
@@ -2105,6 +2106,7 @@ const Wallet: Component = () => {
                             onSelect={isSelected =>
                               toggleSelect(bearer.id, isSelected)
                             }
+                            onRefresh={refreshOneBearer}
                           />
                         )}
                       </For>
