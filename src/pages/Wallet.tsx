@@ -1539,7 +1539,7 @@ const Wallet: Component = () => {
                   <IoAddCircleSharp />
                   &nbsp;Mint
                 </A>
-                <figure class="paste-widget hero-paste-widget">
+                <div class="paste-widget hero-paste-widget">
                   <div class="paste-input-row">
                     <ScanToggle onScan={onHeroScan} accept={isValidHeroInput} />
                     <NfcToggle onScan={onHeroScan} accept={isValidHeroInput} />
@@ -1582,7 +1582,7 @@ const Wallet: Component = () => {
                       <IoReturnDownForwardSharp />
                     </button>
                   </div>
-                </figure>
+                </div>
               </div>
             </section>
             <Show when={showReceive()}>
