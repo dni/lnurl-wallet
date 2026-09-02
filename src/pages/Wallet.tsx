@@ -117,18 +117,11 @@ const Wallet: Component = () => {
   // below that wrap each item's action)
   const [showMoreMenu, setShowMoreMenu] = createSignal(false)
   let moreMenuRef: HTMLDivElement | null = null
-  // same idea, for the filter/list toolbar's own More (Group by mint/
-  // Refresh all/Remove all spent)
-  const [showListMoreMenu, setShowListMoreMenu] = createSignal(false)
-  let listMoreMenuRef: HTMLDivElement | null = null
   onMount(() => {
     const onDocClick = (e: MouseEvent) => {
       const target = e.target as Node
       if (moreMenuRef && !moreMenuRef.contains(target)) {
         setShowMoreMenu(false)
-      }
-      if (listMoreMenuRef && !listMoreMenuRef.contains(target)) {
-        setShowListMoreMenu(false)
       }
     }
     document.addEventListener('mousedown', onDocClick)
@@ -1668,70 +1661,15 @@ const Wallet: Component = () => {
                     <Show when={!showSpent()}>&nbsp;({spentCount()})</Show>
                   </button>
                 </Show>
-                <div class="more-menu" ref={el => (listMoreMenuRef = el)}>
-                  <button
-                    type="button"
-                    title="More list actions - group by mint, refresh all, remove all spent"
-                    onClick={() => setShowListMoreMenu(v => !v)}
-                  >
-                    <IoEllipsisVerticalSharp />
-                    &nbsp;More
-                  </button>
-                  <Show when={showListMoreMenu()}>
-                    <div class="more-menu-panel">
-                      <button
-                        type="button"
-                        classList={{active: groupByMint()}}
-                        title="Show notes grouped under their issuing mint instead of one flat list"
-                        onClick={() => {
-                          setGroupByMint(v => !v)
-                          setShowListMoreMenu(false)
-                        }}
-                      >
-                        <IoLayersSharp />
-                        &nbsp;Group by mint
-                      </button>
-                      <button
-                        type="button"
-                        disabled={
-                          refreshingAll() ||
-                          offlineMode() ||
-                          spendableBearers().length === 0
-                        }
-                        title={
-                          offlineMode()
-                            ? 'Offline mode is on'
-                            : 'Refresh every unspent note in the wallet, one at a time'
-                        }
-                        onClick={() => {
-                          refreshAllNotes()
-                          setShowListMoreMenu(false)
-                        }}
-                      >
-                        <Show
-                          when={refreshingAll()}
-                          fallback={<IoRefreshSharp />}
-                        >
-                          <IoRefreshSharp class="spin" />
-                        </Show>
-                        &nbsp;Refresh all
-                      </button>
-                      <Show when={spentCount() > 0}>
-                        <button
-                          type="button"
-                          title={`Clear all ${spentCount()} spent note${spentCount() === 1 ? '' : 's'} from the wallet`}
-                          onClick={() => {
-                            setConfirmClearSpent(true)
-                            setShowListMoreMenu(false)
-                          }}
-                        >
-                          <IoTrashSharp />
-                          &nbsp;Remove all spent
-                        </button>
-                      </Show>
-                    </div>
-                  </Show>
-                </div>
+                <button
+                  type="button"
+                  classList={{active: groupByMint()}}
+                  title="Show notes grouped under their issuing mint instead of one flat list"
+                  onClick={() => setGroupByMint(v => !v)}
+                >
+                  <IoLayersSharp />
+                  &nbsp;Group by mint
+                </button>
               </div>
             </section>
 
@@ -1827,7 +1765,7 @@ const Wallet: Component = () => {
                   <button
                     type="button"
                     class="icon-btn more-btn"
-                    title="More actions - label, mark spent, export"
+                    title="More actions - refresh all, remove all spent, label, mark spent, export"
                     onClick={() => setShowMoreMenu(v => !v)}
                   >
                     <IoEllipsisVerticalSharp />
@@ -1835,6 +1773,44 @@ const Wallet: Component = () => {
                   </button>
                   <Show when={showMoreMenu()}>
                     <div class="more-menu-panel">
+                      <button
+                        type="button"
+                        disabled={
+                          refreshingAll() ||
+                          offlineMode() ||
+                          spendableBearers().length === 0
+                        }
+                        title={
+                          offlineMode()
+                            ? 'Offline mode is on'
+                            : 'Refresh every unspent note in the wallet, one at a time'
+                        }
+                        onClick={() => {
+                          refreshAllNotes()
+                          setShowMoreMenu(false)
+                        }}
+                      >
+                        <Show
+                          when={refreshingAll()}
+                          fallback={<IoRefreshSharp />}
+                        >
+                          <IoRefreshSharp class="spin" />
+                        </Show>
+                        &nbsp;Refresh all
+                      </button>
+                      <Show when={spentCount() > 0}>
+                        <button
+                          type="button"
+                          title={`Clear all ${spentCount()} spent note${spentCount() === 1 ? '' : 's'} from the wallet`}
+                          onClick={() => {
+                            setConfirmClearSpent(true)
+                            setShowMoreMenu(false)
+                          }}
+                        >
+                          <IoTrashSharp />
+                          &nbsp;Remove all spent
+                        </button>
+                      </Show>
                       <button
                         class="icon-btn label-btn"
                         disabled={!canLabelSelected()}

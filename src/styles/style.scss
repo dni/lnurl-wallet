@@ -1171,6 +1171,12 @@ nav {
   flex-direction: column;
   align-items: center;
   max-width: 300px;
+  // the whole card (and its buttons) is a click target, not readable text -
+  // without this, clicking Refresh/Copy/etc (especially a fast double
+  // click while the spinner debounces a second press) drags a native blue
+  // text-selection highlight across the card's amount/label/server instead
+  // of just registering the click
+  user-select: none;
   background: linear-gradient(
     135deg,
     rgba($accent-base, $transparency) 0%,
