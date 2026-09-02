@@ -112,8 +112,8 @@ h2 {
 // still reads as a primary call to action even standing alone next to the
 // scan/NFC/paste widget (.hero-paste-widget) that replaced Receive/Send/Melt
 .wallet-hero-btn {
-  padding: 12px 22px;
-  font-size: 1.1em;
+  padding: 10px 18px;
+  font-size: 1em;
   margin-right: 10px;
   margin-bottom: 10px;
 }
@@ -783,8 +783,12 @@ nav {
   display: flex;
   align-items: center;
   margin-left: auto;
-  a:last-child,
-  .nav-icon-toggle:last-child {
+  // direct-child only - .currency-menu wraps its own toggle button, so an
+  // unscoped :last-child here also matches that button as the last (only)
+  // child of .currency-menu whenever its dropdown panel is closed, wiping
+  // out the margin between it and the next nav item
+  > a:last-child,
+  > .nav-icon-toggle:last-child {
     margin-right: 0;
   }
 }
