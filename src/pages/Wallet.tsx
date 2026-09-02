@@ -1958,9 +1958,9 @@ const Wallet: Component = () => {
                     />
                     <p class="bearer-hint">
                       Burns the {selectedEligible().length} selected notes and
-                      mints two: this amount, and a change note for the rest.
-                      If this mint charges a fee, it's deducted from the
-                      change, not the amount split off.
+                      mints two: this amount, and a change note for the rest. If
+                      this mint charges a fee, it's deducted from the change,
+                      not the amount split off.
                     </p>
                     <div class="btns">
                       <button
@@ -1996,8 +1996,8 @@ const Wallet: Component = () => {
                     <figcaption>Label</figcaption>
                     <label>
                       Label {selectedBearers().length} note
-                      {selectedBearers().length === 1 ? '' : 's'} (private,
-                      for your own reference)
+                      {selectedBearers().length === 1 ? '' : 's'} (private, for
+                      your own reference)
                     </label>
                     <input
                       type="text"
@@ -2049,9 +2049,7 @@ const Wallet: Component = () => {
                       step="1"
                       placeholder="1"
                       value={splitSingleTimes()}
-                      onInput={e =>
-                        setSplitSingleTimes(e.currentTarget.value)
-                      }
+                      onInput={e => setSplitSingleTimes(e.currentTarget.value)}
                     />
                     <p class="bearer-hint">
                       If this mint charges a fee, it's deducted from the
@@ -2061,9 +2059,9 @@ const Wallet: Component = () => {
                     <Show when={Number(splitSingleTimes()) > 1}>
                       <p class="bearer-hint">
                         Chains {Number(splitSingleTimes())} split requests one
-                        after another - if one fails partway through,
-                        whichever notes already came back are kept, and you'd
-                        need to try again for the rest.
+                        after another - if one fails partway through, whichever
+                        notes already came back are kept, and you'd need to try
+                        again for the rest.
                       </p>
                     </Show>
                     <div class="btns">
