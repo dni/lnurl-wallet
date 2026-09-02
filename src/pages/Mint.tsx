@@ -20,6 +20,7 @@ import {
   IoLockClosedSharp,
   IoHelpCircleSharp
 } from 'solid-icons/io'
+import {MdSharpKeyboard} from 'solid-icons/md'
 
 import {useWallet} from '../WalletContext'
 import {useDevice} from '../DeviceContext'
@@ -142,6 +143,10 @@ const Mint: Component = () => {
   const navigate = useNavigate()
 
   const [mintInput, setMintInput] = createSignal('')
+  // the paste field is hidden behind a keyboard icon on mobile (see
+  // .paste-keyboard-btn) - desktop ignores this, CSS only hides the field
+  // under the mobile breakpoint
+  const [showMintKeyboard, setShowMintKeyboard] = createSignal(false)
   const [payRequest, setPayRequest] = createSignal<PayRequestInfo | null>(null)
   const [amountSats, setAmountSats] = createSignal('')
   const [invoice, setInvoice] = createSignal<string | null>(null)
@@ -423,7 +428,9 @@ const Mint: Component = () => {
 
   const pasteMint = async () => {
     const text = await pasteFromClipboard()
-    if (text !== null) selectMint(text)
+    if (text === null) return
+    setShowMintKeyboard(true)
+    selectMint(text)
   }
 
   const confirmTrust = () => {
@@ -1115,7 +1122,18 @@ const Mint: Component = () => {
                 >
                   <IoClipboardSharp />
                 </button>
-                <div class="paste-input-wrapper">
+                <button
+                  type="button"
+                  class="icon-btn paste-keyboard-btn"
+                  title="Type instead"
+                  onClick={() => setShowMintKeyboard(v => !v)}
+                >
+                  <MdSharpKeyboard />
+                </button>
+                <div
+                  class="paste-input-wrapper"
+                  classList={{'mobile-open': showMintKeyboard()}}
+                >
                   <input
                     type="text"
                     class="paste-input"
