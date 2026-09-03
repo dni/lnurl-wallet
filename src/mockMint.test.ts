@@ -49,6 +49,10 @@ const WITHDRAW_CALLBACK = `${BASE}/w/cb`
 const MINT_ADDRESS_URL = `${BASE}/mintaddress`
 const MINT_ADDRESS_BAD_URL = `${BASE}/mintaddress-bad`
 const MINT_ADDRESS_UNKNOWN_URL = `${BASE}/mintaddress-unknown`
+const MINT_KEY = `02${'11'.repeat(32)}`
+const PREVIOUS_MINT_KEY = `03${'22'.repeat(32)}`
+const NODE_KEY = `02${'33'.repeat(32)}`
+const NOTE_SIGNATURE = '00'.repeat(65)
 
 const randomHex = (bytes: number): string =>
   bytesToHex(crypto.getRandomValues(new Uint8Array(bytes)))
@@ -214,9 +218,10 @@ class MockMint {
         minWithdrawable: 1000,
         maxWithdrawable: 100_000_000,
         payLink: PAY_URL,
-        mintPubkey: 'deadbeef',
+        mintPubkey: MINT_KEY,
+        previousPubkeys: [PREVIOUS_MINT_KEY],
         nodeAlias: 'mock node',
-        nodeUri: 'deadbeef@127.0.0.1:9735',
+        nodeUri: `${NODE_KEY}@127.0.0.1:9735`,
         nodeColor: '#3399ff',
         // the wire name, as lnurl-mint sends it - not the nodeCapacityMsat
         // the parsed type exposes
@@ -257,20 +262,27 @@ class MockMint {
 
     if (url.pathname === '/w') {
       const k1 = params.get('k1')
-      if (!k1) return this.error('missing k1')
-      const hash = hashK1(k1)
+      const requestedHash = params.get('h')
+      if (!k1 && !requestedHash) return this.error('missing k1')
+      const hash = requestedHash ?? hashK1(k1!)
       const note = this.notes.get(hash)
       if (!note) {
         return this.error(
-          this.spent.has(hash) ? 'Note already spent.' : 'Unknown note.'
+          requestedHash
+            ? 'Unknown note.'
+            : this.spent.has(hash)
+              ? 'Note already spent.'
+              : 'Unknown note.'
         )
       }
       return this.respond({
         tag: 'withdrawRequest',
         callback: WITHDRAW_CALLBACK,
-        k1,
+        ...(k1 ? {k1} : {}),
         minWithdrawable: note.amountMsat,
-        maxWithdrawable: note.amountMsat
+        maxWithdrawable: note.amountMsat,
+        mintPubkey: MINT_KEY,
+        previousPubkeys: [PREVIOUS_MINT_KEY]
       })
     }
 
@@ -305,7 +317,7 @@ class MockMint {
           this.notes.delete(hash)
         }
         this.notes.set(h, {amountMsat: total, pending: false})
-        return this.ok()
+        return this.ok({sig: NOTE_SIGNATURE})
       }
 
       // split: one or many k1s, amount + h + h2, no pr (LUD-25)
@@ -320,7 +332,7 @@ class MockMint {
         }
         this.notes.set(h, {amountMsat: target, pending: false})
         this.notes.set(h2, {amountMsat: change, pending: false})
-        return this.ok()
+        return this.ok({sig: NOTE_SIGNATURE, sig2: NOTE_SIGNATURE})
       }
 
       // merge: many k1s, h only, no amount/pr
@@ -331,7 +343,7 @@ class MockMint {
           this.notes.delete(hash)
         }
         this.notes.set(h, {amountMsat: total, pending: false})
-        return this.ok()
+        return this.ok({sig: NOTE_SIGNATURE})
       }
 
       return this.error('bad request')
@@ -360,11 +372,11 @@ describe('LUD-25 mint address (experimental)', () => {
     expect(info.callback).toBe(WITHDRAW_URL)
     expect(info.minWithdrawable).toBe(1000)
     expect(info.maxWithdrawable).toBe(100_000_000)
-    // the wire field is still `mintPubkey` (mocked above) - fetchMintAddress
-    // renames it to nodePubkey (see MintAddressInfo)
-    expect(info.nodePubkey).toBe('deadbeef')
+    expect(info.mintPubkey).toBe(MINT_KEY)
+    expect(info.previousPubkeys).toEqual([PREVIOUS_MINT_KEY])
+    expect(info.nodePubkey).toBe(NODE_KEY)
     expect(info.nodeAlias).toBe('mock node')
-    expect(info.nodeUri).toBe('deadbeef@127.0.0.1:9735')
+    expect(info.nodeUri).toBe(`${NODE_KEY}@127.0.0.1:9735`)
     expect(info.nodeColor).toBe('#3399ff')
     expect(info.nodeCapacityMsat).toBe(750_000_000)
     expect(info.nodeNumChannels).toBe(3)
@@ -428,14 +440,16 @@ describe('mint -> rotate -> split -> merge -> melt', () => {
     expect(info.maxWithdrawable).toBe(21000)
     expect(info.k1).toBe(preimage)
 
-    // rotate: the preimage was just on the wire (that GET), so it's burned
-    // in favor of a fresh, wallet-only secret
+    // Rotate once to obtain the freshly minted note's signed certificate.
     const rotated = await rotateNote(info.callback, preimage)
     expect(rotated.k1).not.toBe(preimage)
     expect(mint.isOutstanding(preimage)).toBe(false)
     expect(mint.isOutstanding(rotated.k1)).toBe(true)
-    await expect(fetchNoteInfo(noteUrl)).rejects.toBeInstanceOf(NoteSpentError)
-    await expect(fetchNoteInfo(noteUrl)).rejects.toThrow(/spent/i)
+    // Hash lookup deliberately does not reveal whether this identifier was
+    // burned or never existed.
+    await expect(fetchNoteInfo(noteUrl)).rejects.toBeInstanceOf(
+      NoteUnknownError
+    )
 
     // split: one k1, one piece + change (LUD-25 also allows many at once,
     // covered by the "one or many k1s" test below)
@@ -477,7 +491,7 @@ describe('mint -> rotate -> split -> merge -> melt', () => {
     expect(mint.isOutstanding(merged.k1)).toBe(false)
     await expect(
       fetchNoteInfo(buildNoteUrl(WITHDRAW_URL, merged.k1, 21000))
-    ).rejects.toThrow(/spent/i)
+    ).rejects.toThrow(/unknown/i)
   })
 
   it('splits one or many k1s in a single request (LUD-25)', async () => {
@@ -566,7 +580,7 @@ describe('pending-note recovery', () => {
     mint.settleMelt(idFromVerifyUrl(melt.verify!))
     await expect(
       fetchNoteInfo(buildNoteUrl(WITHDRAW_URL, k1, 10000))
-    ).rejects.toThrow(/spent/i)
+    ).rejects.toThrow(/unknown/i)
   })
 
   it('restores the note to outstanding if the outgoing payment fails', async () => {
@@ -594,13 +608,13 @@ describe('spent vs. unknown note classification', () => {
     ).rejects.toThrow(/unknown/i)
   })
 
-  it('reports a burned k1 as spent once it has actually been redeemed', async () => {
+  it('does not distinguish a burned hash from an unknown one', async () => {
     const k1 = randomHex(32)
     mint.seed(k1, 1000)
     await rotateNote(WITHDRAW_CALLBACK, k1)
     await expect(
       fetchNoteInfo(buildNoteUrl(WITHDRAW_URL, k1, 1000))
-    ).rejects.toBeInstanceOf(NoteSpentError)
+    ).rejects.toBeInstanceOf(NoteUnknownError)
   })
 
   it('a mutating callback naming an unknown k1 is also classified, even from its generic wording', async () => {
@@ -693,14 +707,14 @@ describe('a rejection carrying no reason says nothing about the note', () => {
 })
 
 describe('receiveNote surfaces a definitive spent/unknown report', () => {
-  it('throws instead of silently storing an already-spent note as unverified', async () => {
+  it('throws instead of storing a note whose hash is no longer outstanding', async () => {
     const k1 = randomHex(32)
     mint.seed(k1, 1000)
     await rotateNote(WITHDRAW_CALLBACK, k1) // burns k1
 
     const url = buildNoteUrl(WITHDRAW_URL, k1, 1000)
     await expect(receiveNote(toBech32Lnurl(url), [])).rejects.toBeInstanceOf(
-      NoteSpentError
+      NoteUnknownError
     )
   })
 
@@ -787,7 +801,6 @@ describe('service-response sanity checks', () => {
         json: async () => ({
           tag: 'withdrawRequest',
           callback: WITHDRAW_CALLBACK,
-          k1,
           minWithdrawable: 1000,
           maxWithdrawable: -5
         })
@@ -799,25 +812,16 @@ describe('service-response sanity checks', () => {
   })
 })
 
-describe('rotation-on-failure', () => {
-  it('settleNote falls back to the pre-rotation note when rotate fails', async () => {
+describe('hash-only settlement lookup', () => {
+  it('keeps the same note while reading its authoritative value', async () => {
     const k1 = randomHex(32)
     mint.seed(k1, 8000)
-    mint.rotateFails = true
 
     const settled = await settleNote(WITHDRAW_URL, k1, 8000, undefined)
 
-    // rotate never went through - the original secret is still the live
-    // one, exactly as before the attempt, and settleNote reports it back
-    // rather than a rotated secret it doesn't have
     expect(settled.k1).toBe(k1)
     expect(settled.amountMsat).toBe(8000)
     expect(mint.isOutstanding(k1)).toBe(true)
-
-    // SERVICE recovers - the very same note rotates cleanly afterward
-    mint.rotateFails = false
-    const rotated = await rotateNote(WITHDRAW_CALLBACK, k1)
-    expect(mint.isOutstanding(rotated.k1)).toBe(true)
   })
 })
 

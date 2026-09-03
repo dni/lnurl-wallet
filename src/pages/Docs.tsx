@@ -156,27 +156,31 @@ callback?k1=X&k1=Y&h=<sha256(Z)>         merge: all burned, one note keyed by h 
           </li>
           <li>
             <strong>Receive</strong>: a scanned or pasted note is rotated
-            immediately after the informational GET that verifies it - that GET
-            already put the old secret on the wire, so whoever handed the note
-            over needs burning out regardless of who they are.
+            immediately after a hash-only informational GET verifies it. Whoever
+            handed the note over already knows the old secret, so their copy
+            needs burning out regardless of who they are.
           </li>
         </ul>
       </div>
 
       <div class="docs-card">
-        <h3>Offline verification (optional)</h3>
+        <h3>Offline verification</h3>
         <p>
           A bearer note is otherwise an opaque secret - an offline recipient
           can't tell who issued it, by whom, or for how much, until they're back
           online and can ask the service directly. A service{' '}
-          <strong>MAY</strong> close that gap by publishing a{' '}
+          <strong>MUST</strong> close that gap by publishing a stable{' '}
           <code>mintPubkey</code> on its withdrawRequest response and signing
           each fresh secret's hash on rotate, split or merge (the{' '}
           <code>sig</code>/<code>sig2</code> in that callback's response - a
           freshly minted note has none until rotated once).
         </p>
         <p>
-          The signature is made the same way{' '}
+          The key is controlled by the service. It should be the funding node
+          identity when that backend exposes compatible signing, but it may be a
+          dedicated, securely persisted secp256k1 key otherwise. A dedicated key
+          proves issuance by the pinned service, not by the Lightning node which
+          funded it. The signature uses the same digest wrapping as{' '}
           <a
             href="https://github.com/lnurl/luds/blob/luds/13.md"
             target="_blank"
@@ -184,8 +188,7 @@ callback?k1=X&k1=Y&h=<sha256(Z)>         merge: all burned, one note keyed by h 
           >
             LUD-13
           </a>{' '}
-          signs its auth seed phrase - a Lightning node's own{' '}
-          <code>signmessage</code>:
+          signs its auth seed phrase:
         </p>
         <pre>{`message = "LNURLcash:" || amount_msat (decimal) || ":" || h
 digest  = sha256(sha256("Lightning Signed Message:" || message))`}</pre>
@@ -199,25 +202,29 @@ digest  = sha256(sha256("Lightning Signed Message:" || message))`}</pre>
         </p>
         <pre>{`lnurlw://mint.example/withdraw?k1=<secret>&amount=<msat>&sig=<hex>`}</pre>
         <p>
-          When this wallet already knows a service's <code>mintPubkey</code>{' '}
-          (learned from an earlier online check) and a note carries a{' '}
-          <code>sig</code>, it recovers the signer from the two and compares it
-          - a match shows as a "signed" badge on the note's card, entirely
-          offline. This only proves the note <em>was issued</em> for that
-          amount, never that it's still unspent - the only definitive check is
-          an online rotate.
+          When this wallet already knows a service's current or accepted
+          previous signing key and a note carries a <code>sig</code>, it
+          recovers the signer and compares it - a match shows as a "signed"
+          badge on the note's card, entirely offline. This only proves the note{' '}
+          <em>was issued</em> for that amount, never that it's still unspent -
+          the only definitive check is an online rotate.
         </p>
         <p>
-          Every <code>mintPubkey</code> this wallet has ever seen lives in the{' '}
+          Signing keys are pinned to the service's full origin, including its
+          scheme and port. Every accepted current and previous key lives in the{' '}
           <A href="/mint">Trusted mints</A> section, at the bottom of the Mint
           page. The first time it sees a brand new one - looking a mint up,
           before minting anything from it - it asks whether to trust it;
-          declining cancels that lookup. A mint you already hold a bearer note
-          from is trusted automatically instead (holding funds there already
-          implied trusting it) and can't be removed from the list; anything you
-          added yourself - by confirming a lookup or typing it in directly - can
-          be. The list travels with your <A href="/settings">backup</A> file, in
-          plain (a signing key isn't a secret).
+          declining cancels that lookup. A different current key, or newly
+          advertised <code>previousPubkeys</code>, is staged for review and
+          never silently widens the trusted set: an unsigned key history cannot
+          authenticate itself. A mint you already hold a bearer note from is
+          trusted automatically instead (holding funds there already implied
+          trusting it) and can't be removed from the list; anything you added
+          yourself - by confirming a lookup or typing it in directly - can be.
+          The list travels with your <A href="/settings">backup</A> file, in
+          plain (a signing key isn't a secret), but restored keys remain
+          unconfirmed until corroborated by a live lookup.
         </p>
       </div>
 

@@ -404,9 +404,8 @@ const MeltDialog: Component<MeltDialogProps> = props => {
   // merges the selection into one note worth their sum - a no-op returning
   // the note itself when only one is selected, since merge only makes
   // sense for 2+. settleNote reads the actual value back (a mint MAY
-  // refund part of its fees on merge - LUD-25) and rotates the merged
-  // secret, since learning that value necessarily puts it on the wire -
-  // melt below demands an exact amount match, so the stored note must be
+  // refund part of its fees on merge - LUD-25) by hash, without exporting or
+  // rotating the merged secret. Melt below demands an exact amount match, so the stored note must be
   // trustworthy, not the naive pre-fee sum. If a vault is connected, the
   // merged note lands there instead - regardless of whether any of the
   // inputs were themselves device-backed (mixed selections are fine, see

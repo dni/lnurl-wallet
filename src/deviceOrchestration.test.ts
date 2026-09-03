@@ -34,6 +34,8 @@ import {buildNoteUrl} from './lnurlcash'
 const WITHDRAW_URL = 'https://mock-mint.test/w'
 const WITHDRAW_CALLBACK = 'https://mock-mint.test/w/cb'
 const HOST = 'mock-mint.test'
+const MINT_KEY = `02${'11'.repeat(32)}`
+const NOTE_SIGNATURE = '00'.repeat(65)
 
 const randomHex = (bytes: number): string =>
   bytesToHex(crypto.getRandomValues(new Uint8Array(bytes)))
@@ -80,15 +82,18 @@ class MockMint {
 
     if (url.pathname === '/w') {
       const k1 = params.get('k1')
-      if (!k1) return this.respond({status: 'ERROR', reason: 'missing k1'})
-      const note = this.notes.get(hashK1(k1))
+      const requestedHash = params.get('h')
+      if (!k1 && !requestedHash)
+        return this.respond({status: 'ERROR', reason: 'missing k1'})
+      const note = this.notes.get(requestedHash ?? hashK1(k1!))
       if (!note) return this.respond({status: 'ERROR', reason: 'not found'})
       return this.respond({
         tag: 'withdrawRequest',
         callback: WITHDRAW_CALLBACK,
-        k1,
+        ...(k1 ? {k1} : {}),
         minWithdrawable: note.amountMsat,
-        maxWithdrawable: note.amountMsat
+        maxWithdrawable: note.amountMsat,
+        mintPubkey: MINT_KEY
       })
     }
 
@@ -128,13 +133,17 @@ class MockMint {
         for (const hash of hashes) this.notes.delete(hash)
         this.notes.set(h, {amountMsat: target, pending: false})
         this.notes.set(h2, {amountMsat: change, pending: false})
-        return this.respond({status: 'OK'})
+        return this.respond({
+          status: 'OK',
+          sig: NOTE_SIGNATURE,
+          sig2: NOTE_SIGNATURE
+        })
       }
       if (h && !h2 && !amount && !pr) {
         const total = notes.reduce((sum, n) => sum + n!.amountMsat, 0)
         for (const hash of hashes) this.notes.delete(hash)
         this.notes.set(h, {amountMsat: total, pending: false})
-        return this.respond({status: 'OK'})
+        return this.respond({status: 'OK', sig: NOTE_SIGNATURE})
       }
       return this.respond({status: 'ERROR', reason: 'bad request'})
     }
@@ -685,13 +694,18 @@ describe('deviceSplit / deviceSettle', () => {
       expect(parts.target.amountMsat).toBe(6000)
       expect(parts.change.amountMsat).toBe(15000)
 
+      // If settlement tried to export, this rejection would make it fail.
+      firmware.rejectOnce = {cmd: 'export_secret', error: 'user_declined'}
       const settledChange = await deviceSettle(client, parts.change)
       expect(settledChange.amountMsat).toBe(15000)
-      // settling rotates the change leg - a fresh device id, the old one
-      // (the raw split output) burned in the process
-      expect(firmware.get(parts.change.deviceId)?.state).toBe('spent')
+      // Hash lookup learns the authoritative amount without exporting or
+      // rotating the device-held output.
+      expect(settledChange.deviceId).toBe(parts.change.deviceId)
       expect(firmware.get(settledChange.deviceId)?.state).toBe('confirmed')
 
+      await expect(
+        client.exportSecret(settledChange.deviceId)
+      ).rejects.toMatchObject({code: 'user_declined'})
       const targetK1 = await client.exportSecret(parts.target.deviceId)
       const changeK1 = await client.exportSecret(settledChange.deviceId)
       expect(mint.isOutstanding(targetK1)).toBe(true)
@@ -878,7 +892,7 @@ describe('deviceMint', () => {
   })
 })
 
-describe('deviceSettle failure leaves the raw output intact', () => {
+describe('legacy deviceSettle fallback failure leaves the raw output intact', () => {
   // the call sites' settle-failure handling (Wallet.tsx/MeltDialog/BearerCard
   // track parts.change as an unverified mirror) relies on exactly this:
   // after a failed settle, the raw output is still a whole, valid note
@@ -898,12 +912,12 @@ describe('deviceSettle failure leaves the raw output intact', () => {
         6000,
         21000
       )
-      // the settle's export is declined - as if the holder rejected the
-      // device's button press
+      // A legacy result has no stored hash and must export for compatibility.
+      // Declining that export leaves the note untouched.
       firmware.rejectOnce = {cmd: 'export_secret', error: 'user_declined'}
-      await expect(deviceSettle(client, parts.change)).rejects.toMatchObject({
-        code: 'user_declined'
-      })
+      await expect(
+        deviceSettle(client, {...parts.change, deviceHash: undefined})
+      ).rejects.toMatchObject({code: 'user_declined'})
       // ...but the note it would have settled is untouched: still
       // CONFIRMED on the device, still outstanding mint-side, at the
       // expected pre-fee amount the mirror gets tracked with

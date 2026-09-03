@@ -19,6 +19,7 @@ import {
   meltNote,
   requireNoteK1,
   serverOf,
+  serviceOriginOf,
   noteEndpointOf,
   isPreimage,
   applyMintFee,
@@ -119,8 +120,9 @@ const TransferDialog: Component<TransferDialogProps> = props => {
         )
         return
       }
-      const server = serverOf(url)
-      if (server === serverOf(props.sourceBearer.url)) {
+      const server = serverOf(info.withdrawLink)
+      const origin = serviceOriginOf(info.withdrawLink)
+      if (origin === serviceOriginOf(props.sourceBearer.url)) {
         notify("That's the mint this note is already on.", NotifyKind.ERROR)
         return
       }
@@ -134,8 +136,12 @@ const TransferDialog: Component<TransferDialogProps> = props => {
         )
         return
       }
-      if (info.mintPubkey && !isMintTrusted(server)) {
-        setPendingTrust({server, mintPubkey: info.mintPubkey, info})
+      if (
+        serviceOriginOf(url) === origin &&
+        info.mintPubkey &&
+        !isMintTrusted(origin)
+      ) {
+        setPendingTrust({server: origin, mintPubkey: info.mintPubkey, info})
         return
       }
       setPayRequest(info)
@@ -266,6 +272,7 @@ const TransferDialog: Component<TransferDialogProps> = props => {
           amount: result.amountMsat,
           verified: true,
           mintPubkey: noteInfo.mintPubkey,
+          previousPubkeys: noteInfo.previousPubkeys,
           deviceId: result.deviceId,
           deviceHash: result.deviceHash
         })
@@ -326,7 +333,8 @@ const TransferDialog: Component<TransferDialogProps> = props => {
               callback: noteInfo.callback,
               amount: noteInfo.maxWithdrawable,
               verified: false,
-              mintPubkey
+              mintPubkey,
+              previousPubkeys: noteInfo.previousPubkeys
             })
             rotationError = `${(err as Error).message} The rotation may still have gone through - the possible rotated copy is stored unverified alongside this one; refresh both to reconcile.`
           } else {
@@ -341,7 +349,8 @@ const TransferDialog: Component<TransferDialogProps> = props => {
         callback: noteInfo.callback,
         amount: noteInfo.maxWithdrawable,
         verified: true,
-        mintPubkey
+        mintPubkey,
+        previousPubkeys: noteInfo.previousPubkeys
       })
       setClaimed(true)
       stopPolling()
@@ -488,7 +497,8 @@ const TransferDialog: Component<TransferDialogProps> = props => {
               callback: props.sourceBearer.callback,
               amount: props.sourceBearer.amount,
               verified: false,
-              mintPubkey: props.sourceBearer.mintPubkey
+              mintPubkey: props.sourceBearer.mintPubkey,
+              previousPubkeys: props.sourceBearer.previousPubkeys
             })
             setSourceConfirmed(true)
             notify(
@@ -559,7 +569,7 @@ const TransferDialog: Component<TransferDialogProps> = props => {
                 {mint => (
                   <button
                     disabled={busy() || offlineMode()}
-                    onClick={() => selectMint(`mint@${mint.server}`)}
+                    onClick={() => selectMint(`mint@${serverOf(mint.server)}`)}
                   >
                     {mint.server}
                   </button>

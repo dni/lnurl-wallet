@@ -20,9 +20,8 @@ import {receiveNote, secureReceivedNote} from './receive'
 //   # seed: INSERT INTO notes (id, amount_msat) VALUES (sha256(k1), 21000)
 //   MINT_K1=<k1> npm test
 //
-// Without a funding source configured, melt fails (no way to pay out) and
-// signatures/mintPubkey are omitted - both still exercised for their
-// documented no-funding-source behavior, not their happy path.
+// The live mint must have a working funding/signing backend.  Current LUD-25
+// note lookup and mutation fail closed rather than omitting mintPubkey/sig.
 declare const process: {env: Record<string, string | undefined>}
 
 const K1 = process.env.MINT_K1!

@@ -93,6 +93,7 @@ const Vault: Component = () => {
       amount: adopted.amountMsat,
       verified: true,
       mintPubkey: adopted.mintPubkey,
+      previousPubkeys: adopted.previousPubkeys,
       deviceId: adopted.deviceId,
       deviceHash: adopted.deviceHash
     })

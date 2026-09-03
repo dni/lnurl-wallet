@@ -41,6 +41,7 @@ import {
   fetchNoteInfo,
   rotateNote,
   serverOf,
+  serviceOriginOf,
   noteEndpointOf,
   isPreimage,
   applyMintFee,
@@ -121,7 +122,7 @@ const VERIFY_POLL_SECONDS = 5
 // own reference mint (lnurl-mint) defaults to. A reasonable quick-fill, not
 // a guarantee: if a given mint uses a different username, the lookup below
 // just fails normally and the holder can type the real address by hand.
-const guessMintAddress = (server: string): string => `mint@${server}`
+const guessMintAddress = (server: string): string => `mint@${serverOf(server)}`
 
 // the exact address a trusted mint was last reached at when one's cached,
 // else the same best-effort guess selectMint has always fallen back to
@@ -379,27 +380,49 @@ const Mint: Component = () => {
         )
         return
       }
-      const server = serverOf(payUrl)
+      const server = serviceOriginOf(info.withdrawLink)
+      const sameOriginNodeInfo =
+        nodeInfo && serviceOriginOf(nodeInfo.callback) === server
+          ? nodeInfo
+          : null
+      const sameOriginUsername =
+        serviceOriginOf(payUrl) === server ? username : null
 
       // first time seeing this server's signing key - pause for a decision
-      // instead of trusting it silently (a mint with no signing key at all
-      // just isn't offline-verifiable, nothing to trust or ask about).
-      // Prefer the mint-address endpoint's nodePubkey when present - it's
-      // available up front, before paying anything, unlike payRequest's own
-      // mintPubkey (rarely present in practice - see PayRequestInfo)
-      const mintPubkey = nodeInfo?.nodePubkey || info.mintPubkey
+      // instead of trusting it silently.  A payRequest need not repeat the
+      // key, so a mint without this discovery endpoint is pinned later from
+      // the mandatory withdrawRequest response.
+      // Prefer the mint-address endpoint's SERVICE signing key when present.
+      // It may deliberately differ from the funding node identity.
+      const mintPubkey =
+        sameOriginNodeInfo?.mintPubkey ||
+        (serviceOriginOf(payUrl) === server ? info.mintPubkey : undefined)
       if (mintPubkey && !isMintTrusted(server)) {
-        setPendingTrust({server, mintPubkey, info, nodeInfo, username})
+        setPendingTrust({
+          server,
+          mintPubkey,
+          info,
+          nodeInfo: sameOriginNodeInfo,
+          username: sameOriginUsername
+        })
         return
       }
       // already trusted - still worth refreshing the cached display info
       // (Mints.tsx) with whatever this lookup just (re)discovered
-      const cached = mintAddressCacheInfo(nodeInfo, username)
+      const cached = mintAddressCacheInfo(
+        sameOriginNodeInfo,
+        sameOriginUsername
+      )
       if (mintPubkey) {
-        const trust = addTrustedMint(server, mintPubkey, cached)
+        const trust = addTrustedMint(
+          server,
+          mintPubkey,
+          cached,
+          sameOriginNodeInfo?.previousPubkeys
+        )
         if (trust === 'rekey-pending') {
           notify(
-            `${server} advertises a different signing key than the one pinned. Review it on the Mints page before minting a receipt-backed note.`,
+            `${server} advertises signing-key changes which are not pinned. Review them below before minting a receipt-backed note.`,
             NotifyKind.ERROR
           )
           return
@@ -436,7 +459,8 @@ const Mint: Component = () => {
     addTrustedMint(
       pending.server,
       pending.mintPubkey,
-      mintAddressCacheInfo(pending.nodeInfo, pending.username)
+      mintAddressCacheInfo(pending.nodeInfo, pending.username),
+      pending.nodeInfo?.previousPubkeys
     )
     setPendingTrust(null)
     proceedWithPayRequest(pending.info)
@@ -531,7 +555,9 @@ const Mint: Component = () => {
       let result: InvoiceResult | null = null
       const client = deviceClient()
       const mintServer = serverOf(info.withdrawLink || info.callback)
-      const mintPubkey = getTrustedMintPubkey(mintServer)
+      const mintPubkey = getTrustedMintPubkey(
+        serviceOriginOf(info.withdrawLink || info.callback)
+      )
 
       if (client && info.mintToHash === true && mintPubkey) {
         // The device creates and durably stores k1 first. Confirm that this
@@ -779,6 +805,7 @@ const Mint: Component = () => {
             amount: result.amountMsat,
             verified: true,
             mintPubkey,
+            previousPubkeys: noteInfo.previousPubkeys,
             deviceId: result.deviceId,
             deviceHash: result.deviceHash
           })
@@ -806,6 +833,7 @@ const Mint: Component = () => {
             amount: err.imported.amountMsat,
             verified: false,
             mintPubkey,
+            previousPubkeys: noteInfo.previousPubkeys,
             deviceId: err.imported.deviceId,
             deviceHash: err.imported.deviceHash
           })
@@ -824,12 +852,9 @@ const Mint: Component = () => {
       }
 
       let url = withNewK1(declaredUrl, noteInfo.k1, noteInfo.maxWithdrawable)
-      // that informational GET just put the note secret on the wire (server
-      // logs, proxies, browser history) - per spec, a WALLET intending to
-      // keep holding the note SHOULD rotate any k1 it has transmitted but
-      // not burned. This also opportunistically obtains the note's first
-      // offline-verifiable signature, same as the minting diagram's "obtain
-      // signed note" step.
+      // The hash-only informational GET did not expose the note secret. Rotate
+      // once anyway to obtain the freshly minted note's required signed
+      // certificate, as in the minting diagram.
       let rotationError: string | null = null
       try {
         const rotated = await rotateNote(noteInfo.callback, noteInfo.k1)
@@ -863,7 +888,8 @@ const Mint: Component = () => {
               callback: noteInfo.callback,
               amount: noteInfo.maxWithdrawable,
               verified: false,
-              mintPubkey
+              mintPubkey,
+              previousPubkeys: noteInfo.previousPubkeys
             })
             rotationError = `${(err as Error).message} The rotation may still have gone through - the possible rotated copy is stored unverified alongside this one; refresh both to reconcile.`
           } else {
@@ -878,7 +904,8 @@ const Mint: Component = () => {
         callback: noteInfo.callback,
         amount: noteInfo.maxWithdrawable,
         verified: true,
-        mintPubkey
+        mintPubkey,
+        previousPubkeys: noteInfo.previousPubkeys
       })
       logActivity(
         'mint',
@@ -919,7 +946,9 @@ const Mint: Component = () => {
   // Remove button's visibility can never drift out of sync with what's
   // actually held
   const hasNotesFrom = (mintServer: string): boolean =>
-    bearers().some(b => !b.spent && serverOf(b.url) === mintServer)
+    bearers().some(
+      b => !b.spent && serviceOriginOf(b.url) === serviceOriginOf(mintServer)
+    )
 
   const [manualServer, setManualServer] = createSignal('')
   const [manualPubkey, setManualPubkey] = createSignal('')
@@ -942,6 +971,7 @@ const Mint: Component = () => {
   const [addressTrust, setAddressTrust] = createSignal<{
     server: string
     pubkey: string
+    previousPubkeys?: string[]
     nodeInfo?: TrustedMintNodeInfo
   } | null>(null)
   // which trusted mint's own refresh button is currently in flight - only
@@ -973,26 +1003,36 @@ const Mint: Component = () => {
     setAddressBusy(true)
     try {
       const info = await fetchMintAddress(addressUrl)
-      if (!info.nodePubkey) {
+      if (!info.mintPubkey) {
         notify(
           "This mint doesn't advertise a signing key at its mint-address endpoint - add it manually below with a pubkey you trust from elsewhere.",
           NotifyKind.ERROR
         )
         return
       }
-      const mintServer = serverOf(url)
+      const mintServer = serviceOriginOf(url)
       const nodeInfo = mintAddressCacheInfo(info, lightningAddressUsername(url))
       // a mint with no entry yet gets an explicit confirmation showing the
       // key before anything is pinned - already-trusted mints (including
       // every Refresh button below) skip straight to the upsert
       if (!isMintTrusted(mintServer)) {
-        setAddressTrust({server: mintServer, pubkey: info.nodePubkey, nodeInfo})
+        setAddressTrust({
+          server: mintServer,
+          pubkey: info.mintPubkey,
+          previousPubkeys: info.previousPubkeys,
+          nodeInfo
+        })
         return
       }
-      const result = addTrustedMint(mintServer, info.nodePubkey, nodeInfo)
+      const result = addTrustedMint(
+        mintServer,
+        info.mintPubkey,
+        nodeInfo,
+        info.previousPubkeys
+      )
       if (result === 'rekey-pending') {
         notify(
-          `${mintServer} now advertises a different signing key than the one pinned - review it below before trusting "signed" notes from it.`,
+          `${mintServer} advertises signing-key changes which are not pinned - review them below before trusting signed notes from it.`,
           NotifyKind.ERROR
         )
       } else {
@@ -1012,7 +1052,8 @@ const Mint: Component = () => {
       const result = addTrustedMint(
         pending.server,
         pending.pubkey,
-        pending.nodeInfo
+        pending.nodeInfo,
+        pending.previousPubkeys
       )
       setAddressTrust(null)
       if (result === 'rekey-pending') {
@@ -1041,13 +1082,16 @@ const Mint: Component = () => {
   // key or drop a staged candidate
   const rekey = (mintServer: string) => {
     confirmTrustedMintRekey(mintServer)
-    notify(`${mintServer}'s new signing key is now pinned.`, NotifyKind.SUCCESS)
+    notify(
+      `${mintServer}'s signing-key changes are now pinned.`,
+      NotifyKind.SUCCESS
+    )
   }
 
   const dismissRekey = (mintServer: string) => {
     dismissTrustedMintRekey(mintServer)
     notify(
-      `Keeping the original signing key for ${mintServer}.`,
+      `Keeping the accepted signing keys for ${mintServer}.`,
       NotifyKind.SUCCESS
     )
   }
@@ -1060,7 +1104,8 @@ const Mint: Component = () => {
   // mint now advertises a DIFFERENT pubkey it gets staged for review on its
   // card below rather than replacing the pinned one
   const refreshMint = async (mint: TrustedMint) => {
-    const address = getTrustedMintAddress(mint.server) || `mint@${mint.server}`
+    const address =
+      getTrustedMintAddress(mint.server) || `mint@${serverOf(mint.server)}`
     setRefreshingServer(mint.server)
     try {
       await addByAddress(address)
@@ -1234,7 +1279,7 @@ const Mint: Component = () => {
                         <a
                           class="icon-btn"
                           title="Open this mint"
-                          href={`https://${serverOf(node().payLink)}`}
+                          href={serviceOriginOf(node().payLink)}
                           target="_blank"
                           rel="noreferrer"
                         >
@@ -1267,27 +1312,42 @@ const Mint: Component = () => {
                         holding a note from it.
                       </p>
                       <pre>{pending().mintPubkey}</pre>
+                      <Show when={pending().nodeInfo?.previousPubkeys?.length}>
+                        <p>
+                          This also accepts{' '}
+                          {pending().nodeInfo!.previousPubkeys!.length} earlier
+                          signing{' '}
+                          {pending().nodeInfo!.previousPubkeys!.length === 1
+                            ? 'key'
+                            : 'keys'}{' '}
+                          published by the mint.
+                        </p>
+                      </Show>
                       <div class="btns">
                         <button onClick={confirmTrust}>Trust this mint</button>
                         <button onClick={cancelTrust}>Cancel</button>
                         <a
                           class="icon-btn"
                           title="Open this mint"
-                          href={`https://${pending().server}`}
+                          href={pending().server}
                           target="_blank"
                           rel="noreferrer"
                         >
                           <IoGlobeSharp />
                         </a>
-                        <a
-                          class="icon-btn icon-btn-gap"
-                          title="Look up this Lightning node on mempool.space"
-                          href={mempoolNodeUrl(pending().mintPubkey)}
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          <IoOpenSharp />
-                        </a>
+                        <Show when={pending().nodeInfo?.nodePubkey}>
+                          {nodePubkey => (
+                            <a
+                              class="icon-btn icon-btn-gap"
+                              title="Look up this Lightning node on mempool.space"
+                              href={mempoolNodeUrl(nodePubkey())}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              <IoOpenSharp />
+                            </a>
+                          )}
+                        </Show>
                       </div>
                     </>
                   )}
@@ -1524,6 +1584,13 @@ const Mint: Component = () => {
                         {msatToSats(mint.outstandingNotesMsat!)} sats
                       </p>
                     </Show>
+                    <p class="mint-pubkey">{mint.mintPubkey}</p>
+                    <Show when={mint.previousPubkeys?.length}>
+                      <p class="mint-date">
+                        {mint.previousPubkeys!.length} accepted previous signing{' '}
+                        {mint.previousPubkeys!.length === 1 ? 'key' : 'keys'}
+                      </p>
+                    </Show>
                     <p class="mint-date">added {formatDate(mint.addedAt)}</p>
                     {/* advance warning of a planned shutdown (see
                     trustedMints.ts's TrustedMint.sunsetDate) - shown for any
@@ -1551,27 +1618,33 @@ const Mint: Component = () => {
                         advertises the same key confirms it.
                       </p>
                     </Show>
-                    {/* a staged key rotation (see trustedMints.ts): the mint
-                    advertised a different signing key than the pinned one.
-                    The pinned key above keeps deciding the "signed" badge
-                    until the holder explicitly promotes the candidate here -
-                    a silent swap would let a compromised mint sign unbacked
-                    notes that still show as verified */}
-                    <Show when={mint.pendingMintPubkey}>
+                    {/* staged current/history changes (see trustedMints.ts).
+                    Accepted keys keep deciding the "signed" badge until the
+                    holder explicitly approves the candidates here */}
+                    <Show
+                      when={
+                        mint.pendingMintPubkey ||
+                        mint.pendingPreviousPubkeys?.length
+                      }
+                    >
                       <p class="warning">
-                        This mint now advertises a different signing key - fine
-                        if it announced a move to a new node, an attack
-                        otherwise. Its new signatures currently do{' '}
-                        <strong>not</strong> show as verified. Only trust the
-                        new key if the mint itself announced the change:
+                        This mint advertises signing-key changes. They are not
+                        trusted yet because an unsigned response cannot
+                        authorise its own key history. Only accept them after
+                        checking an announcement from the mint:
                       </p>
-                      <p class="mint-pubkey">{mint.pendingMintPubkey}</p>
+                      <Show when={mint.pendingMintPubkey}>
+                        <p class="mint-pubkey">{mint.pendingMintPubkey}</p>
+                      </Show>
+                      <For each={mint.pendingPreviousPubkeys ?? []}>
+                        {key => <p class="mint-pubkey">{key}</p>}
+                      </For>
                       <div class="btns">
                         <button onClick={() => rekey(mint.server)}>
-                          Trust new key
+                          Trust key changes
                         </button>
                         <button onClick={() => dismissRekey(mint.server)}>
-                          Keep current key
+                          Keep current keys
                         </button>
                       </div>
                     </Show>
@@ -1603,28 +1676,25 @@ const Mint: Component = () => {
                       <a
                         class="icon-btn icon-btn-gap"
                         title="Open this mint"
-                        href={`https://${mint.server}`}
+                        href={mint.server}
                         target="_blank"
                         rel="noreferrer"
                       >
                         <IoGlobeSharp />
                       </a>
-                      <button
-                        class="icon-btn icon-btn-gap"
-                        title="Copy this mint's signing pubkey"
-                        onClick={() => copyToClipboard(mint.mintPubkey)}
-                      >
-                        <IoCopySharp />
-                      </button>
-                      <a
-                        class="icon-btn icon-btn-gap"
-                        title="Look up this Lightning node on mempool.space"
-                        href={mempoolNodeUrl(mint.mintPubkey)}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        <IoOpenSharp />
-                      </a>
+                      <Show when={mint.nodePubkey}>
+                        {nodePubkey => (
+                          <a
+                            class="icon-btn icon-btn-gap"
+                            title="Look up this Lightning node on mempool.space"
+                            href={mempoolNodeUrl(nodePubkey())}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            <IoOpenSharp />
+                          </a>
+                        )}
+                      </Show>
                       <Show
                         when={
                           !hasNotesFrom(mint.server) &&
@@ -1721,7 +1791,7 @@ const Mint: Component = () => {
                 {address => {
                   const url = resolveMintInput(address)
                   const alreadyTrusted = () =>
-                    !!url && isMintTrusted(serverOf(url))
+                    !!url && isMintTrusted(serviceOriginOf(url))
                   return (
                     <Show when={url}>
                       <span class="mint-picker-entry">
@@ -1769,6 +1839,14 @@ const Mint: Component = () => {
                   (its own site, not a forwarded link).
                 </p>
                 <p class="mint-pubkey">{pending().pubkey}</p>
+                <Show when={pending().previousPubkeys?.length}>
+                  <p>
+                    This also accepts {pending().previousPubkeys!.length}{' '}
+                    earlier signing{' '}
+                    {pending().previousPubkeys!.length === 1 ? 'key' : 'keys'}{' '}
+                    published by the mint.
+                  </p>
+                </Show>
                 <div class="btns">
                   <button onClick={confirmAddressTrust}>Trust this key</button>
                   <button onClick={cancelAddressTrust}>Cancel</button>
@@ -1778,10 +1856,10 @@ const Mint: Component = () => {
           </Show>
           <div class="setup-card">
             <h4>Add a mint manually</h4>
-            <label>Server</label>
+            <label>SERVICE origin</label>
             <input
               type="text"
-              placeholder="mint.example.com"
+              placeholder="https://mint.example.com"
               value={manualServer()}
               onInput={e => setManualServer(e.currentTarget.value)}
             />
