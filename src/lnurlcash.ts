@@ -745,6 +745,13 @@ export type MintAddressInfo = {
   nodeCapacityMsat?: number
   nodeNumChannels?: number
   nodeNumPeers?: number
+  // advance warning of a planned shutdown (lnurl-mint's config.py
+  // SUNSET_DATE), ISO-8601 (e.g. "2026-12-31") - absent for a mint with no
+  // planned sunset (most of them), or one that predates this field.
+  // Independent of the mint actually having stopped minting: this is
+  // purely a heads-up to melt/rotate/transfer notes away before that day,
+  // not a live status check
+  sunsetDate?: string
 }
 
 // Best-effort discovery only: this endpoint is experimental (not part of

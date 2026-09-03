@@ -1216,6 +1216,14 @@ const Mint: Component = () => {
                       <Show when={node().nodeUri}>
                         <p class="mint-pubkey">{node().nodeUri}</p>
                       </Show>
+                      <Show when={node().sunsetDate}>
+                        <p class="warning">
+                          This mint plans to sunset on{' '}
+                          {new Date(node().sunsetDate!).toLocaleDateString()} -
+                          avoid minting new notes here, and rotate, transfer, or
+                          melt any you already hold before then.
+                        </p>
+                      </Show>
                       <div class="btns">
                         <a
                           class="icon-btn"
@@ -1282,6 +1290,16 @@ const Mint: Component = () => {
                   {info => (
                     <>
                       <figure class="setup-card">
+                        <Show when={mintNodeInfo()?.sunsetDate}>
+                          {date => (
+                            <p class="warning">
+                              This mint plans to sunset on{' '}
+                              {new Date(date()).toLocaleDateString()} - minting
+                              a new note here isn't a good idea, consider a
+                              different mint instead.
+                            </p>
+                          )}
+                        </Show>
                         <Show when={info().mintFee}>
                           {fee => (
                             <p class="warning">
@@ -1505,6 +1523,20 @@ const Mint: Component = () => {
                     </Show>
                     <p class="mint-pubkey">{mint.mintPubkey}</p>
                     <p class="mint-date">added {formatDate(mint.addedAt)}</p>
+                    {/* advance warning of a planned shutdown (see
+                    trustedMints.ts's TrustedMint.sunsetDate) - shown for any
+                    mint this wallet holds notes from, prompting a move
+                    before that day rather than only once minting/splitting
+                    there actually stops */}
+                    <Show when={mint.sunsetDate}>
+                      {date => (
+                        <p class="warning">
+                          This mint plans to sunset on{' '}
+                          {new Date(date()).toLocaleDateString()} - rotate,
+                          transfer, or melt any notes held here before then.
+                        </p>
+                      )}
+                    </Show>
                     {/* a pin that came from a backup or a stored note rather
                     than a live response (see TrustedMint.unconfirmed) - said
                     so plainly, since "signed" badges deliberately ignore it
