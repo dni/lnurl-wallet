@@ -9,7 +9,8 @@ import {
   IoEyeSharp,
   IoCopySharp,
   IoRefreshSharp,
-  IoCheckmarkSharp
+  IoCheckmarkSharp,
+  IoWarningSharp
 } from 'solid-icons/io'
 
 import type {Bearer} from '../storage'
@@ -39,6 +40,7 @@ import {
 import {
   getTrustedMintPubkey,
   getTrustedMintNodeColor,
+  getTrustedMintSunsetDate,
   isMintUnconfirmed
 } from '../trustedMints'
 import Qr from './Qr'
@@ -87,6 +89,12 @@ const BearerCard: Component<BearerCardProps> = props => {
   // offlineVerified's mintPubkey below.
   const noteColor = createMemo(() =>
     getTrustedMintNodeColor(serverOf(props.bearer.url))
+  )
+  // this note's issuing mint's self-reported planned shutdown date (see
+  // trustedMints.ts's getTrustedMintSunsetDate) - a spent note doesn't need
+  // the warning, there's nothing left to move away from this mint
+  const sunsetDate = createMemo(() =>
+    isSpent() ? null : getTrustedMintSunsetDate(serverOf(props.bearer.url))
   )
   const cardStyle = createMemo(() =>
     noteColor() ? {'--note-tint': noteColor()!} : {}
@@ -238,6 +246,17 @@ const BearerCard: Component<BearerCardProps> = props => {
             <span class="bearer-label">{props.bearer.label}</span>
           </Show>
           <div class="bearer-badges">
+            <Show when={sunsetDate()}>
+              {date => (
+                <span
+                  class="bearer-sunset"
+                  title={`This mint plans to sunset on ${new Date(date()).toLocaleDateString()} - rotate, transfer, or melt this note before then.`}
+                >
+                  <IoWarningSharp />
+                  &nbsp;sunsetting
+                </span>
+              )}
+            </Show>
             <Show when={!props.bearer.verified}>
               <span class="bearer-pending">unverified</span>
             </Show>

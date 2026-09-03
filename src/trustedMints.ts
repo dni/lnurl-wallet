@@ -40,6 +40,12 @@ export type TrustedMint = {
   nodeCapacityMsat?: number
   nodeNumChannels?: number
   nodeNumPeers?: number
+  // advance warning of a planned shutdown (see lnurlcash.ts's
+  // MintAddressInfo.sunsetDate), ISO-8601 - display-only, same caveats as
+  // the node fields above: mint-supplied, never trusted for anything
+  // security-relevant, just surfaced so a holder knows to move notes away
+  // from this mint before that day
+  sunsetDate?: string
   // the local-part this mint was actually reached at ("mint" out of
   // "mint@host" - see lnurlcash.ts's lightningAddressUsername), cached so a
   // later quick-select (Mint.tsx) can reconstruct the exact address instead
@@ -57,6 +63,7 @@ export type TrustedMintNodeInfo = {
   nodeCapacityMsat?: number
   nodeNumChannels?: number
   nodeNumPeers?: number
+  sunsetDate?: string
   username?: string
 }
 
@@ -79,6 +86,7 @@ export const mintAddressCacheInfo = (
     nodeCapacityMsat: info?.nodeCapacityMsat,
     nodeNumChannels: info?.nodeNumChannels,
     nodeNumPeers: info?.nodeNumPeers,
+    sunsetDate: info?.sunsetDate,
     username: username ?? undefined
   }
 }
@@ -156,6 +164,16 @@ export const isMintUnconfirmed = (server: string): boolean =>
 export const getTrustedMintNodeColor = (server: string): string | null => {
   const color = trustedMints().find(m => m.server === server)?.nodeColor
   return color && /^#[0-9a-f]{3}([0-9a-f]{3})?$/i.test(color) ? color : null
+}
+
+// this mint's self-reported sunset date, for warning a holder to move
+// notes away before it arrives - absent whenever no lookup has ever cached
+// one for this server, or the mint has none planned. Mint-supplied and
+// display-only (see TrustedMint.sunsetDate), so a value that doesn't even
+// parse as a date is treated as absent rather than shown as-is
+export const getTrustedMintSunsetDate = (server: string): string | null => {
+  const date = trustedMints().find(m => m.server === server)?.sunsetDate
+  return date && !Number.isNaN(Date.parse(date)) ? date : null
 }
 
 // the exact Lightning Address this mint was last reached at (see
@@ -448,6 +466,8 @@ export const mergeTrustedMints = (incoming: TrustedMint[]): number => {
           : undefined,
       nodeNumPeers:
         typeof mint.nodeNumPeers === 'number' ? mint.nodeNumPeers : undefined,
+      sunsetDate:
+        typeof mint.sunsetDate === 'string' ? mint.sunsetDate : undefined,
       username: typeof mint.username === 'string' ? mint.username : undefined
     })
     knownServers.add(mint.server)
