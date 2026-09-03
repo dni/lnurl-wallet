@@ -42,9 +42,9 @@ const storageWarning = (
   }
 }
 
-// Pairing + read-only visibility for an LNURLvault/Heartwood hardware device -
-// connect over USB, Bluetooth, or Heartwood's authenticated NIP-46 relays; see
-// its firmware version and the notes it holds. Routing this wallet's own rotate/split/
+// Pairing + read-only visibility for an LNURLvault hardware device (see
+// ../../lnurl-vault) - connect over USB or Bluetooth, see its firmware
+// version and the notes it holds. Routing this wallet's own rotate/split/
 // merge/melt through the device instead of generating secrets in-browser
 // lives in deviceOrchestration.ts, driven from Mint.tsx/BearerCard.tsx/
 // MintGroupCard.tsx/Wallet.tsx/MeltDialog.tsx - this page itself stays scoped
@@ -52,17 +52,12 @@ const storageWarning = (
 const Vault: Component = () => {
   const {
     connectionState,
-    connectionKind,
     info,
     notes,
     serialSupported,
     bleSupported,
     connectSerial,
     connectBle,
-    connectHeartwood,
-    connectHeartwoodRelay,
-    heartwoodRelayPaired,
-    forgetHeartwoodRelay,
     disconnect,
     reconnecting,
     identity,
@@ -113,31 +108,8 @@ const Vault: Component = () => {
   }
 
   const [busy, setBusy] = createSignal(false)
-  const [showOtherWays, setShowOtherWays] = createSignal(false)
-  const [showRelayPairing, setShowRelayPairing] = createSignal(false)
-  const [relayUri, setRelayUri] = createSignal('')
   const [editingId, setEditingId] = createSignal<string | null>(null)
   const [labelInput, setLabelInput] = createSignal('')
-  const relaySupported = typeof WebSocket !== 'undefined'
-
-  const connectRelay = () =>
-    withBusy(async () => {
-      const uri = relayUri().trim()
-      // A bunker URI contains a one-time secret. Drop the UI copy before any
-      // network wait; the encrypted long-lived client key is stored separately.
-      setRelayUri('')
-      await connectHeartwoodRelay(uri || undefined)
-    })
-
-  const forgetRelay = () => {
-    if (
-      window.confirm(
-        "Forget this browser's Heartwood relay pairing? You will need a new one-time pairing link from an already authorised client."
-      )
-    ) {
-      void withBusy(forgetHeartwoodRelay)
-    }
-  }
 
   const spentCount = () => notes().filter(n => n.state === 'spent').length
 
@@ -237,12 +209,11 @@ const Vault: Component = () => {
         fallback={
           <>
             <p>
-              Pair an LNURLvault hardware device over USB or Bluetooth, or a
-              standalone Heartwood through its authenticated relays. The device
-              generates and holds note secrets itself - this page only reads its
-              state, it never sees a plaintext secret unless you explicitly
-              export one on the device (which requires a physical button press
-              there).
+              Pair an LNURLvault hardware device over USB or Bluetooth. The
+              device generates and holds note secrets itself - this page only
+              reads its state, it never sees a plaintext secret unless you
+              explicitly export one on the device (which requires a physical
+              button press there).
             </p>
             <p>
               Don't have a vault yet? See{' '}
@@ -271,7 +242,7 @@ const Vault: Component = () => {
             fallback={
               <figure class="setup-card">
                 <Show
-                  when={serialSupported || bleSupported || relaySupported}
+                  when={serialSupported || bleSupported}
                   fallback={
                     <p class="warning">
                       This browser supports neither WebSerial nor Web Bluetooth
@@ -286,105 +257,23 @@ const Vault: Component = () => {
                     }
                   >
                     <div class="btns">
-                      <button
-                        disabled={connectionState() === 'connecting'}
-                        onClick={() =>
-                          withBusy(serialSupported ? connectSerial : connectBle)
-                        }
-                      >
-                        {serialSupported
-                          ? 'Connect vault over USB'
-                          : 'Connect vault over Bluetooth'}
-                      </button>
-                    </div>
-                    <Show when={!showOtherWays()}>
-                      <div class="btns">
-                        <button onClick={() => setShowOtherWays(true)}>
-                          Other ways to connect
+                      <Show when={serialSupported}>
+                        <button
+                          disabled={connectionState() === 'connecting'}
+                          onClick={() => withBusy(connectSerial)}
+                        >
+                          Connect vault over USB
                         </button>
-                      </div>
-                    </Show>
-                    <Show when={showOtherWays()}>
-                      <div class="btns">
-                        <Show when={serialSupported && bleSupported}>
-                          <button
-                            disabled={connectionState() === 'connecting'}
-                            onClick={() => withBusy(connectBle)}
-                          >
-                            Over Bluetooth
-                          </button>
-                        </Show>
-                        <Show when={serialSupported}>
-                          <button
-                            disabled={connectionState() === 'connecting'}
-                            onClick={() => withBusy(connectHeartwood)}
-                          >
-                            Heartwood over USB
-                          </button>
-                        </Show>
-                        <Show when={relaySupported}>
-                          <Show
-                            when={heartwoodRelayPaired() && !showRelayPairing()}
-                            fallback={
-                              <div class="form-item heartwood-relay-pairing">
-                                <label for="heartwood-relay-uri">
-                                  Heartwood relay pairing link
-                                </label>
-                                <input
-                                  id="heartwood-relay-uri"
-                                  type="password"
-                                  autocomplete="off"
-                                  spellcheck={false}
-                                  placeholder="bunker://..."
-                                  value={relayUri()}
-                                  onInput={e =>
-                                    setRelayUri(e.currentTarget.value)
-                                  }
-                                />
-                                <p class="bearer-hint">
-                                  Paste a fresh one-time link from an authorised
-                                  Heartwood client. This wallet stores only its
-                                  new client key, encrypted with your wallet.
-                                </p>
-                                <div class="btns">
-                                  <button
-                                    disabled={
-                                      connectionState() === 'connecting' ||
-                                      !relayUri().trim()
-                                    }
-                                    onClick={connectRelay}
-                                  >
-                                    Pair Heartwood over relays
-                                  </button>
-                                  <Show when={heartwoodRelayPaired()}>
-                                    <button
-                                      onClick={() => setShowRelayPairing(false)}
-                                    >
-                                      Cancel
-                                    </button>
-                                  </Show>
-                                </div>
-                              </div>
-                            }
-                          >
-                            <div class="btns">
-                              <button
-                                disabled={connectionState() === 'connecting'}
-                                onClick={connectRelay}
-                              >
-                                Connect saved Heartwood relay
-                              </button>
-                              <button onClick={() => setShowRelayPairing(true)}>
-                                Pair a different Heartwood
-                              </button>
-                              <button onClick={forgetRelay}>
-                                Forget relay pairing
-                              </button>
-                            </div>
-                          </Show>
-                        </Show>
-                      </div>
-                    </Show>
+                      </Show>
+                      <Show when={bleSupported}>
+                        <button
+                          disabled={connectionState() === 'connecting'}
+                          onClick={() => withBusy(connectBle)}
+                        >
+                          Connect vault over Bluetooth
+                        </button>
+                      </Show>
+                    </div>
                   </Show>
                 </Show>
               </figure>
@@ -393,7 +282,7 @@ const Vault: Component = () => {
             <figure class="setup-card">
               <figcaption>
                 {info()
-                  ? `Vault ${info()!.fw_version}${info()!.board && connectionKind() !== 'heartwood-relay' ? ` (${info()!.board})` : ''}`
+                  ? `Vault ${info()!.fw_version}${info()!.board ? ` (${info()!.board})` : ''}`
                   : 'Connected'}
               </figcaption>
               <Show when={identity() && identityWarning(identity()!)}>
@@ -447,11 +336,7 @@ const Vault: Component = () => {
                   Refresh
                 </button>
                 <Show
-                  when={
-                    spentCount() > 0 &&
-                    connectionKind() !== 'heartwood-relay' &&
-                    !gatedCommandsUnavailable(info())
-                  }
+                  when={spentCount() > 0 && !gatedCommandsUnavailable(info())}
                 >
                   <button
                     disabled={busy()}
@@ -503,15 +388,13 @@ const Vault: Component = () => {
                         when={editingId() === note.id}
                         fallback={
                           <div class="btns">
-                            <Show when={connectionKind() !== 'heartwood-relay'}>
-                              <button
-                                class="icon-btn"
-                                title="Rename"
-                                onClick={() => startRename(note)}
-                              >
-                                <IoPencilSharp />
-                              </button>
-                            </Show>
+                            <button
+                              class="icon-btn"
+                              title="Rename"
+                              onClick={() => startRename(note)}
+                            >
+                              <IoPencilSharp />
+                            </button>
                             <Show when={isOrphan(note)}>
                               <button
                                 class="icon-btn"
@@ -522,12 +405,7 @@ const Vault: Component = () => {
                                 <IoDownloadSharp />
                               </button>
                             </Show>
-                            <Show
-                              when={
-                                note.state === 'spent' &&
-                                connectionKind() !== 'heartwood-relay'
-                              }
-                            >
+                            <Show when={note.state === 'spent'}>
                               <button
                                 class="icon-btn"
                                 title="Delete from device"
@@ -573,77 +451,73 @@ const Vault: Component = () => {
           </Show>
         </div>
         <div class="two-col">
-          <Show when={connectionKind() !== 'heartwood-relay'}>
-            <figure class="setup-card">
-              <h4>Device console</h4>
-              <p>
-                Send a raw command straight to the paired vault and see its raw
-                response - the same low-level access as the console at{' '}
-                <a
-                  href="https://vault.lnurlcash.com"
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  vault.lnurlcash.com
-                </a>
-                . For debugging and advanced use only - everything the buttons
-                on this page already do is safer and easier.
-              </p>
-              <Show
-                when={client()}
-                fallback={
-                  <p class="bearer-hint">Connect a vault to use the console.</p>
-                }
+          <figure class="setup-card">
+            <h4>Device console</h4>
+            <p>
+              Send a raw command straight to the paired vault and see its raw
+              response - the same low-level access as the console at{' '}
+              <a
+                href="https://vault.lnurlcash.com"
+                target="_blank"
+                rel="noreferrer"
               >
-                <div class="btns">
-                  <button
-                    onClick={() => setConsoleInput('{"cmd": "get_info"}')}
-                  >
-                    get_info
-                  </button>
-                  <button
-                    onClick={() => setConsoleInput('{"cmd": "list_notes"}')}
-                  >
-                    list_notes
-                  </button>
-                </div>
-                <label>Command (raw JSON)</label>
-                <textarea
-                  rows="3"
-                  spellcheck={false}
-                  value={consoleInput()}
-                  onInput={e => setConsoleInput(e.currentTarget.value)}
-                />
-                <div class="btns">
-                  <button disabled={consoleBusy()} onClick={sendConsoleCommand}>
-                    <Show when={consoleBusy()}>
-                      <IoRefreshSharp class="spin" />
-                      &nbsp;
-                    </Show>
-                    Send
-                  </button>
-                  <Show when={consoleLog().length > 0}>
-                    <button onClick={() => setConsoleLog([])}>Clear log</button>
+                vault.lnurlcash.com
+              </a>
+              . For debugging and advanced use only - everything the buttons on
+              this page already do is safer and easier.
+            </p>
+            <Show
+              when={client()}
+              fallback={
+                <p class="bearer-hint">Connect a vault to use the console.</p>
+              }
+            >
+              <div class="btns">
+                <button onClick={() => setConsoleInput('{"cmd": "get_info"}')}>
+                  get_info
+                </button>
+                <button
+                  onClick={() => setConsoleInput('{"cmd": "list_notes"}')}
+                >
+                  list_notes
+                </button>
+              </div>
+              <label>Command (raw JSON)</label>
+              <textarea
+                rows="3"
+                spellcheck={false}
+                value={consoleInput()}
+                onInput={e => setConsoleInput(e.currentTarget.value)}
+              />
+              <div class="btns">
+                <button disabled={consoleBusy()} onClick={sendConsoleCommand}>
+                  <Show when={consoleBusy()}>
+                    <IoRefreshSharp class="spin" />
+                    &nbsp;
                   </Show>
-                </div>
+                  Send
+                </button>
                 <Show when={consoleLog().length > 0}>
-                  <div class="console-log">
-                    <For each={consoleLog()}>
-                      {entry => (
-                        <div
-                          class="console-entry"
-                          classList={{'console-entry-error': !entry.ok}}
-                        >
-                          <p class="console-request">&gt; {entry.request}</p>
-                          <pre class="console-response">{entry.response}</pre>
-                        </div>
-                      )}
-                    </For>
-                  </div>
+                  <button onClick={() => setConsoleLog([])}>Clear log</button>
                 </Show>
+              </div>
+              <Show when={consoleLog().length > 0}>
+                <div class="console-log">
+                  <For each={consoleLog()}>
+                    {entry => (
+                      <div
+                        class="console-entry"
+                        classList={{'console-entry-error': !entry.ok}}
+                      >
+                        <p class="console-request">&gt; {entry.request}</p>
+                        <pre class="console-response">{entry.response}</pre>
+                      </div>
+                    )}
+                  </For>
+                </div>
               </Show>
-            </figure>
-          </Show>
+            </Show>
+          </figure>
         </div>
       </div>
     </div>

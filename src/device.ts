@@ -169,17 +169,13 @@ export class DeviceError extends Error {
 // One full JSON message in, one full JSON message out - each transport owns
 // turning that into bytes on the wire (and back) per its own framing.
 export interface DeviceTransport {
-  readonly kind: 'serial' | 'ble' | 'relay'
+  readonly kind: 'serial' | 'ble'
   send(message: unknown): Promise<void>
   onMessage(handler: (message: unknown) => void): void
   // `reason` is only set when the transport itself tore the session down
   // for a specific cause (see SerialTransport's receive-buffer cap) - an
   // ordinary drop (cable pulled, GATT lost) carries none
   onDisconnect(handler: (reason?: string) => void): void
-  // A request-id-bearing remote transport may have a longer approval window
-  // than a directly attached vault. It can widen this command's local timer
-  // without weakening direct serial's fail-closed timeout behaviour.
-  commandTimeoutMs?(message: unknown, fallbackMs: number): number
   disconnect(): Promise<void>
 }
 
@@ -234,10 +230,9 @@ export class SerialTransport implements DeviceTransport {
   // still plugged in comes back by itself on reload.
   //
   // `probe` decides whether what answered is actually a vault. getPorts()
-  // returns every port this origin was ever granted, which can include a
-  // Heartwood signer (binary framing, see heartwoodTransport.ts) or anything
-  // else the owner once picked - talking newline JSON at those is wrong. A
-  // port that fails the probe is closed and the next one tried.
+  // returns every port this origin was ever granted, including devices that
+  // do not speak the LNURLvault protocol. A port that fails the probe is
+  // closed and the next one tried.
   static async tryReconnect(
     probe: (transport: SerialTransport) => Promise<boolean>
   ): Promise<SerialTransport | null> {
@@ -827,11 +822,9 @@ export class DeviceClient {
   }
 
   private send(cmd: object, timeoutMs = DEFAULT_TIMEOUT_MS): Promise<any> {
-    const effectiveTimeout =
-      this.transport.commandTimeoutMs?.(cmd, timeoutMs) ?? timeoutMs
     const run = this.queue
       .catch(() => {})
-      .then(() => this.sendOne(cmd, effectiveTimeout))
+      .then(() => this.sendOne(cmd, timeoutMs))
     // chains regardless of outcome - one command failing must not wedge
     // every command queued behind it
     this.queue = run.catch(() => {})

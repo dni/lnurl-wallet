@@ -1,11 +1,5 @@
 import type {Accessor, JSX} from 'solid-js'
-import {
-  createContext,
-  createEffect,
-  createSignal,
-  onMount,
-  useContext
-} from 'solid-js'
+import {createContext, createSignal, onMount, useContext} from 'solid-js'
 
 import {
   DeviceClient,
@@ -15,9 +9,6 @@ import {
   type DeviceNote,
   type DeviceTransport
 } from './device'
-import {HeartwoodTransport} from './heartwoodTransport'
-import {heartwoodRelayLinkExists} from './heartwoodRelayStorage'
-import {useWallet} from './WalletContext'
 import {notify, NotifyKind} from './helpers'
 import {drainPendingDeviceOps} from './deviceQueue'
 import {
@@ -31,8 +22,7 @@ import {
 
 export type DeviceConnectionState = 'disconnected' | 'connecting' | 'connected'
 
-export type DeviceTransportKind =
-  'serial' | 'ble' | 'heartwood' | 'heartwood-relay'
+export type DeviceTransportKind = 'serial' | 'ble'
 
 // Which transport last worked, so the next load can bring the vault back
 // without a chooser. Not a secret and not note data - plain localStorage,
@@ -42,12 +32,7 @@ const LAST_TRANSPORT_KEY = 'lnurlvault.lastTransport'
 const readLastTransport = (): DeviceTransportKind | null => {
   try {
     const raw = localStorage.getItem(LAST_TRANSPORT_KEY)
-    return raw === 'serial' ||
-      raw === 'ble' ||
-      raw === 'heartwood' ||
-      raw === 'heartwood-relay'
-      ? raw
-      : null
+    return raw === 'serial' || raw === 'ble' ? raw : null
   } catch {
     return null
   }
@@ -64,21 +49,12 @@ const rememberTransport = (kind: DeviceTransportKind | null): void => {
 
 export type DeviceContextType = {
   connectionState: Accessor<DeviceConnectionState>
-  connectionKind: Accessor<DeviceTransportKind | null>
   info: Accessor<DeviceInfo | null>
   notes: Accessor<DeviceNote[]>
   serialSupported: boolean
   bleSupported: boolean
   connectSerial: () => Promise<void>
   connectBle: () => Promise<void>
-  // a Heartwood signer's note locker - same command set over its own
-  // binary-framed WebSerial (see heartwoodTransport.ts)
-  connectHeartwood: () => Promise<void>
-  // Heartwood standalone mode: NIP-46 over its configured relays. A first
-  // connection takes a one-time bunker URI; later ones use the encrypted link.
-  connectHeartwoodRelay: (bunkerUri?: string) => Promise<void>
-  heartwoodRelayPaired: Accessor<boolean>
-  forgetHeartwoodRelay: () => Promise<void>
   disconnect: () => Promise<void>
   // true while the on-load silent reconnect is still running, so the pairing
   // UI can hold off offering buttons the owner is about to not need
@@ -103,24 +79,17 @@ export type DeviceContextType = {
 const DeviceContext = createContext<DeviceContextType>()
 
 export const DeviceProvider = (props: {children: JSX.Element}) => {
-  const wallet = useWallet()
   const [connectionState, setConnectionState] =
     createSignal<DeviceConnectionState>('disconnected')
-  const [connectionKind, setConnectionKind] =
-    createSignal<DeviceTransportKind | null>(null)
   const [info, setInfo] = createSignal<DeviceInfo | null>(null)
   const [notes, setNotes] = createSignal<DeviceNote[]>([])
   const [client, setClient] = createSignal<DeviceClient | null>(null)
   const [reconnecting, setReconnecting] = createSignal(false)
   const [identity, setIdentity] = createSignal<PinVerdict | null>(null)
-  const [heartwoodRelayPaired, setHeartwoodRelayPaired] = createSignal(
-    heartwoodRelayLinkExists()
-  )
 
   const teardown = () => {
     setClient(null)
     setConnectionState('disconnected')
-    setConnectionKind(null)
     setInfo(null)
     setNotes([])
     setIdentity(null)
@@ -185,8 +154,8 @@ export const DeviceProvider = (props: {children: JSX.Element}) => {
   const connectWith = async (
     requestAndConnect: () => Promise<DeviceTransport>,
     kind?: DeviceTransportKind
-  ): Promise<boolean> => {
-    if (connectionState() !== 'disconnected') return false
+  ) => {
+    if (connectionState() !== 'disconnected') return
     setConnectionState('connecting')
     try {
       const transport = await requestAndConnect()
@@ -194,7 +163,6 @@ export const DeviceProvider = (props: {children: JSX.Element}) => {
       newClient.onDisconnect(teardown)
       setClient(newClient)
       setConnectionState('connected')
-      setConnectionKind(kind ?? null)
       if (kind) rememberTransport(kind)
       await checkIdentity(newClient)
       // reconciles any confirm/mark_spent this device missed from a
@@ -210,61 +178,21 @@ export const DeviceProvider = (props: {children: JSX.Element}) => {
         // otherwise-live session over one flaky read
         notify((err as Error).message, NotifyKind.ERROR)
       }
-      return true
     } catch (err) {
       setConnectionState('disconnected')
-      setConnectionKind(null)
       // the browser's own device chooser being dismissed isn't a real
       // error - both WebSerial and Web Bluetooth reject requestPort/
       // requestDevice with this DOMException name on cancel
       if ((err as Error)?.name !== 'NotFoundError') {
         notify((err as Error).message, NotifyKind.ERROR)
       }
-      return false
     }
   }
 
-  const connectSerial = async () => {
-    await connectWith(() => SerialTransport.requestAndConnect(), 'serial')
-  }
-  const connectBle = async () => {
-    await connectWith(() => BleTransport.requestAndConnect(), 'ble')
-  }
-  const connectHeartwood = async () => {
-    await connectWith(() => HeartwoodTransport.requestAndConnect(), 'heartwood')
-  }
-  const connectHeartwoodRelay = async (bunkerUri?: string) => {
-    await connectWith(async () => {
-      // Relays are optional; keep the Nostr stack out of the initial wallet
-      // bundle and load it only when this connection path is actually used.
-      const {HeartwoodRelayTransport, newHeartwoodRelayLink} =
-        await import('./heartwoodRelayTransport')
-      if (!bunkerUri) {
-        const saved = await wallet.loadHeartwoodRelayLink()
-        if (!saved) throw new Error('No saved Heartwood relay pairing.')
-        return new HeartwoodRelayTransport(saved)
-      }
-
-      const previous = await wallet.loadHeartwoodRelayLink().catch(() => null)
-      const {link, pairingSecret} = newHeartwoodRelayLink(bunkerUri)
-      // Persist the generated client key before consuming the one-time pairing
-      // token. If the handshake fails, put the previous working link back.
-      await wallet.saveHeartwoodRelayLink(link)
-      setHeartwoodRelayPaired(true)
-      const transport = new HeartwoodRelayTransport(link)
-      try {
-        await transport.connect(pairingSecret)
-        return transport
-      } catch (error) {
-        await transport.disconnect().catch(() => {})
-        if (previous) await wallet.saveHeartwoodRelayLink(previous)
-        else wallet.clearHeartwoodRelayLink()
-        setHeartwoodRelayPaired(!!previous)
-        throw error
-      }
-    }, 'heartwood-relay')
-  }
-
+  const connectSerial = () =>
+    connectWith(() => SerialTransport.requestAndConnect(), 'serial')
+  const connectBle = () =>
+    connectWith(() => BleTransport.requestAndConnect(), 'ble')
   // Does what answered actually speak the vault protocol? getPorts() hands
   // back every port this origin was ever granted, so a reconnect must not
   // assume the first one is a vault - see SerialTransport.tryReconnect.
@@ -280,13 +208,9 @@ export const DeviceProvider = (props: {children: JSX.Element}) => {
   // On load, bring back the vault the owner already granted, with no click.
   // Only for a transport that has worked here before: an unprompted scan of
   // every granted port on a wallet nobody has ever paired is noise.
-  //
-  // Heartwood is deliberately not auto-reconnected. It rides the same
-  // WebSerial permission with different framing (heartwoodTransport.ts), and
-  // guessing wrong means talking newline JSON at a binary-framed signer.
   onMount(async () => {
     const last = readLastTransport()
-    if (!last || last === 'heartwood' || last === 'heartwood-relay') return
+    if (!last) return
     if (connectionState() !== 'disconnected') return
     setReconnecting(true)
     try {
@@ -299,7 +223,6 @@ export const DeviceProvider = (props: {children: JSX.Element}) => {
       newClient.onDisconnect(teardown)
       setClient(newClient)
       setConnectionState('connected')
-      setConnectionKind(last)
       await checkIdentity(newClient)
       await drainPendingDeviceOps(newClient)
       await refresh().catch(() => {})
@@ -318,23 +241,6 @@ export const DeviceProvider = (props: {children: JSX.Element}) => {
     rememberTransport(null)
     teardown()
   }
-
-  const forgetHeartwoodRelay = async () => {
-    if (connectionKind() === 'heartwood-relay') await disconnect()
-    wallet.clearHeartwoodRelayLink()
-    setHeartwoodRelayPaired(false)
-  }
-
-  // Locking the browser wallet also drops the decrypted NIP-46 client key from
-  // memory. The encrypted saved link remains for the next explicit unlock.
-  createEffect(() => {
-    if (
-      wallet.state() !== 'unlocked' &&
-      connectionKind() === 'heartwood-relay'
-    ) {
-      void disconnect()
-    }
-  })
 
   const rename = async (id: string, label: string) => {
     const current = client()
@@ -362,17 +268,12 @@ export const DeviceProvider = (props: {children: JSX.Element}) => {
     <DeviceContext.Provider
       value={{
         connectionState,
-        connectionKind,
         info,
         notes,
         serialSupported: SerialTransport.isSupported(),
         bleSupported: BleTransport.isSupported(),
         connectSerial,
         connectBle,
-        connectHeartwood,
-        connectHeartwoodRelay,
-        heartwoodRelayPaired,
-        forgetHeartwoodRelay,
         disconnect,
         reconnecting,
         identity,
