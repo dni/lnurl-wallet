@@ -1320,35 +1320,43 @@ nav {
   margin-left: 4px;
 }
 
+// shared shape for every .bearer-badges entry that pairs an icon with a
+// label (signed/on device/sunsetting/spent) - display: block on the svg
+// strips its default inline baseline metrics (a replaced element otherwise
+// keeps a sliver of descender space below the text baseline even inside a
+// flex row), which is what was throwing the icon a hair off-center from
+// its own label despite align-items: center already being set
+.bearer-pending,
+.bearer-signed,
+.bearer-spent,
+.bearer-device,
+.bearer-sunset {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.8em;
+  svg {
+    display: block;
+  }
+}
+
 .bearer-pending {
   color: #e4c567;
-  font-size: 0.8em;
 }
 
 .bearer-signed {
-  display: inline-flex;
-  align-items: center;
   color: #6c6;
-  font-size: 0.8em;
 }
 
 .bearer-spent {
   color: #f66;
-  font-size: 0.8em;
 }
 
 .bearer-device {
-  display: inline-flex;
-  align-items: center;
   color: #69c;
-  font-size: 0.8em;
 }
 
 .bearer-sunset {
-  display: inline-flex;
-  align-items: center;
   color: #e4c567;
-  font-size: 0.8em;
 }
 
 .bearer-server {

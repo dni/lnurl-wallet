@@ -91,6 +91,11 @@ const Wallet: Component = () => {
   // separate per-mint sections
   const [showSpent, setShowSpent] = createSignal(false)
   const [searchQuery, setSearchQuery] = createSignal('')
+  // the search field starts collapsed to a plain button, like the other
+  // list-controls toggles - opening it mounts the actual input (see the
+  // ref below, which focuses it the moment it appears)
+  const [showSearch, setShowSearch] = createSignal(false)
+  let searchInputRef: HTMLInputElement | undefined
   const [sortKey, setSortKey] = createSignal<'amount' | 'updated'>('updated')
   const [sortDesc, setSortDesc] = createSignal(true)
   const [groupByMint, setGroupByMint] = createSignal(false)
@@ -1642,26 +1647,47 @@ const Wallet: Component = () => {
 
             <section class="list-controls">
               <div class="list-controls-row">
-                <div class="search-input-wrapper">
-                  <IoSearchSharp />
-                  <input
-                    type="text"
-                    class="search-input"
-                    placeholder="Search by mint or amount..."
-                    value={searchQuery()}
-                    onInput={e => setSearchQuery(e.currentTarget.value)}
-                  />
-                  <Show when={searchQuery() !== ''}>
+                <Show
+                  when={showSearch()}
+                  fallback={
                     <button
                       type="button"
-                      class="icon-btn"
-                      title="Clear search"
-                      onClick={() => setSearchQuery('')}
+                      title="Search notes by mint or amount"
+                      onClick={() => setShowSearch(true)}
                     >
-                      <IoCloseSharp />
+                      <IoSearchSharp />
+                      &nbsp;Search
                     </button>
-                  </Show>
-                </div>
+                  }
+                >
+                  <div class="search-input-wrapper">
+                    <IoSearchSharp />
+                    <input
+                      ref={el => {
+                        searchInputRef = el
+                        el.focus()
+                      }}
+                      type="text"
+                      class="search-input"
+                      placeholder="Search by mint or amount..."
+                      value={searchQuery()}
+                      onInput={e => setSearchQuery(e.currentTarget.value)}
+                    />
+                    <Show when={searchQuery() !== ''}>
+                      <button
+                        type="button"
+                        class="icon-btn"
+                        title="Clear search"
+                        onClick={() => {
+                          setSearchQuery('')
+                          searchInputRef?.focus()
+                        }}
+                      >
+                        <IoCloseSharp />
+                      </button>
+                    </Show>
+                  </div>
+                </Show>
                 <span class="list-controls-label">Sort:</span>
                 <button
                   type="button"
@@ -1809,7 +1835,6 @@ const Wallet: Component = () => {
                     onClick={() => setShowMoreMenu(v => !v)}
                   >
                     <IoEllipsisVerticalSharp />
-                    &nbsp;More
                   </button>
                   <Show when={showMoreMenu()}>
                     <div class="more-menu-panel">
