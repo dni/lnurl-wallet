@@ -529,11 +529,11 @@ const TransferDialog: Component<TransferDialogProps> = props => {
 
   return (
     <Dialog onClose={props.onClose}>
-      <figure class="setup-card">
-        <figcaption>
+      <>
+        <h4>
           Transfer {msatToSats(props.sourceBearer.amount)} sats
           <FiatValue msat={props.sourceBearer.amount} /> to another mint
-        </figcaption>
+        </h4>
         <Show when={!invoice()}>
           <label>Destination mint (LNURL or Lightning Address)</label>
           <input
@@ -676,7 +676,7 @@ const TransferDialog: Component<TransferDialogProps> = props => {
             </Show>
           </Show>
         </Show>
-      </figure>
+      </>
     </Dialog>
   )
 }

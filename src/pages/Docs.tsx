@@ -6,7 +6,7 @@ const Docs: Component = () => {
     <div id="docs" class="page">
       <h2>Documentation</h2>
 
-      <figure class="docs-card">
+      <div class="docs-card">
         <h3>What LNURLwallet is</h3>
         <p>
           LNURLwallet is a static page with no backend, database or account
@@ -15,9 +15,9 @@ const Docs: Component = () => {
           browser to the LNURLcash service that issued a note. One wallet holds
           notes from any number of independent services side by side.
         </p>
-      </figure>
+      </div>
 
-      <figure class="docs-card">
+      <div class="docs-card">
         <h3>
           LNURLcash bearer notes (
           <a
@@ -161,9 +161,9 @@ callback?k1=X&k1=Y&h=<sha256(Z)>         merge: all burned, one note keyed by h 
             over needs burning out regardless of who they are.
           </li>
         </ul>
-      </figure>
+      </div>
 
-      <figure class="docs-card">
+      <div class="docs-card">
         <h3>Offline verification (optional)</h3>
         <p>
           A bearer note is otherwise an opaque secret - an offline recipient
@@ -219,9 +219,9 @@ digest  = sha256(sha256("Lightning Signed Message:" || message))`}</pre>
           be. The list travels with your <A href="/backup">backup</A> file, in
           plain (a signing key isn't a secret).
         </p>
-      </figure>
+      </div>
 
-      <figure class="docs-card">
+      <div class="docs-card">
         <h3>How your notes are stored: encrypted, locally</h3>
         <p>
           At setup the wallet generates a 12-word BIP39 seed phrase in your
@@ -252,9 +252,9 @@ digest  = sha256(sha256("Lightning Signed Message:" || message))`}</pre>
             trigger, straight to the issuing service.
           </li>
         </ul>
-      </figure>
+      </div>
 
-      <figure class="docs-card">
+      <div class="docs-card">
         <h3>Backup</h3>
         <p>
           The Backup page downloads a single JSON file containing{' '}
@@ -287,9 +287,9 @@ digest  = sha256(sha256("Lightning Signed Message:" || message))`}</pre>
           behind the key. Download a backup first if there's anything on this
           device worth keeping - it's the only way back.
         </p>
-      </figure>
+      </div>
 
-      <figure class="docs-card">
+      <div class="docs-card">
         <h3>Trust model</h3>
         <p>
           LNURLcash is custodial per service: the issuing service holds the
@@ -298,7 +298,7 @@ digest  = sha256(sha256("Lightning Signed Message:" || message))`}</pre>
           at rest, and keeps secrets off the wire wherever the protocol allows -
           but it cannot make a service honest. Mint from services you trust.
         </p>
-      </figure>
+      </div>
     </div>
   )
 }

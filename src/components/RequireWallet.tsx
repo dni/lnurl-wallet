@@ -14,7 +14,7 @@ const RequireWallet: Component<{children: JSX.Element}> = props => {
       when={state() === 'unlocked'}
       fallback={
         <div class="page">
-          <figure>
+          <div class="setup-card">
             <Show
               when={state() === 'locked'}
               fallback={
@@ -31,7 +31,7 @@ const RequireWallet: Component<{children: JSX.Element}> = props => {
                 Unlock
               </A>
             </Show>
-          </figure>
+          </div>
         </div>
       }
     >

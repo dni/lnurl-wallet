@@ -115,7 +115,7 @@ const Backup: Component = () => {
       <div class="two-columns">
         <div class="two-col">
           <Show when={state() === 'unlocked'}>
-            <figure class="setup-card">
+            <div class="setup-card">
               <h4>Download backup</h4>
               <p>
                 One JSON file: your {bearers().length} bearer note(s)
@@ -144,10 +144,10 @@ const Backup: Component = () => {
                   &nbsp;Download backup
                 </button>
               </div>
-            </figure>
+            </div>
           </Show>
           <Show when={state() !== 'none'}>
-            <figure class="setup-card">
+            <div class="setup-card">
               <h4>Forget this wallet</h4>
               <p class="warning">
                 Removes <strong>everything</strong> from this device - key,
@@ -184,11 +184,11 @@ const Backup: Component = () => {
                   </button>
                 </div>
               </Show>
-            </figure>
+            </div>
           </Show>
         </div>
         <div class="two-col">
-          <figure class="setup-card">
+          <div class="setup-card">
             <h4>Restore backup</h4>
             <p>
               Notes from the file merge in (duplicates skipped), but only
@@ -257,7 +257,7 @@ const Backup: Component = () => {
                 again on a wallet-less device.
               </p>
             </Show>
-          </figure>
+          </div>
         </div>
       </div>
     </div>

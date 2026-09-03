@@ -204,7 +204,7 @@ const Setup: Component = () => {
             Restore from backup
           </button>
         </div>
-        <figure class="setup-card">
+        <div class="setup-card">
           <Show when={tab() === 'create'}>
             <Show
               when={seedPhrase()}
@@ -342,7 +342,7 @@ const Setup: Component = () => {
               </button>
             </div>
           </Show>
-        </figure>
+        </div>
       </div>
     </Show>
   )
@@ -517,7 +517,7 @@ const MintRecovery: Component<{onDone: () => void}> = props => {
   return (
     <div id="setup" class="page">
       <h2>Recover notes</h2>
-      <figure class="setup-card">
+      <div class="setup-card">
         <p>
           Re-derives every note secret this wallet would have generated at each
           mint below (LUD-25's seed-recoverable secrets) and checks which ones
@@ -624,7 +624,7 @@ const MintRecovery: Component<{onDone: () => void}> = props => {
             {Object.keys(results()).length > 0 ? 'Continue to wallet' : 'Skip'}
           </button>
         </div>
-      </figure>
+      </div>
     </div>
   )
 }
