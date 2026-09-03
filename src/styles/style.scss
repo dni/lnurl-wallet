@@ -366,6 +366,12 @@ a:where(.icon-btn, .link-btn) {
   margin: 10px 0;
 }
 
+// The relay pairing form sits inside the wrapping connection-button row, but
+// is a full-width form rather than another shrink-wrapped button.
+.heartwood-relay-pairing {
+  flex: 1 1 100%;
+}
+
 // gold, not the wallet's own amber accent, so a warning still reads as
 // "notice" instead of blending into ordinary brand-colored UI
 .warning {

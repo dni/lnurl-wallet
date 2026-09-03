@@ -56,6 +56,12 @@ import {
 import {clearStoreableLinks} from './storeableLinks'
 import {clearPendingDeviceOps} from './deviceQueue'
 import {clearPendingDeviceMint} from './pendingDeviceMint'
+import type {HeartwoodRelayLink} from './heartwoodRelayTransport'
+import {
+  clearHeartwoodRelayLink,
+  loadHeartwoodRelayLink,
+  saveHeartwoodRelayLink
+} from './heartwoodRelayStorage'
 
 // the one lockTrustedMint outcome a holder must hear about: the mint is
 // advertising a DIFFERENT signing key than the one pinned - the new key was
@@ -114,6 +120,11 @@ export type WalletContextType = {
   // recording
   logActivity: (kind: ActivityKind, message: string, label?: string) => void
   clearActivity: () => void
+  // The relay client key controls the signer's note locker, so its saved form
+  // is encrypted under the same in-memory key as this wallet's bearers.
+  loadHeartwoodRelayLink: () => Promise<HeartwoodRelayLink | null>
+  saveHeartwoodRelayLink: (link: HeartwoodRelayLink) => Promise<void>
+  clearHeartwoodRelayLink: () => void
 }
 
 const WalletContext = createContext<WalletContextType>()
@@ -260,6 +271,7 @@ export const WalletProvider = (props: {children: JSX.Element}) => {
     clearStoreableLinks()
     clearPendingDeviceOps()
     clearPendingDeviceMint()
+    clearHeartwoodRelayLink()
     aesKey = null
     setCashRoot(null)
     setPubkey(null)
@@ -370,6 +382,10 @@ export const WalletProvider = (props: {children: JSX.Element}) => {
     setActivity([])
   }
 
+  const loadRelayLink = () => loadHeartwoodRelayLink(requireKey())
+  const saveRelayLink = (link: HeartwoodRelayLink) =>
+    saveHeartwoodRelayLink(requireKey(), link)
+
   const refreshState = () => {
     if (state() === 'unlocked') return
     setState(initialState())
@@ -466,7 +482,10 @@ export const WalletProvider = (props: {children: JSX.Element}) => {
         updateBearer,
         removeBearer,
         reloadBearers,
-        refreshState
+        refreshState,
+        loadHeartwoodRelayLink: loadRelayLink,
+        saveHeartwoodRelayLink: saveRelayLink,
+        clearHeartwoodRelayLink
       }}
     >
       {props.children}

@@ -90,9 +90,10 @@ const Hero: Component = () => {
           <IoHardwareChipSharp />
           <h3>Optional hardware vault</h3>
           <p>
-            Pair an LNURLvault device over USB or Bluetooth and it takes over
-            generating and holding your note secrets - this wallet only ever
-            keeps a blank mirror of what's on it, never the real thing.
+            Pair an LNURLvault device over USB or Bluetooth, or a standalone
+            Heartwood over its authenticated relays. It takes over generating
+            and holding your note secrets - this wallet only ever keeps a blank
+            mirror of what's on it, never the real thing.
           </p>
         </div>
       </section>
