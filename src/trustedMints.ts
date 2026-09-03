@@ -46,6 +46,10 @@ export type TrustedMint = {
   // security-relevant, just surfaced so a holder knows to move notes away
   // from this mint before that day
   sunsetDate?: string
+  // this mint's total outstanding liability, msat (see lnurlcash.ts's
+  // MintAddressInfo.outstandingNotesMsat) - cached the same best-effort way
+  // as the node fields above, purely for display
+  outstandingNotesMsat?: number
   // the local-part this mint was actually reached at ("mint" out of
   // "mint@host" - see lnurlcash.ts's lightningAddressUsername), cached so a
   // later quick-select (Mint.tsx) can reconstruct the exact address instead
@@ -64,6 +68,7 @@ export type TrustedMintNodeInfo = {
   nodeNumChannels?: number
   nodeNumPeers?: number
   sunsetDate?: string
+  outstandingNotesMsat?: number
   username?: string
 }
 
@@ -87,6 +92,7 @@ export const mintAddressCacheInfo = (
     nodeNumChannels: info?.nodeNumChannels,
     nodeNumPeers: info?.nodeNumPeers,
     sunsetDate: info?.sunsetDate,
+    outstandingNotesMsat: info?.outstandingNotesMsat,
     username: username ?? undefined
   }
 }
@@ -468,6 +474,10 @@ export const mergeTrustedMints = (incoming: TrustedMint[]): number => {
         typeof mint.nodeNumPeers === 'number' ? mint.nodeNumPeers : undefined,
       sunsetDate:
         typeof mint.sunsetDate === 'string' ? mint.sunsetDate : undefined,
+      outstandingNotesMsat:
+        typeof mint.outstandingNotesMsat === 'number'
+          ? mint.outstandingNotesMsat
+          : undefined,
       username: typeof mint.username === 'string' ? mint.username : undefined
     })
     knownServers.add(mint.server)

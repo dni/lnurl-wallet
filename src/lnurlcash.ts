@@ -752,6 +752,14 @@ export type MintAddressInfo = {
   // purely a heads-up to melt/rotate/transfer notes away before that day,
   // not a live status check
   sunsetDate?: string
+  // this mint's total outstanding liability, msat (lnurl-mint's
+  // NoteStore.outstanding_msat via LnurlMintAddressResponse) - the combined
+  // value of every bearer note it has issued and never burned, straight
+  // from its own database rather than anything a funding source reports.
+  // Server-side this is always present (defaults to 0), but optional here
+  // like every other field on this response: a mint that predates it just
+  // omits it
+  outstandingNotesMsat?: number
 }
 
 // Best-effort discovery only: this endpoint is experimental (not part of
@@ -772,12 +780,16 @@ export const fetchMintAddress = async (
   ) {
     throw new Error('Not a mint address response (unexpected shape).')
   }
-  const {mintPubkey, nodeCapacity, ...rest} = body
+  const {mintPubkey, nodeCapacity, outstandingNotesMsat, ...rest} = body
   return {
     ...rest,
     nodePubkey: mintPubkey,
     nodeCapacityMsat:
-      typeof nodeCapacity === 'number' ? nodeCapacity : undefined
+      typeof nodeCapacity === 'number' ? nodeCapacity : undefined,
+    outstandingNotesMsat:
+      typeof outstandingNotesMsat === 'number'
+        ? outstandingNotesMsat
+        : undefined
   } as MintAddressInfo
 }
 
