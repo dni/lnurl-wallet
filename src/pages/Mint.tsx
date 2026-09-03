@@ -1213,6 +1213,12 @@ const Mint: Component = () => {
                         Mint limits: {msatToSats(node().minWithdrawable)} -{' '}
                         {msatToSats(node().maxWithdrawable)} sats
                       </p>
+                      <Show when={node().outstandingNotesMsat !== undefined}>
+                        <p>
+                          Outstanding notes:{' '}
+                          {msatToSats(node().outstandingNotesMsat!)} sats
+                        </p>
+                      </Show>
                       <Show when={node().nodeUri}>
                         <p class="mint-pubkey">{node().nodeUri}</p>
                       </Show>
@@ -1519,6 +1525,12 @@ const Mint: Component = () => {
                         <Show when={mint.nodeNumPeers !== undefined}>
                           {mint.nodeNumPeers} peers
                         </Show>
+                      </p>
+                    </Show>
+                    <Show when={mint.outstandingNotesMsat !== undefined}>
+                      <p class="mint-date">
+                        Outstanding notes:{' '}
+                        {msatToSats(mint.outstandingNotesMsat!)} sats
                       </p>
                     </Show>
                     <p class="mint-pubkey">{mint.mintPubkey}</p>
