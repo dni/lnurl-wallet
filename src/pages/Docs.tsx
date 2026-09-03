@@ -111,19 +111,19 @@ callback?k1=X&k1=Y&h=<sha256(Z)>         merge: all burned, one note keyed by h 
             every new note, this wallet requires <code>commentAllowed: 64</code>{' '}
             and sends the note's SHA-256 commitment as the callback{' '}
             <code>comment</code> and identical additive <code>h</code>. With a
-            connected LNURLvault/Heartwood and a receipt-capable mint, the vault
-            generates and retains the secret before the invoice exists. The
-            wallet displays that invoice only after its quote commits the same
-            hash and amount, then authenticates the settled note signature
-            against the pinned mint key before confirming the device note. No
-            secret export, import, or rotate occurs. The public recovery state
-            is saved before the invoice QR appears, so a reload can safely
-            resume. If that receipt extension is unavailable, a fresh invoice
-            instead binds a seed-recoverable browser secret which is imported
-            and rotated onto the connected vault after settlement. The payment
-            preimage is proof, never the note. A mint without the mandatory
-            comment capacity is refused before any invoice is created or paid.
-            When an invoice advertises a{' '}
+            connected LNURLvault and a receipt-capable mint, the vault generates
+            and retains the secret before the invoice exists. The wallet
+            displays that invoice only after its quote commits the same hash and
+            amount, then authenticates the settled note signature against the
+            pinned mint key before confirming the device note. No secret export,
+            import, or rotate occurs. The public recovery state is saved before
+            the invoice QR appears, so a reload can safely resume. If that
+            receipt extension is unavailable, a fresh invoice instead binds a
+            seed-recoverable browser secret which is imported and rotated onto
+            the connected vault after settlement. The payment preimage is proof,
+            never the note. A mint without the mandatory comment capacity is
+            refused before any invoice is created or paid. When an invoice
+            advertises a{' '}
             <a
               href="https://github.com/lnurl/luds/blob/luds/21.md"
               target="_blank"

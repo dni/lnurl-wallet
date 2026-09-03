@@ -78,7 +78,7 @@ no automatic way to learn its outcome beyond checking back later.
 payRequest advertising `withdrawLink` mints notes. For new notes this wallet
 requires `commentAllowed: 64` and sends the new note's SHA-256 commitment as
 the callback `comment` (and the identical additive `h`). With a connected
-LNURLvault/Heartwood and a receipt-capable mint, the vault creates and keeps
+LNURLvault and a receipt-capable mint, the vault creates and keeps
 the secret `PENDING` before the invoice exists. The wallet refuses to display
 that invoice until its quote commits the same hash and amount, then verifies
 the settled receipt's note signature against the pinned mint key before
