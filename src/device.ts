@@ -169,13 +169,17 @@ export class DeviceError extends Error {
 // One full JSON message in, one full JSON message out - each transport owns
 // turning that into bytes on the wire (and back) per its own framing.
 export interface DeviceTransport {
-  readonly kind: 'serial' | 'ble'
+  readonly kind: 'serial' | 'ble' | 'relay'
   send(message: unknown): Promise<void>
   onMessage(handler: (message: unknown) => void): void
   // `reason` is only set when the transport itself tore the session down
   // for a specific cause (see SerialTransport's receive-buffer cap) - an
   // ordinary drop (cable pulled, GATT lost) carries none
   onDisconnect(handler: (reason?: string) => void): void
+  // A request-id-bearing remote transport may have a longer approval window
+  // than a directly attached vault. It can widen this command's local timer
+  // without weakening direct serial's fail-closed timeout behaviour.
+  commandTimeoutMs?(message: unknown, fallbackMs: number): number
   disconnect(): Promise<void>
 }
 
@@ -823,9 +827,11 @@ export class DeviceClient {
   }
 
   private send(cmd: object, timeoutMs = DEFAULT_TIMEOUT_MS): Promise<any> {
+    const effectiveTimeout =
+      this.transport.commandTimeoutMs?.(cmd, timeoutMs) ?? timeoutMs
     const run = this.queue
       .catch(() => {})
-      .then(() => this.sendOne(cmd, timeoutMs))
+      .then(() => this.sendOne(cmd, effectiveTimeout))
     // chains regardless of outcome - one command failing must not wedge
     // every command queued behind it
     this.queue = run.catch(() => {})
