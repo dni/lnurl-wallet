@@ -688,7 +688,8 @@ pre {
 .paste-scan-btn,
 .paste-nfc-btn,
 .paste-icon-btn,
-.paste-confirm-btn {
+.paste-confirm-btn,
+.paste-keyboard-btn {
   flex: 0 0 auto;
   width: 40px;
   height: 40px;
@@ -702,6 +703,29 @@ pre {
   align-items: center;
   justify-content: center;
   font-size: 1.15em;
+}
+
+// only exists to un-hide .paste-input-wrapper below on mobile - desktop
+// always shows the text field already, so the toggle would be redundant
+.paste-keyboard-btn {
+  display: none;
+}
+
+@media (max-width: 700px) {
+  // typing is the fallback path down here (scan/NFC/clipboard-paste cover
+  // the common case) - hidden by default so the row reads as a compact
+  // icon strip instead of a full-width text field competing with them,
+  // revealed on demand via .paste-keyboard-btn
+  .paste-input-wrapper {
+    display: none;
+    flex: 1 1 100%;
+    &.mobile-open {
+      display: flex;
+    }
+  }
+  .paste-keyboard-btn {
+    display: inline-flex;
+  }
 }
 
 // ---- nav ----
@@ -917,6 +941,7 @@ nav {
 
 .hero-actions {
   display: flex;
+  align-items: center;
   justify-content: center;
   gap: 14px;
 }
@@ -1174,6 +1199,7 @@ nav {
   display: flex;
   flex-direction: column;
   align-items: center;
+  min-width: 200px;
   max-width: 300px;
   // the whole card (and its buttons) is a click target, not readable text -
   // without this, clicking Refresh/Copy/etc (especially a fast double
@@ -1202,6 +1228,16 @@ nav {
 // cursor; spent notes never get it, since they're never selectable
 .bearer-card.selectable {
   cursor: pointer;
+}
+
+// one full-width card per row on a phone instead of the fixed 200-300px
+// tile - .bearer-list's own flex-wrap already stacks them, this just stops
+// max-width capping each one to a sliver of the viewport
+@media (max-width: 700px) {
+  .bearer-card {
+    width: 100%;
+    max-width: none;
+  }
 }
 
 // the sole selection indicator, replacing the old per-card checkbox - an
@@ -1516,16 +1552,21 @@ nav {
 }
 
 @media (max-width: 700px) {
-  // a bottom sheet reads more natively on mobile than a floating centered
-  // card, and keeps the close button reachable one-handed near the thumb
+  // full-screen instead of a floating centered card - more screen for the
+  // dialog's own content on a small viewport, and the close button (still
+  // top-right) reads as the one obvious way back rather than a backdrop
+  // tap that's easy to miss with a thumb
   .dialog-overlay {
     padding: 0;
-    align-items: flex-end;
+    align-items: stretch;
+    justify-content: stretch;
   }
   .dialog {
+    width: 100%;
     max-width: none;
-    max-height: 88vh;
-    border-radius: 16px 16px 0 0;
+    height: 100%;
+    max-height: none;
+    border-radius: 0;
     padding: 16px;
     // clears the close button, which stays top-right rather than moving
     // for this breakpoint - one consistent spot to reach for on any size

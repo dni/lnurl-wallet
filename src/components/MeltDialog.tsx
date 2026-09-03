@@ -7,6 +7,7 @@ import {
   IoRefreshSharp,
   IoTrashSharp
 } from 'solid-icons/io'
+import {MdSharpKeyboard} from 'solid-icons/md'
 
 import type {Bearer} from '../storage'
 import {useWallet} from '../WalletContext'
@@ -86,6 +87,10 @@ const MeltDialog: Component<MeltDialogProps> = props => {
   let pasteRef: HTMLInputElement | null = null
 
   const [value, setValue] = createSignal('')
+  // the paste field is hidden behind a keyboard icon on mobile (see
+  // .paste-keyboard-btn) - desktop ignores this, CSS only hides the field
+  // under the mobile breakpoint
+  const [showKeyboard, setShowKeyboard] = createSignal(false)
   // this wallet has no Lightning node of its own, so paying an invoice here
   // means spending it out of a held bearer note - melt only ever takes a
   // single k1, so 2+ selected notes get merged into one first
@@ -265,6 +270,7 @@ const MeltDialog: Component<MeltDialogProps> = props => {
     const text = await pasteFromClipboard()
     if (text !== null) {
       setValue(text)
+      setShowKeyboard(true)
       pasteRef?.focus()
       handle()
     }
@@ -846,7 +852,18 @@ const MeltDialog: Component<MeltDialogProps> = props => {
           >
             <IoClipboardSharp />
           </button>
-          <div class="paste-input-wrapper">
+          <button
+            type="button"
+            class="icon-btn paste-keyboard-btn"
+            title="Type instead"
+            onClick={() => setShowKeyboard(v => !v)}
+          >
+            <MdSharpKeyboard />
+          </button>
+          <div
+            class="paste-input-wrapper"
+            classList={{'mobile-open': showKeyboard()}}
+          >
             <input
               ref={pasteRef}
               type="text"

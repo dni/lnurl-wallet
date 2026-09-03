@@ -7,6 +7,7 @@ import {
   IoReturnDownForwardSharp,
   IoRefreshSharp
 } from 'solid-icons/io'
+import {MdSharpKeyboard} from 'solid-icons/md'
 
 import {useWallet} from '../WalletContext'
 import {useDevice} from '../DeviceContext'
@@ -55,6 +56,12 @@ const ReceiveDialog: Component<ReceiveDialogProps> = props => {
   let pasteRef: HTMLInputElement | null = null
   const [value, setValue] = createSignal(props.initialValue ?? '')
   const [busy, setBusy] = createSignal(false)
+  // the paste field is hidden behind a keyboard icon on mobile (see
+  // .paste-keyboard-btn) - desktop ignores this, CSS only hides the field
+  // under the mobile breakpoint. Starts open when a value arrived prefilled
+  // (a vault handoff link, see props.initialValue) so there's something to
+  // actually look at
+  const [showKeyboard, setShowKeyboard] = createSignal(!!props.initialValue)
 
   const isValid = createMemo(
     () =>
@@ -231,6 +238,7 @@ const ReceiveDialog: Component<ReceiveDialogProps> = props => {
     const text = await pasteFromClipboard()
     if (text !== null) {
       setValue(text)
+      setShowKeyboard(true)
       pasteRef?.focus()
       handlePaste()
     }
@@ -258,7 +266,18 @@ const ReceiveDialog: Component<ReceiveDialogProps> = props => {
           >
             <IoClipboardSharp />
           </button>
-          <div class="paste-input-wrapper">
+          <button
+            type="button"
+            class="icon-btn paste-keyboard-btn"
+            title="Type instead"
+            onClick={() => setShowKeyboard(v => !v)}
+          >
+            <MdSharpKeyboard />
+          </button>
+          <div
+            class="paste-input-wrapper"
+            classList={{'mobile-open': showKeyboard()}}
+          >
             <input
               ref={pasteRef}
               type="text"

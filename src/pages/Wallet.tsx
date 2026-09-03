@@ -25,6 +25,7 @@ import {
   IoReturnDownForwardSharp,
   IoEllipsisVerticalSharp
 } from 'solid-icons/io'
+import {MdSharpKeyboard} from 'solid-icons/md'
 
 import {useWallet, groupByServer} from '../WalletContext'
 import type {Bearer} from '../storage'
@@ -61,6 +62,7 @@ import {offlineMode} from '../offlineMode'
 import {notify, NotifyKind, msatToSats, pasteFromClipboard} from '../helpers'
 import {takeMeltInvoice} from '../meltHandoff'
 import BearerCard from '../components/BearerCard'
+import Dialog from '../components/Dialog'
 import TransferDialog from '../components/TransferDialog'
 import ReceiveDialog from '../components/ReceiveDialog'
 import MeltDialog from '../components/MeltDialog'
@@ -168,6 +170,11 @@ const Wallet: Component = () => {
   // right button before they've even entered anything
   const [heroValue, setHeroValue] = createSignal('')
   let heroPasteRef: HTMLInputElement | null = null
+  // the hero paste field is hidden behind a keyboard icon on mobile (see
+  // .paste-keyboard-btn) - scan/NFC/clipboard-paste cover the common case,
+  // typing is the fallback. Desktop ignores this signal entirely (CSS only
+  // hides the field under the mobile breakpoint)
+  const [showHeroKeyboard, setShowHeroKeyboard] = createSignal(false)
   // prefilled into ReceiveDialog for a scanned/pasted bearer note - shown,
   // not auto-accepted, same reasoning as ReceiveDialog's own initialValue
   const [receiveHandoffValue, setReceiveHandoffValue] = createSignal<
@@ -229,6 +236,7 @@ const Wallet: Component = () => {
     const text = await pasteFromClipboard()
     if (text === null) return
     setHeroValue(text)
+    setShowHeroKeyboard(true)
     heroPasteRef?.focus()
     handleHeroValue(text)
   }
@@ -1433,7 +1441,18 @@ const Wallet: Component = () => {
                       >
                         <IoClipboardSharp />
                       </button>
-                      <div class="paste-input-wrapper">
+                      <button
+                        type="button"
+                        class="icon-btn paste-keyboard-btn"
+                        title="Type instead"
+                        onClick={() => setShowHeroKeyboard(v => !v)}
+                      >
+                        <MdSharpKeyboard />
+                      </button>
+                      <div
+                        class="paste-input-wrapper"
+                        classList={{'mobile-open': showHeroKeyboard()}}
+                      >
                         <input
                           ref={el => (heroPasteRef = el)}
                           type="text"
@@ -1551,7 +1570,18 @@ const Wallet: Component = () => {
                     >
                       <IoClipboardSharp />
                     </button>
-                    <div class="paste-input-wrapper">
+                    <button
+                      type="button"
+                      class="icon-btn paste-keyboard-btn"
+                      title="Type instead"
+                      onClick={() => setShowHeroKeyboard(v => !v)}
+                    >
+                      <MdSharpKeyboard />
+                    </button>
+                    <div
+                      class="paste-input-wrapper"
+                      classList={{'mobile-open': showHeroKeyboard()}}
+                    >
                       <input
                         ref={el => (heroPasteRef = el)}
                         type="text"
@@ -1774,44 +1804,6 @@ const Wallet: Component = () => {
                   <Show when={showMoreMenu()}>
                     <div class="more-menu-panel">
                       <button
-                        type="button"
-                        disabled={
-                          refreshingAll() ||
-                          offlineMode() ||
-                          spendableBearers().length === 0
-                        }
-                        title={
-                          offlineMode()
-                            ? 'Offline mode is on'
-                            : 'Refresh every unspent note in the wallet, one at a time'
-                        }
-                        onClick={() => {
-                          refreshAllNotes()
-                          setShowMoreMenu(false)
-                        }}
-                      >
-                        <Show
-                          when={refreshingAll()}
-                          fallback={<IoRefreshSharp />}
-                        >
-                          <IoRefreshSharp class="spin" />
-                        </Show>
-                        &nbsp;Refresh all
-                      </button>
-                      <Show when={spentCount() > 0}>
-                        <button
-                          type="button"
-                          title={`Clear all ${spentCount()} spent note${spentCount() === 1 ? '' : 's'} from the wallet`}
-                          onClick={() => {
-                            setConfirmClearSpent(true)
-                            setShowMoreMenu(false)
-                          }}
-                        >
-                          <IoTrashSharp />
-                          &nbsp;Remove all spent
-                        </button>
-                      </Show>
-                      <button
                         class="icon-btn label-btn"
                         disabled={!canLabelSelected()}
                         title={
@@ -1887,6 +1879,44 @@ const Wallet: Component = () => {
                           &nbsp;({selected().size})
                         </Show>
                       </button>
+                      <button
+                        type="button"
+                        disabled={
+                          refreshingAll() ||
+                          offlineMode() ||
+                          spendableBearers().length === 0
+                        }
+                        title={
+                          offlineMode()
+                            ? 'Offline mode is on'
+                            : 'Refresh every unspent note in the wallet, one at a time'
+                        }
+                        onClick={() => {
+                          refreshAllNotes()
+                          setShowMoreMenu(false)
+                        }}
+                      >
+                        <Show
+                          when={refreshingAll()}
+                          fallback={<IoRefreshSharp />}
+                        >
+                          <IoRefreshSharp class="spin" />
+                        </Show>
+                        &nbsp;Refresh all
+                      </button>
+                      <Show when={spentCount() > 0}>
+                        <button
+                          type="button"
+                          title={`Clear all ${spentCount()} spent note${spentCount() === 1 ? '' : 's'} from the wallet`}
+                          onClick={() => {
+                            setConfirmClearSpent(true)
+                            setShowMoreMenu(false)
+                          }}
+                        >
+                          <IoTrashSharp />
+                          &nbsp;Remove all spent
+                        </button>
+                      </Show>
                     </div>
                   </Show>
                 </div>
@@ -1903,135 +1933,160 @@ const Wallet: Component = () => {
                 </Show>
               </div>
               <Show when={showSplitInput() && canCombine()}>
-                <div class="form-item">
-                  <label>
-                    Split off (sats, of{' '}
-                    {msatToSats(
-                      selectedEligible().reduce((s, b) => s + b.amount, 0)
-                    )}
-                    )
-                  </label>
-                  <input
-                    type="number"
-                    min="1"
-                    step="1"
-                    placeholder="amount in sats"
-                    value={splitSats()}
-                    onInput={e => setSplitSats(e.currentTarget.value)}
-                  />
-                  <p class="bearer-hint">
-                    Burns the {selectedEligible().length} selected notes and
-                    mints two: this amount, and a change note for the rest. If
-                    this mint charges a fee, it's deducted from the change, not
-                    the amount split off.
-                  </p>
-                  <div class="btns">
-                    <button
-                      disabled={splitting() || offlineMode()}
-                      onClick={combineAndSplit}
-                    >
-                      <Show when={splitting()}>
-                        <IoRefreshSharp class="spin" />
-                        &nbsp;
-                      </Show>
-                      Split
-                    </button>
-                    <button
-                      onClick={() => {
-                        setShowSplitInput(false)
-                        setSplitSats('')
-                      }}
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </div>
+                <Dialog
+                  onClose={() => {
+                    setShowSplitInput(false)
+                    setSplitSats('')
+                  }}
+                >
+                  <figure class="setup-card">
+                    <figcaption>Combine &amp; split</figcaption>
+                    <label>
+                      Split off (sats, of{' '}
+                      {msatToSats(
+                        selectedEligible().reduce((s, b) => s + b.amount, 0)
+                      )}
+                      )
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      step="1"
+                      placeholder="amount in sats"
+                      value={splitSats()}
+                      onInput={e => setSplitSats(e.currentTarget.value)}
+                    />
+                    <p class="bearer-hint">
+                      Burns the {selectedEligible().length} selected notes and
+                      mints two: this amount, and a change note for the rest. If
+                      this mint charges a fee, it's deducted from the change,
+                      not the amount split off.
+                    </p>
+                    <div class="btns">
+                      <button
+                        disabled={splitting() || offlineMode()}
+                        onClick={combineAndSplit}
+                      >
+                        <Show when={splitting()}>
+                          <IoRefreshSharp class="spin" />
+                          &nbsp;
+                        </Show>
+                        Split
+                      </button>
+                      <button
+                        onClick={() => {
+                          setShowSplitInput(false)
+                          setSplitSats('')
+                        }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </figure>
+                </Dialog>
               </Show>
               <Show when={showLabelInput() && canLabelSelected()}>
-                <div class="form-item">
-                  <label>
-                    Label {selectedBearers().length} note
-                    {selectedBearers().length === 1 ? '' : 's'} (private, for
-                    your own reference)
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="e.g. rent, gift for Alex"
-                    value={labelInputValue()}
-                    onInput={e => setLabelInputValue(e.currentTarget.value)}
-                    onKeyDown={e => e.key === 'Enter' && saveLabelSelected()}
-                  />
-                  <div class="btns">
-                    <button onClick={saveLabelSelected}>Save</button>
-                    <button
-                      onClick={() => {
-                        setShowLabelInput(false)
-                        setLabelInputValue('')
-                      }}
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </div>
+                <Dialog
+                  onClose={() => {
+                    setShowLabelInput(false)
+                    setLabelInputValue('')
+                  }}
+                >
+                  <figure class="setup-card">
+                    <figcaption>Label</figcaption>
+                    <label>
+                      Label {selectedBearers().length} note
+                      {selectedBearers().length === 1 ? '' : 's'} (private, for
+                      your own reference)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. rent, gift for Alex"
+                      value={labelInputValue()}
+                      onInput={e => setLabelInputValue(e.currentTarget.value)}
+                      onKeyDown={e => e.key === 'Enter' && saveLabelSelected()}
+                    />
+                    <div class="btns">
+                      <button onClick={saveLabelSelected}>Save</button>
+                      <button
+                        onClick={() => {
+                          setShowLabelInput(false)
+                          setLabelInputValue('')
+                        }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </figure>
+                </Dialog>
               </Show>
               <Show when={showSplitSingleInput() && canSplitSingle()}>
-                <div class="form-item">
-                  <label>
-                    Split off (sats, of{' '}
-                    {msatToSats(selectedBearers()[0].amount)})
-                  </label>
-                  <input
-                    type="number"
-                    min="1"
-                    step="1"
-                    placeholder="amount in sats"
-                    value={splitSingleSats()}
-                    onInput={e => setSplitSingleSats(e.currentTarget.value)}
-                  />
-                  <label>How many times</label>
-                  <input
-                    type="number"
-                    min="1"
-                    step="1"
-                    placeholder="1"
-                    value={splitSingleTimes()}
-                    onInput={e => setSplitSingleTimes(e.currentTarget.value)}
-                  />
-                  <p class="bearer-hint">
-                    If this mint charges a fee, it's deducted from the
-                    remainder, not the amount split off - splitting fails if too
-                    little would be left over to cover it.
-                  </p>
-                  <Show when={Number(splitSingleTimes()) > 1}>
+                <Dialog
+                  onClose={() => {
+                    setShowSplitSingleInput(false)
+                    setSplitSingleSats('')
+                    setSplitSingleTimes('1')
+                  }}
+                >
+                  <figure class="setup-card">
+                    <figcaption>Split</figcaption>
+                    <label>
+                      Split off (sats, of{' '}
+                      {msatToSats(selectedBearers()[0].amount)})
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      step="1"
+                      placeholder="amount in sats"
+                      value={splitSingleSats()}
+                      onInput={e => setSplitSingleSats(e.currentTarget.value)}
+                    />
+                    <label>How many times</label>
+                    <input
+                      type="number"
+                      min="1"
+                      step="1"
+                      placeholder="1"
+                      value={splitSingleTimes()}
+                      onInput={e => setSplitSingleTimes(e.currentTarget.value)}
+                    />
                     <p class="bearer-hint">
-                      Chains {Number(splitSingleTimes())} split requests one
-                      after another - if one fails partway through, whichever
-                      notes already came back are kept, and you'd need to try
-                      again for the rest.
+                      If this mint charges a fee, it's deducted from the
+                      remainder, not the amount split off - splitting fails if
+                      too little would be left over to cover it.
                     </p>
-                  </Show>
-                  <div class="btns">
-                    <button
-                      disabled={splittingSingle() || offlineMode()}
-                      onClick={splitSingleSelected}
-                    >
-                      <Show when={splittingSingle()}>
-                        <IoRefreshSharp class="spin" />
-                        &nbsp;
-                      </Show>
-                      Split
-                    </button>
-                    <button
-                      onClick={() => {
-                        setShowSplitSingleInput(false)
-                        setSplitSingleSats('')
-                        setSplitSingleTimes('1')
-                      }}
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </div>
+                    <Show when={Number(splitSingleTimes()) > 1}>
+                      <p class="bearer-hint">
+                        Chains {Number(splitSingleTimes())} split requests one
+                        after another - if one fails partway through, whichever
+                        notes already came back are kept, and you'd need to try
+                        again for the rest.
+                      </p>
+                    </Show>
+                    <div class="btns">
+                      <button
+                        disabled={splittingSingle() || offlineMode()}
+                        onClick={splitSingleSelected}
+                      >
+                        <Show when={splittingSingle()}>
+                          <IoRefreshSharp class="spin" />
+                          &nbsp;
+                        </Show>
+                        Split
+                      </button>
+                      <button
+                        onClick={() => {
+                          setShowSplitSingleInput(false)
+                          setSplitSingleSats('')
+                          setSplitSingleTimes('1')
+                        }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </figure>
+                </Dialog>
               </Show>
             </section>
 
