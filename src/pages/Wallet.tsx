@@ -1374,7 +1374,7 @@ const Wallet: Component = () => {
       when={state() !== 'none'}
       fallback={
         <div id="wallet" class="page">
-          <figure>
+          <div class="setup-card">
             <h2>No wallet on this device yet</h2>
             <p>Create one, or restore a seed phrase you already have.</p>
             <div class="btns">
@@ -1382,7 +1382,7 @@ const Wallet: Component = () => {
                 Create wallet
               </A>
             </div>
-          </figure>
+          </div>
         </div>
       }
     >
@@ -1390,7 +1390,7 @@ const Wallet: Component = () => {
         when={state() === 'unlocked'}
         fallback={
           <div id="unlock" class="page">
-            <figure>
+            <div class="setup-card">
               <h2>Unlock your wallet</h2>
               <p>
                 Your linking key is stored encrypted - enter your password to
@@ -1418,7 +1418,7 @@ const Wallet: Component = () => {
               <p>
                 <A href="/setup?tab=restore">Forgot password?</A>
               </p>
-            </figure>
+            </div>
           </div>
         }
       >
@@ -1491,6 +1491,7 @@ const Wallet: Component = () => {
                       <button
                         type="button"
                         class="icon-btn paste-confirm-btn"
+                        classList={{'mobile-open': showHeroKeyboard()}}
                         title="Receive a note, or pay an invoice/address"
                         disabled={heroValue() === ''}
                         onClick={handleHero}
@@ -1620,6 +1621,7 @@ const Wallet: Component = () => {
                     <button
                       type="button"
                       class="icon-btn paste-confirm-btn"
+                      classList={{'mobile-open': showHeroKeyboard()}}
                       title="Receive a note, or pay an invoice/address"
                       disabled={heroValue() === ''}
                       onClick={handleHero}
@@ -1988,50 +1990,48 @@ const Wallet: Component = () => {
                     setSplitSats('')
                   }}
                 >
-                  <figure class="setup-card">
-                    <figcaption>Combine &amp; split</figcaption>
-                    <label>
-                      Split off (sats, of{' '}
-                      {msatToSats(
-                        selectedEligible().reduce((s, b) => s + b.amount, 0)
-                      )}
-                      )
-                    </label>
-                    <input
-                      type="number"
-                      min="1"
-                      step="1"
-                      placeholder="amount in sats"
-                      value={splitSats()}
-                      onInput={e => setSplitSats(e.currentTarget.value)}
-                    />
-                    <p class="bearer-hint">
-                      Burns the {selectedEligible().length} selected notes and
-                      mints two: this amount, and a change note for the rest. If
-                      this mint charges a fee, it's deducted from the change,
-                      not the amount split off.
-                    </p>
-                    <div class="btns">
-                      <button
-                        disabled={splitting() || offlineMode()}
-                        onClick={combineAndSplit}
-                      >
-                        <Show when={splitting()}>
-                          <IoRefreshSharp class="spin" />
-                          &nbsp;
-                        </Show>
-                        Split
-                      </button>
-                      <button
-                        onClick={() => {
-                          setShowSplitInput(false)
-                          setSplitSats('')
-                        }}
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </figure>
+                  <h4>Combine &amp; split</h4>
+                  <label>
+                    Split off (sats, of{' '}
+                    {msatToSats(
+                      selectedEligible().reduce((s, b) => s + b.amount, 0)
+                    )}
+                    )
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    placeholder="amount in sats"
+                    value={splitSats()}
+                    onInput={e => setSplitSats(e.currentTarget.value)}
+                  />
+                  <p class="bearer-hint">
+                    Burns the {selectedEligible().length} selected notes and
+                    mints two: this amount, and a change note for the rest. If
+                    this mint charges a fee, it's deducted from the change, not
+                    the amount split off.
+                  </p>
+                  <div class="btns">
+                    <button
+                      disabled={splitting() || offlineMode()}
+                      onClick={combineAndSplit}
+                    >
+                      <Show when={splitting()}>
+                        <IoRefreshSharp class="spin" />
+                        &nbsp;
+                      </Show>
+                      Split
+                    </button>
+                    <button
+                      onClick={() => {
+                        setShowSplitInput(false)
+                        setSplitSats('')
+                      }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
                 </Dialog>
               </Show>
               <Show when={showLabelInput() && canLabelSelected()}>
@@ -2041,32 +2041,30 @@ const Wallet: Component = () => {
                     setLabelInputValue('')
                   }}
                 >
-                  <figure class="setup-card">
-                    <figcaption>Label</figcaption>
-                    <label>
-                      Label {selectedBearers().length} note
-                      {selectedBearers().length === 1 ? '' : 's'} (private, for
-                      your own reference)
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="e.g. rent, gift for Alex"
-                      value={labelInputValue()}
-                      onInput={e => setLabelInputValue(e.currentTarget.value)}
-                      onKeyDown={e => e.key === 'Enter' && saveLabelSelected()}
-                    />
-                    <div class="btns">
-                      <button onClick={saveLabelSelected}>Save</button>
-                      <button
-                        onClick={() => {
-                          setShowLabelInput(false)
-                          setLabelInputValue('')
-                        }}
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </figure>
+                  <h4>Label</h4>
+                  <label>
+                    Label {selectedBearers().length} note
+                    {selectedBearers().length === 1 ? '' : 's'} (private, for
+                    your own reference)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. rent, gift for Alex"
+                    value={labelInputValue()}
+                    onInput={e => setLabelInputValue(e.currentTarget.value)}
+                    onKeyDown={e => e.key === 'Enter' && saveLabelSelected()}
+                  />
+                  <div class="btns">
+                    <button onClick={saveLabelSelected}>Save</button>
+                    <button
+                      onClick={() => {
+                        setShowLabelInput(false)
+                        setLabelInputValue('')
+                      }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
                 </Dialog>
               </Show>
               <Show when={showSplitSingleInput() && canSplitSingle()}>
@@ -2077,64 +2075,62 @@ const Wallet: Component = () => {
                     setSplitSingleTimes('1')
                   }}
                 >
-                  <figure class="setup-card">
-                    <figcaption>Split</figcaption>
-                    <label>
-                      Split off (sats, of{' '}
-                      {msatToSats(selectedBearers()[0].amount)})
-                    </label>
-                    <input
-                      type="number"
-                      min="1"
-                      step="1"
-                      placeholder="amount in sats"
-                      value={splitSingleSats()}
-                      onInput={e => setSplitSingleSats(e.currentTarget.value)}
-                    />
-                    <label>How many times</label>
-                    <input
-                      type="number"
-                      min="1"
-                      step="1"
-                      placeholder="1"
-                      value={splitSingleTimes()}
-                      onInput={e => setSplitSingleTimes(e.currentTarget.value)}
-                    />
+                  <h4>Split</h4>
+                  <label>
+                    Split off (sats, of{' '}
+                    {msatToSats(selectedBearers()[0].amount)})
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    placeholder="amount in sats"
+                    value={splitSingleSats()}
+                    onInput={e => setSplitSingleSats(e.currentTarget.value)}
+                  />
+                  <label>How many times</label>
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    placeholder="1"
+                    value={splitSingleTimes()}
+                    onInput={e => setSplitSingleTimes(e.currentTarget.value)}
+                  />
+                  <p class="bearer-hint">
+                    If this mint charges a fee, it's deducted from the
+                    remainder, not the amount split off - splitting fails if too
+                    little would be left over to cover it.
+                  </p>
+                  <Show when={Number(splitSingleTimes()) > 1}>
                     <p class="bearer-hint">
-                      If this mint charges a fee, it's deducted from the
-                      remainder, not the amount split off - splitting fails if
-                      too little would be left over to cover it.
+                      Chains {Number(splitSingleTimes())} split requests one
+                      after another - if one fails partway through, whichever
+                      notes already came back are kept, and you'd need to try
+                      again for the rest.
                     </p>
-                    <Show when={Number(splitSingleTimes()) > 1}>
-                      <p class="bearer-hint">
-                        Chains {Number(splitSingleTimes())} split requests one
-                        after another - if one fails partway through, whichever
-                        notes already came back are kept, and you'd need to try
-                        again for the rest.
-                      </p>
-                    </Show>
-                    <div class="btns">
-                      <button
-                        disabled={splittingSingle() || offlineMode()}
-                        onClick={splitSingleSelected}
-                      >
-                        <Show when={splittingSingle()}>
-                          <IoRefreshSharp class="spin" />
-                          &nbsp;
-                        </Show>
-                        Split
-                      </button>
-                      <button
-                        onClick={() => {
-                          setShowSplitSingleInput(false)
-                          setSplitSingleSats('')
-                          setSplitSingleTimes('1')
-                        }}
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </figure>
+                  </Show>
+                  <div class="btns">
+                    <button
+                      disabled={splittingSingle() || offlineMode()}
+                      onClick={splitSingleSelected}
+                    >
+                      <Show when={splittingSingle()}>
+                        <IoRefreshSharp class="spin" />
+                        &nbsp;
+                      </Show>
+                      Split
+                    </button>
+                    <button
+                      onClick={() => {
+                        setShowSplitSingleInput(false)
+                        setSplitSingleSats('')
+                        setSplitSingleTimes('1')
+                      }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
                 </Dialog>
               </Show>
             </section>

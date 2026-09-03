@@ -359,56 +359,52 @@ const BearerCard: Component<BearerCardProps> = props => {
           }
         >
           <Dialog onClose={cancelUnveil}>
-            <figure class="setup-card">
-              <figcaption>
-                Hand over {msatToSats(props.bearer.amount)} sats
-              </figcaption>
-              <Show
-                when={revealedUrl()}
-                fallback={
+            <h4>Hand over {msatToSats(props.bearer.amount)} sats</h4>
+            <Show
+              when={revealedUrl()}
+              fallback={
+                <div class="btns">
+                  <button disabled={revealing()} onClick={revealDeviceNote}>
+                    <Show when={revealing()}>
+                      <IoRefreshSharp class="spin" />
+                      &nbsp;
+                    </Show>
+                    {revealing()
+                      ? 'Waiting for the vault...'
+                      : 'Reveal to hand over'}
+                  </button>
+                </div>
+              }
+            >
+              {url => (
+                <>
+                  <div class="qr-wrapper">
+                    <Qr value={toBech32Lnurl(url())} />
+                    <Show when={!qrRevealed()}>
+                      <button
+                        class="qr-overlay"
+                        title="Show QR code - it IS the bearer note, anyone who scans it can spend it"
+                        onClick={() => setQrRevealed(true)}
+                      >
+                        <IoEyeSharp />
+                      </button>
+                    </Show>
+                  </div>
                   <div class="btns">
-                    <button disabled={revealing()} onClick={revealDeviceNote}>
-                      <Show when={revealing()}>
-                        <IoRefreshSharp class="spin" />
-                        &nbsp;
-                      </Show>
-                      {revealing()
-                        ? 'Waiting for the vault...'
-                        : 'Reveal to hand over'}
+                    <button
+                      onClick={() => copyToClipboard(toBech32Lnurl(url()))}
+                    >
+                      <IoCopySharp />
+                      &nbsp;Copy note
+                    </button>
+                    <button onClick={markHandedOver}>
+                      <IoCheckmarkSharp />
+                      &nbsp;Mark done
                     </button>
                   </div>
-                }
-              >
-                {url => (
-                  <>
-                    <div class="qr-wrapper">
-                      <Qr value={toBech32Lnurl(url())} />
-                      <Show when={!qrRevealed()}>
-                        <button
-                          class="qr-overlay"
-                          title="Show QR code - it IS the bearer note, anyone who scans it can spend it"
-                          onClick={() => setQrRevealed(true)}
-                        >
-                          <IoEyeSharp />
-                        </button>
-                      </Show>
-                    </div>
-                    <div class="btns">
-                      <button
-                        onClick={() => copyToClipboard(toBech32Lnurl(url()))}
-                      >
-                        <IoCopySharp />
-                        &nbsp;Copy note
-                      </button>
-                      <button onClick={markHandedOver}>
-                        <IoCheckmarkSharp />
-                        &nbsp;Mark done
-                      </button>
-                    </div>
-                  </>
-                )}
-              </Show>
-            </figure>
+                </>
+              )}
+            </Show>
           </Dialog>
         </Show>
       </Show>

@@ -240,7 +240,7 @@ const Vault: Component = () => {
           <Show
             when={connectionState() === 'connected'}
             fallback={
-              <figure class="setup-card">
+              <div class="setup-card">
                 <Show
                   when={serialSupported || bleSupported}
                   fallback={
@@ -276,15 +276,15 @@ const Vault: Component = () => {
                     </div>
                   </Show>
                 </Show>
-              </figure>
+              </div>
             }
           >
-            <figure class="setup-card">
-              <figcaption>
+            <div class="setup-card">
+              <h4>
                 {info()
                   ? `Vault ${info()!.fw_version}${info()!.board ? ` (${info()!.board})` : ''}`
                   : 'Connected'}
-              </figcaption>
+              </h4>
               <Show when={identity() && identityWarning(identity()!)}>
                 {message => (
                   <>
@@ -349,7 +349,7 @@ const Vault: Component = () => {
                   Disconnect
                 </button>
               </div>
-            </figure>
+            </div>
             <Show
               when={notes().length > 0}
               fallback={
@@ -451,7 +451,7 @@ const Vault: Component = () => {
           </Show>
         </div>
         <div class="two-col">
-          <figure class="setup-card">
+          <div class="setup-card">
             <h4>Device console</h4>
             <p>
               Send a raw command straight to the paired vault and see its raw
@@ -517,7 +517,7 @@ const Vault: Component = () => {
                 </div>
               </Show>
             </Show>
-          </figure>
+          </div>
         </div>
       </div>
     </div>

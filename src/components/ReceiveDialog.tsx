@@ -253,8 +253,8 @@ const ReceiveDialog: Component<ReceiveDialogProps> = props => {
 
   return (
     <Dialog onClose={props.onClose}>
-      <figure class="setup-card">
-        <figcaption>Bring in a bearer note</figcaption>
+      <>
+        <h4>Bring in a bearer note</h4>
         <div class="paste-input-row">
           <ScanToggle onScan={onScan} accept={isValidNoteInput} />
           <NfcToggle onScan={onScan} accept={isValidNoteInput} />
@@ -317,7 +317,7 @@ const ReceiveDialog: Component<ReceiveDialogProps> = props => {
             k1) or bolt11 invoice.
           </p>
         </Show>
-      </figure>
+      </>
     </Dialog>
   )
 }

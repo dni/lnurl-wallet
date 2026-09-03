@@ -1170,7 +1170,7 @@ const Mint: Component = () => {
               <Dialog onClose={closeMintDialog}>
                 <Show when={mintNodeInfo()}>
                   {node => (
-                    <figure class="setup-card">
+                    <>
                       <h4>
                         <Show when={node().nodeColor}>
                           <span
@@ -1252,12 +1252,12 @@ const Mint: Component = () => {
                           </a>
                         </Show>
                       </div>
-                    </figure>
+                    </>
                   )}
                 </Show>
                 <Show when={pendingTrust()}>
                   {pending => (
-                    <figure class="setup-card">
+                    <>
                       <h4>Trust this mint?</h4>
                       <p>
                         First time seeing a signing key from{' '}
@@ -1289,178 +1289,172 @@ const Mint: Component = () => {
                           <IoOpenSharp />
                         </a>
                       </div>
-                    </figure>
+                    </>
                   )}
                 </Show>
                 <Show when={payRequest()}>
                   {info => (
                     <>
-                      <figure class="setup-card">
-                        <Show when={mintNodeInfo()?.sunsetDate}>
-                          {date => (
-                            <p class="warning">
-                              This mint plans to sunset on{' '}
-                              {new Date(date()).toLocaleDateString()} - minting
-                              a new note here isn't a good idea, consider a
-                              different mint instead.
-                            </p>
-                          )}
-                        </Show>
-                        <Show when={info().mintFee}>
-                          {fee => (
-                            <p class="warning">
-                              This mint withholds a fee on minting:{' '}
-                              {describeMintFee(fee())}. The note you end up
-                              holding is worth less than what you pay - amounts
-                              below are already adjusted for it. Melts won't
-                              have any additional fees - this is only charged
-                              once, on minting.
-                            </p>
-                          )}
-                        </Show>
-                        <label>
-                          Note value (sats, {msatToSats(info().minSendable)} -{' '}
-                          {msatToSats(
-                            info().mintFee
-                              ? floorMsatToSat(
-                                  applyMintFee(
-                                    info().maxSendable,
-                                    info().mintFee!
-                                  )
+                      <Show when={mintNodeInfo()?.sunsetDate}>
+                        {date => (
+                          <p class="warning">
+                            This mint plans to sunset on{' '}
+                            {new Date(date()).toLocaleDateString()} - minting a
+                            new note here isn't a good idea, consider a
+                            different mint instead.
+                          </p>
+                        )}
+                      </Show>
+                      <Show when={info().mintFee}>
+                        {fee => (
+                          <p class="warning">
+                            This mint withholds a fee on minting:{' '}
+                            {describeMintFee(fee())}. The note you end up
+                            holding is worth less than what you pay - amounts
+                            below are already adjusted for it. Melts won't have
+                            any additional fees - this is only charged once, on
+                            minting.
+                          </p>
+                        )}
+                      </Show>
+                      <label>
+                        Note value (sats, {msatToSats(info().minSendable)} -{' '}
+                        {msatToSats(
+                          info().mintFee
+                            ? floorMsatToSat(
+                                applyMintFee(
+                                  info().maxSendable,
+                                  info().mintFee!
                                 )
-                              : info().maxSendable
-                          )}
-                          )
-                        </label>
-                        <input
-                          type="number"
-                          min="1"
-                          placeholder="amount in sats"
-                          value={amountSats()}
-                          onInput={e => setAmountSats(e.currentTarget.value)}
+                              )
+                            : info().maxSendable
+                        )}
+                        )
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        placeholder="amount in sats"
+                        value={amountSats()}
+                        onInput={e => setAmountSats(e.currentTarget.value)}
+                      />
+                      <Show when={amountBreakdown()}>
+                        {amount => (
+                          <Show when={amount().feeMsat > 0}>
+                            <p class="bearer-hint">
+                              Invoice: {msatToSats(amount().grossMsat)} sats
+                              (includes a {msatToSats(amount().feeMsat)} sat
+                              mint fee) - note: {msatToSats(amount().netMsat)}{' '}
+                              sats
+                              <FiatValue msat={amount().netMsat} />
+                            </p>
+                          </Show>
+                        )}
+                      </Show>
+                      <div class="btns">
+                        <button
+                          disabled={busy() || offlineMode()}
+                          onClick={getInvoice}
+                        >
+                          <Show when={busy()}>
+                            <IoRefreshSharp class="spin" />
+                            &nbsp;
+                          </Show>
+                          Get invoice
+                        </button>
+                      </div>
+                      <Show when={invoice()}>
+                        <h4>1. Pay this invoice with any Lightning wallet</h4>
+                        <Qr
+                          value={invoice()!.toUpperCase()}
+                          href={`lightning:${invoice()!.toUpperCase()}`}
                         />
-                        <Show when={amountBreakdown()}>
-                          {amount => (
-                            <Show when={amount().feeMsat > 0}>
-                              <p class="bearer-hint">
-                                Invoice: {msatToSats(amount().grossMsat)} sats
-                                (includes a {msatToSats(amount().feeMsat)} sat
-                                mint fee) - note: {msatToSats(amount().netMsat)}{' '}
-                                sats
-                                <FiatValue msat={amount().netMsat} />
-                              </p>
-                            </Show>
+                        <div class="btns">
+                          <button onClick={() => copyToClipboard(invoice()!)}>
+                            Copy invoice
+                          </button>
+                          <Show when={verifyUrl()}>
+                            <button
+                              disabled={verifying() || offlineMode()}
+                              onClick={manualCheck}
+                            >
+                              <Show when={verifying()}>
+                                <IoRefreshSharp class="spin" />
+                                &nbsp;
+                              </Show>
+                              {verifying()
+                                ? 'Checking...'
+                                : `Check payment (${secondsLeft()}s)`}
+                            </button>
+                          </Show>
+                        </div>
+                        <Show when={mintSecret()}>
+                          {secret => (
+                            <>
+                              <label>
+                                2. This current LUD-25 mint is bound to this
+                                wallet's secret - nothing to paste. Claim it
+                                below once paid
+                                <Show when={verifyUrl()}>
+                                  {' '}
+                                  (or wait - this mint checks automatically)
+                                </Show>
+                                .
+                              </label>
+                              <div class="btns">
+                                <button
+                                  disabled={busy() || offlineMode()}
+                                  onClick={() =>
+                                    claim(
+                                      secret(),
+                                      invoicedMsat(),
+                                      invoicedGrossMsat()
+                                    )
+                                  }
+                                >
+                                  <Show when={busy()}>
+                                    <IoRefreshSharp class="spin" />
+                                    &nbsp;
+                                  </Show>
+                                  Claim note
+                                </button>
+                              </div>
+                            </>
                           )}
                         </Show>
-                        <div class="btns">
-                          <button
-                            disabled={busy() || offlineMode()}
-                            onClick={getInvoice}
-                          >
-                            <Show when={busy()}>
-                              <IoRefreshSharp class="spin" />
-                              &nbsp;
-                            </Show>
-                            Get invoice
-                          </button>
-                        </div>
-                      </figure>
-                      <Show when={invoice()}>
-                        <figure class="setup-card">
-                          <figcaption>
-                            1. Pay this invoice with any Lightning wallet
-                          </figcaption>
-                          <Qr
-                            value={invoice()!.toUpperCase()}
-                            href={`lightning:${invoice()!.toUpperCase()}`}
-                          />
-                          <div class="btns">
-                            <button onClick={() => copyToClipboard(invoice()!)}>
-                              Copy invoice
-                            </button>
-                            <Show when={verifyUrl()}>
-                              <button
-                                disabled={verifying() || offlineMode()}
-                                onClick={manualCheck}
-                              >
-                                <Show when={verifying()}>
-                                  <IoRefreshSharp class="spin" />
-                                  &nbsp;
-                                </Show>
-                                {verifying()
-                                  ? 'Checking...'
-                                  : `Check payment (${secondsLeft()}s)`}
-                              </button>
-                            </Show>
-                          </div>
-                          <Show when={mintSecret()}>
-                            {secret => (
-                              <>
-                                <label>
-                                  2. This current LUD-25 mint is bound to this
-                                  wallet's secret - nothing to paste. Claim it
-                                  below once paid
-                                  <Show when={verifyUrl()}>
-                                    {' '}
-                                    (or wait - this mint checks automatically)
+                        <Show when={deviceMintAttempt()}>
+                          {pending => (
+                            <>
+                              <label>
+                                2. This invoice is bound directly to a secret
+                                held PENDING on your vault. The browser has only
+                                its hash; once paid, the mint's signed receipt
+                                confirms it without exporting or rotating the
+                                secret.
+                              </label>
+                              <div class="btns">
+                                <button
+                                  disabled={
+                                    verifying() || busy() || offlineMode()
+                                  }
+                                  onClick={manualCheck}
+                                >
+                                  <Show when={verifying()}>
+                                    <IoRefreshSharp class="spin" />
+                                    &nbsp;
                                   </Show>
-                                  .
-                                </label>
-                                <div class="btns">
-                                  <button
-                                    disabled={busy() || offlineMode()}
-                                    onClick={() =>
-                                      claim(
-                                        secret(),
-                                        invoicedMsat(),
-                                        invoicedGrossMsat()
-                                      )
-                                    }
-                                  >
-                                    <Show when={busy()}>
-                                      <IoRefreshSharp class="spin" />
-                                      &nbsp;
-                                    </Show>
-                                    Claim note
-                                  </button>
-                                </div>
-                              </>
-                            )}
-                          </Show>
-                          <Show when={deviceMintAttempt()}>
-                            {pending => (
-                              <>
-                                <label>
-                                  2. This invoice is bound directly to a secret
-                                  held PENDING on your vault. The browser has
-                                  only its hash; once paid, the mint's signed
-                                  receipt confirms it without exporting or
-                                  rotating the secret.
-                                </label>
-                                <div class="btns">
-                                  <button
-                                    disabled={
-                                      verifying() || busy() || offlineMode()
-                                    }
-                                    onClick={manualCheck}
-                                  >
-                                    <Show when={verifying()}>
-                                      <IoRefreshSharp class="spin" />
-                                      &nbsp;
-                                    </Show>
-                                    {deviceClient()
-                                      ? 'Verify and finish on vault'
-                                      : 'Reconnect vault, then verify'}
-                                  </button>
-                                </div>
-                                <p class="bearer-hint">
-                                  Recovery output {pending().deviceId} · hash{' '}
-                                  {pending().h.slice(0, 12)}…
-                                </p>
-                              </>
-                            )}
-                          </Show>
-                        </figure>
+                                  {deviceClient()
+                                    ? 'Verify and finish on vault'
+                                    : 'Reconnect vault, then verify'}
+                                </button>
+                              </div>
+                              <p class="bearer-hint">
+                                Recovery output {pending().deviceId} · hash{' '}
+                                {pending().h.slice(0, 12)}…
+                              </p>
+                            </>
+                          )}
+                        </Show>
                       </Show>
                     </>
                   )}
@@ -1676,7 +1670,7 @@ const Mint: Component = () => {
         </div>
         <div class="two-col">
           <Show when={state() === 'unlocked' && storeableMints().length > 0}>
-            <figure class="setup-card">
+            <div class="setup-card">
               <h4>
                 Your storeable mints
                 <span
@@ -1707,9 +1701,9 @@ const Mint: Component = () => {
                   )}
                 </For>
               </div>
-            </figure>
+            </div>
           </Show>
-          <figure class="setup-card">
+          <div class="setup-card">
             <h4>
               Public mints
               <span
@@ -1760,10 +1754,10 @@ const Mint: Component = () => {
                 }}
               </For>
             </div>
-          </figure>
+          </div>
           <Show when={addressTrust()}>
             {pending => (
-              <figure class="setup-card">
+              <div class="setup-card">
                 <h4>Trust this mint?</h4>
                 <p>
                   {pending().server} advertises the signing key below. It will
@@ -1776,10 +1770,10 @@ const Mint: Component = () => {
                   <button onClick={confirmAddressTrust}>Trust this key</button>
                   <button onClick={cancelAddressTrust}>Cancel</button>
                 </div>
-              </figure>
+              </div>
             )}
           </Show>
-          <figure class="setup-card">
+          <div class="setup-card">
             <h4>Add a mint manually</h4>
             <label>Server</label>
             <input
@@ -1801,7 +1795,7 @@ const Mint: Component = () => {
                 &nbsp;Add mint
               </button>
             </div>
-          </figure>
+          </div>
         </div>
       </div>
     </div>

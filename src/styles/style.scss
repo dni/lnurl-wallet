@@ -99,10 +99,10 @@ h2 {
   font-size: 1.3em;
   margin-bottom: 0;
 }
-// no padding/background of its own (unlike .hero-intro/.setup-card) - a
-// boxed card here pushed its heading/buttons in from the left edge by its
-// own padding, out of line with the note grid and every other section
-// below it, none of which are boxed either
+// no padding/background of its own (unlike .hero-intro, which keeps its
+// deliberate boxed look) - a boxed card here pushed its heading/buttons in
+// from the left edge by its own padding, out of line with the note grid and
+// every other section below it, none of which are boxed either
 .wallet-hero {
   margin: 0 0 24px 0;
 }
@@ -115,15 +115,6 @@ h2 {
   padding: 9px 18px;
   font-size: 1em;
   margin-right: 8px;
-}
-
-// sits on the same row as the Mint button, in both the empty-state
-// (.hero-actions) and populated-state (.btns) hero - grows to fill the rest
-// of the row instead of .paste-widget's own fixed width: 100%, which would
-// otherwise claim the whole row on its own and push Mint above it
-.hero-paste-widget {
-  width: auto;
-  flex: 1 1 320px;
 }
 
 .activity-list {
@@ -722,6 +713,19 @@ pre {
   }
   .paste-keyboard-btn {
     display: inline-flex;
+  }
+  // the wallet hero's own confirm button (Wallet.tsx's paste-confirm-btn,
+  // "Receive a note, or pay an invoice/address") only means anything once
+  // there's a value to act on, and that value only shows up here once the
+  // field itself is revealed - so it hides and reveals in lockstep with
+  // .paste-input-wrapper above, same .mobile-open toggle. Scoped to
+  // .hero-paste-widget only: Mint.tsx/ReceiveDialog/MeltDialog's own
+  // confirm buttons keep their normal always-visible mobile behavior.
+  .hero-paste-widget .paste-confirm-btn {
+    display: none;
+    &.mobile-open {
+      display: inline-flex;
+    }
   }
 }
 
@@ -1569,13 +1573,6 @@ nav {
   border-radius: 10px;
   padding: 20px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
-
-  // a dialog's own .setup-card content shouldn't also cap itself to 480px -
-  // the panel around it already does that, and double-capping just wastes
-  // width inside a narrower mobile sheet (see the breakpoint below)
-  .setup-card {
-    max-width: none;
-  }
 }
 
 .dialog-close-btn {
@@ -1615,19 +1612,45 @@ nav {
 
 // ---- setup / mint / backup / docs ----
 
+// a plain content block, not boxed - it used to be a <figure>, which drew
+// its own background/padding/hover-glow by tag alone (an unrelated global
+// rule this page never asked for), doubling up badly wherever it sat inside
+// a Dialog's own already-boxed panel. Now just a <div>: the margin below is
+// what keeps two of these stacked in the same column (Mint.tsx/Vault.tsx/
+// Backup.tsx) from running straight into each other without that old
+// padding to fall back on
 .setup-card {
   display: block;
   width: 100%;
   max-width: 480px;
+  margin-bottom: 24px;
+  &:last-child {
+    margin-bottom: 0;
+  }
+  // the <figure> tag this used to be reset its first child's margin-top to
+  // 0 - without it, a leading heading's own default browser margin would
+  // push the card down unevenly against whatever sits above it
+  > :first-child {
+    margin-top: 0;
+  }
   textarea,
   pre {
     width: 100%;
   }
 }
 
+// same reasoning as .setup-card above - plain block, own bottom margin
+// since it no longer gets one from the <figure> tag it used to be
 .docs-card {
   display: block;
   max-width: 720px;
+  margin-bottom: 24px;
+  &:last-child {
+    margin-bottom: 0;
+  }
+  > :first-child {
+    margin-top: 0;
+  }
   p,
   li {
     line-height: 1.5;
