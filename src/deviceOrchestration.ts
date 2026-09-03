@@ -60,7 +60,11 @@ export type CustodyInput = {deviceId?: string; url: string}
 export const requireDeviceClient = (
   client: DeviceClient | null
 ): DeviceClient => {
-  if (!client) throw new Error('Vault not connected - reconnect to continue.')
+  if (!client) {
+    throw new Error(
+      'Vault not connected - open Vault and reconnect the same device to continue.'
+    )
+  }
   return client
 }
 

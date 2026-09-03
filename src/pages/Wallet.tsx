@@ -55,7 +55,8 @@ import {
   markDeviceNoteSpent,
   deviceMerge,
   deviceSplit,
-  deviceSettle
+  deviceSettle,
+  requireDeviceClient
 } from '../deviceOrchestration'
 import {useDevice} from '../DeviceContext'
 import {offlineMode} from '../offlineMode'
@@ -490,8 +491,16 @@ const Wallet: Component = () => {
     try {
       const client = deviceClient()
       const deviceId = bearer.deviceId
-      if (deviceId && client) {
-        const result = await deviceRefresh(client, {...bearer, deviceId})
+      if (deviceId) {
+        // A device-backed bearer's stored URL is deliberately only a
+        // secret-free mirror. If its vault is disconnected, stop here with
+        // the recovery action instead of falling through to fetchNoteInfo
+        // and sending /w a request with no k1.
+        const connectedClient = requireDeviceClient(client)
+        const result = await deviceRefresh(connectedClient, {
+          ...bearer,
+          deviceId
+        })
         await updateBearer(bearer.id, {
           url: result.url,
           callback: result.callback,
@@ -541,7 +550,7 @@ const Wallet: Component = () => {
       try {
         const rotated = await rotateNote(
           info.callback,
-          noteK1(bearer.url) || ''
+          requireNoteK1(bearer.url)
         )
         url = withNewK1(
           bearer.url,
@@ -752,7 +761,7 @@ const Wallet: Component = () => {
       // in place (best-effort) rather than left exposed - but always kept,
       // never dropped, so a failed split costs nothing
       let remainderId = bearer.id
-      let currentK1 = noteK1(bearer.url) || ''
+      let currentK1 = bearer.deviceId ? '' : requireNoteK1(bearer.url)
       let currentUrl = bearer.url
       let currentCallback = bearer.callback
       let currentAmount = bearer.amount
@@ -768,6 +777,7 @@ const Wallet: Component = () => {
       let totalFeeMsat = 0
       let perSplitFeeMsat = 0
       const client = deviceClient()
+      if (bearer.deviceId) requireDeviceClient(client)
       for (let i = 0; i < times; i++) {
         const expectedChange = currentAmount - msat
         if (client) {
