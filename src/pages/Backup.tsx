@@ -5,24 +5,75 @@ import {
   IoDownloadSharp,
   IoFolderOpenSharp,
   IoTrashSharp,
-  IoRefreshSharp
+  IoRefreshSharp,
+  IoShieldCheckmarkSharp
 } from 'solid-icons/io'
 
 import {useWallet} from '../WalletContext'
 import {buildBackup, applyBackup, MAX_BACKUP_FILE_BYTES} from '../storage'
-import {savedKeyIsEncrypted} from '../keys'
+import {isValidSeedPhrase} from '../keys'
 import {trustedMints} from '../trustedMints'
 import {notify, NotifyKind} from '../helpers'
+import {MIN_PASSWORD_LENGTH} from './Setup'
 
 const Backup: Component = () => {
-  const {state, bearers, reloadBearers, refreshState, forgetWallet, unlock} =
-    useWallet()
+  const {
+    state,
+    bearers,
+    reloadBearers,
+    refreshState,
+    forgetWallet,
+    unlock,
+    encrypted,
+    encryptionUpgraded,
+    upgradeEncryption
+  } = useWallet()
   const navigate = useNavigate()
   let fileRef: HTMLInputElement | undefined
   const [busy, setBusy] = createSignal(false)
   const [keyRestored, setKeyRestored] = createSignal(false)
   const [keySkipped, setKeySkipped] = createSignal(false)
   const [confirmForget, setConfirmForget] = createSignal(false)
+  const [upgradeSeed, setUpgradeSeed] = createSignal('')
+  const [upgradePassword, setUpgradePassword] = createSignal('')
+  const [upgradeConfirmPassword, setUpgradeConfirmPassword] = createSignal('')
+  const [upgrading, setUpgrading] = createSignal(false)
+
+  const runUpgrade = async () => {
+    if (!isValidSeedPhrase(upgradeSeed())) {
+      notify('Not a valid BIP39 seed phrase.', NotifyKind.ERROR)
+      return
+    }
+    if (encrypted() && upgradePassword().length < MIN_PASSWORD_LENGTH) {
+      notify(
+        `Password must be at least ${MIN_PASSWORD_LENGTH} characters.`,
+        NotifyKind.ERROR
+      )
+      return
+    }
+    if (encrypted() && upgradePassword() !== upgradeConfirmPassword()) {
+      notify('Passwords do not match.', NotifyKind.ERROR)
+      return
+    }
+    setUpgrading(true)
+    try {
+      await upgradeEncryption(
+        upgradeSeed().trim().toLowerCase(),
+        encrypted() ? upgradePassword() : undefined
+      )
+      setUpgradeSeed('')
+      setUpgradePassword('')
+      setUpgradeConfirmPassword('')
+      notify(
+        'Encryption upgraded - every note was re-encrypted under the new key.',
+        NotifyKind.SUCCESS
+      )
+    } catch (err) {
+      notify((err as Error).message, NotifyKind.ERROR)
+    } finally {
+      setUpgrading(false)
+    }
+  }
 
   const download = () => {
     const backup = buildBackup()
@@ -123,25 +174,87 @@ const Backup: Component = () => {
                 mint(s). Notes marked "on device" are just a blank mirror -
                 recovering those needs the paired vault, not this file.
                 <Show
-                  when={savedKeyIsEncrypted()}
+                  when={encrypted()}
                   fallback={
                     <>
                       {' '}
-                      Your linking key isn't encrypted, so it's{' '}
+                      Your encryption key isn't password-protected, so it's{' '}
                       <strong>not</strong> included - restoring elsewhere needs
                       your seed phrase.
                     </>
                   }
                 >
                   {' '}
-                  Your password-encrypted linking key is included too, so this
-                  file plus your password is enough on a new device.
+                  Your password-encrypted key is included too, so this file plus
+                  your password is enough on a new device.
                 </Show>
               </p>
               <div class="btns">
                 <button onClick={download}>
                   <IoDownloadSharp />
                   &nbsp;Download backup
+                </button>
+              </div>
+            </div>
+          </Show>
+          <Show when={state() === 'unlocked' && !encryptionUpgraded()}>
+            <div class="setup-card">
+              <h4>Upgrade encryption</h4>
+              <p>
+                Your notes are currently encrypted with a key derived through an
+                extra identity keypair this wallet never actually uses for
+                anything. Re-entering your seed phrase here switches to a
+                simpler key derived directly from it, and re-encrypts every note
+                and activity entry already stored under the new one. Nothing
+                about your seed phrase or your notes themselves changes - only
+                how the encryption key is derived.
+              </p>
+              <label>Your 12-word BIP39 seed phrase</label>
+              <textarea
+                rows="3"
+                placeholder="twelve words separated by spaces"
+                autocomplete="off"
+                autocapitalize="off"
+                spellcheck={false}
+                data-1p-ignore
+                data-lpignore="true"
+                value={upgradeSeed()}
+                onInput={e => setUpgradeSeed(e.currentTarget.value)}
+              />
+              <Show when={encrypted()}>
+                <input
+                  type="password"
+                  placeholder="Password to encrypt the new key"
+                  autocomplete="new-password"
+                  autocapitalize="off"
+                  spellcheck={false}
+                  value={upgradePassword()}
+                  onInput={e => setUpgradePassword(e.currentTarget.value)}
+                />
+                <input
+                  type="password"
+                  placeholder="Confirm password"
+                  autocomplete="new-password"
+                  autocapitalize="off"
+                  spellcheck={false}
+                  value={upgradeConfirmPassword()}
+                  onInput={e =>
+                    setUpgradeConfirmPassword(e.currentTarget.value)
+                  }
+                />
+              </Show>
+              <div class="btns">
+                <button
+                  disabled={upgrading() || !upgradeSeed().trim()}
+                  onClick={runUpgrade}
+                >
+                  <Show
+                    when={upgrading()}
+                    fallback={<IoShieldCheckmarkSharp />}
+                  >
+                    <IoRefreshSharp class="spin" />
+                  </Show>
+                  &nbsp;Upgrade encryption
                 </button>
               </div>
             </div>
@@ -228,7 +341,7 @@ const Backup: Component = () => {
                 own seed.
               </p>
               <Show
-                when={savedKeyIsEncrypted()}
+                when={encrypted()}
                 fallback={
                   <>
                     <p class="warning">

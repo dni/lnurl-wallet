@@ -13,14 +13,21 @@ import toast from 'solid-toast'
 import {notify, NotifyKind} from './helpers'
 import {
   deriveWalletLinkingKey,
+  deriveStorageRootKey,
   deriveBearerAesKey,
+  aesKeysEqual,
   saveLinkingKey,
   savedKeyExists,
   savedKeyIsEncrypted,
   getPlainLinkingKey,
   decryptSavedLinkingKey,
   clearSavedLinkingKey,
-  linkingPubKeyHex,
+  saveStorageRootKey,
+  savedStorageRootKeyExists,
+  savedStorageRootKeyIsEncrypted,
+  getPlainStorageRootKey,
+  decryptSavedStorageRootKey,
+  clearSavedStorageRootKey,
   deriveLud25CashRootNode,
   cashRootToHex,
   cashRootFromHex,
@@ -42,7 +49,8 @@ import {
   loadActivity,
   persistActivityEvent,
   clearAllActivity,
-  newActivityId
+  newActivityId,
+  reencryptAllRecords
 } from './storage'
 import {serverOf} from './lnurlcash'
 import type {TrustKeyResult} from './trustedMints'
@@ -92,12 +100,20 @@ export type NewBearer = {
 export type WalletContextType = {
   state: Accessor<WalletState>
   bearers: Accessor<Bearer[]>
-  pubkey: Accessor<string | null>
   encrypted: () => boolean
   setup: (seedPhrase: string, password?: string) => Promise<void>
   unlock: (password?: string) => Promise<void>
   lock: () => void
   forgetWallet: () => void
+  // true once this wallet's bearer-encryption root is the current
+  // seed-direct one (see keys.ts's deriveStorageRootKey) rather than the
+  // legacy LUD-05 linking key - see upgradeEncryption
+  encryptionUpgraded: Accessor<boolean>
+  // one-time migration off the legacy linking key (see keys.ts's own
+  // comment on it): re-derives the new root from a re-entered seed
+  // phrase, proves it's actually this wallet's before touching anything,
+  // re-encrypts every stored record under it, then retires the old secret
+  upgradeEncryption: (seedPhrase: string, password?: string) => Promise<void>
   addBearer: (note: NewBearer) => Promise<Bearer>
   updateBearer: (
     id: string,
@@ -126,16 +142,31 @@ const WalletContext = createContext<WalletContextType>()
 const AUTO_LOCK_MS = 5 * 60 * 1000
 const LOCK_WARNING_MS = 30 * 1000
 
+// a wallet's root secret lives in exactly one of two slots at a time - the
+// current seed-direct one (see keys.ts's deriveStorageRootKey) if it's
+// already run the one-time upgrade, else the legacy LUD-05 linking key.
+// These three checks are the only place that needs to know both slots
+// exist at all; everywhere else just asks "is there a wallet" / "is it
+// encrypted" without caring which format backs the answer.
+const rootKeyExists = (): boolean =>
+  savedStorageRootKeyExists() || savedKeyExists()
+const rootKeyIsEncrypted = (): boolean =>
+  savedStorageRootKeyExists()
+    ? savedStorageRootKeyIsEncrypted()
+    : savedKeyIsEncrypted()
+
 // a plaintext-stored key also starts 'locked' - the provider's onMount
 // unlocks it immediately without a password, keeping a single code path
 // for deriving the AES key and loading bearers
-const initialState = (): WalletState => (savedKeyExists() ? 'locked' : 'none')
+const initialState = (): WalletState => (rootKeyExists() ? 'locked' : 'none')
 
 export const WalletProvider = (props: {children: JSX.Element}) => {
   const [state, setState] = createSignal<WalletState>(initialState())
   const [bearers, setBearers] = createSignal<Bearer[]>([])
   const [activity, setActivity] = createSignal<ActivityEvent[]>([])
-  const [pubkey, setPubkey] = createSignal<string | null>(null)
+  const [encryptionUpgraded, setEncryptionUpgraded] = createSignal(
+    savedStorageRootKeyExists()
+  )
   let aesKey: CryptoKey | null = null
 
   // idle-timeout auto-lock bookkeeping - see AUTO_LOCK_MS/LOCK_WARNING_MS
@@ -172,12 +203,9 @@ export const WalletProvider = (props: {children: JSX.Element}) => {
     )
   }
 
-  const activate = async (
-    linkingKey: Uint8Array,
-    cashRootHex: string | null
-  ) => {
-    aesKey = await deriveBearerAesKey(linkingKey)
-    setPubkey(linkingPubKeyHex(linkingKey))
+  const activate = async (rootKey: Uint8Array, cashRootHex: string | null) => {
+    aesKey = await deriveBearerAesKey(rootKey)
+    setEncryptionUpgraded(savedStorageRootKeyExists())
     // LUD-25 (see cashSecrets.ts): null whenever this wallet has no cash
     // root saved yet (set up before this feature existed, and hasn't
     // re-entered its seed since) - note generation just falls back to
@@ -203,6 +231,16 @@ export const WalletProvider = (props: {children: JSX.Element}) => {
     setState('unlocked')
   }
 
+  // still writes the legacy linking key, deliberately: this always runs on
+  // either a brand new wallet (nothing to lose) or a re-entered seed on a
+  // device that may still hold OLD-format ciphertext for it (see the
+  // "stored bearer tokens ... become unreadable until that seed is
+  // restored again" behavior Setup.tsx documents) - switching this to the
+  // new root here would silently strand that data, since a bearer record
+  // carries no marker saying which key it needs. upgradeEncryption is the
+  // only path that's actually safe to move a wallet onto the new root,
+  // because it starts from an already-unlocked, already-decrypted state
+  // instead of guessing.
   const setup = async (seedPhrase: string, password?: string) => {
     const linkingKey = deriveWalletLinkingKey(seedPhrase)
     await saveLinkingKey(linkingKey, password)
@@ -217,26 +255,29 @@ export const WalletProvider = (props: {children: JSX.Element}) => {
   }
 
   const unlock = async (password?: string) => {
-    const linkingKey = savedKeyIsEncrypted()
-      ? await decryptSavedLinkingKey(password || '')
-      : getPlainLinkingKey()
-    if (!linkingKey) throw new Error('No wallet on this device.')
+    const rootKey = savedStorageRootKeyExists()
+      ? savedStorageRootKeyIsEncrypted()
+        ? await decryptSavedStorageRootKey(password || '')
+        : getPlainStorageRootKey()
+      : savedKeyIsEncrypted()
+        ? await decryptSavedLinkingKey(password || '')
+        : getPlainLinkingKey()
+    if (!rootKey) throw new Error('No wallet on this device.')
     const cashRootHex = savedCashRootKeyExists()
       ? savedCashRootKeyIsEncrypted()
         ? await decryptSavedCashRootKeyHex(password || '')
         : getPlainCashRootKeyHex()
       : null
-    await activate(linkingKey, cashRootHex)
+    await activate(rootKey, cashRootHex)
   }
 
   // only meaningful for a password-encrypted key - a plaintext one would
   // just auto-unlock again, so the UI only offers Lock when encrypted() is true
   const lock = () => {
-    if (!savedKeyIsEncrypted()) return
+    if (!rootKeyIsEncrypted()) return
     dismissWarning()
     aesKey = null
     setCashRoot(null)
-    setPubkey(null)
     setBearers([])
     setActivity([])
     setState('locked')
@@ -252,6 +293,7 @@ export const WalletProvider = (props: {children: JSX.Element}) => {
   // back - the UI should prompt for one
   const forgetWallet = () => {
     clearSavedLinkingKey()
+    clearSavedStorageRootKey()
     clearSavedCashRootKey()
     clearCashSecretIndices()
     clearAllBearers()
@@ -262,10 +304,45 @@ export const WalletProvider = (props: {children: JSX.Element}) => {
     clearPendingDeviceMint()
     aesKey = null
     setCashRoot(null)
-    setPubkey(null)
+    setEncryptionUpgraded(false)
     setBearers([])
     setActivity([])
     setState('none')
+  }
+
+  // One-time migration off the legacy LUD-05 linking key (see keys.ts's own
+  // comment on deriveWalletLinkingKey) onto the current seed-direct root.
+  // Only ever runs from an already-unlocked wallet: that's what lets the
+  // seed-match check below be a real proof rather than a guess, and what
+  // makes the actual re-encryption safe - every record gets read back out
+  // already-decrypted under the key that's demonstrably correct, not
+  // whatever key a fresh derivation happens to produce.
+  const upgradeEncryption = async (
+    seedPhrase: string,
+    password?: string
+  ): Promise<void> => {
+    if (!aesKey) throw new Error('Unlock the wallet first.')
+    if (savedStorageRootKeyExists()) {
+      throw new Error('This wallet has already been upgraded.')
+    }
+    // proves the entered seed is actually this wallet's before anything is
+    // touched: re-derive what the legacy key WOULD be from it, and check
+    // it produces the exact same AES key already active this session
+    const candidateLegacyKey = deriveWalletLinkingKey(seedPhrase)
+    const candidateAesKey = await deriveBearerAesKey(candidateLegacyKey)
+    if (!(await aesKeysEqual(candidateAesKey, aesKey))) {
+      throw new Error("That seed phrase doesn't match this wallet.")
+    }
+    const storageRootKey = deriveStorageRootKey(seedPhrase)
+    const newAesKey = await deriveBearerAesKey(storageRootKey)
+    await reencryptAllRecords(aesKey, newAesKey)
+    // new secret saved and active before the old one is cleared - if
+    // anything above throws, the legacy key (and its still-valid
+    // ciphertext) is untouched and this can simply be retried
+    await saveStorageRootKey(storageRootKey, password)
+    aesKey = newAesKey
+    clearSavedLinkingKey()
+    setEncryptionUpgraded(true)
   }
 
   const requireKey = (): CryptoKey => {
@@ -376,7 +453,7 @@ export const WalletProvider = (props: {children: JSX.Element}) => {
   }
 
   onMount(() => {
-    if (state() === 'locked' && !savedKeyIsEncrypted()) {
+    if (state() === 'locked' && !rootKeyIsEncrypted()) {
       unlock().catch(() => setState('none'))
     }
   })
@@ -387,7 +464,7 @@ export const WalletProvider = (props: {children: JSX.Element}) => {
   // setTimeout, since a backgrounded tab throttles timers but Date.now()
   // still reflects real elapsed time whenever this next gets to run
   createEffect(() => {
-    if (state() !== 'unlocked' || !savedKeyIsEncrypted()) {
+    if (state() !== 'unlocked' || !rootKeyIsEncrypted()) {
       dismissWarning()
       return
     }
@@ -414,7 +491,7 @@ export const WalletProvider = (props: {children: JSX.Element}) => {
   // which just silently re-unlocks itself on load (see the onMount above)
   // - nothing is actually at stake there, so nothing to warn about
   createEffect(() => {
-    if (state() !== 'unlocked' || !savedKeyIsEncrypted()) return
+    if (state() !== 'unlocked' || !rootKeyIsEncrypted()) return
     const warnBeforeUnload = (e: BeforeUnloadEvent) => {
       e.preventDefault()
       // legacy assignment some browsers still require to trigger the
@@ -456,12 +533,13 @@ export const WalletProvider = (props: {children: JSX.Element}) => {
         activity,
         logActivity,
         clearActivity,
-        pubkey,
-        encrypted: savedKeyIsEncrypted,
+        encrypted: rootKeyIsEncrypted,
         setup,
         unlock,
         lock,
         forgetWallet,
+        encryptionUpgraded,
+        upgradeEncryption,
         addBearer,
         updateBearer,
         removeBearer,

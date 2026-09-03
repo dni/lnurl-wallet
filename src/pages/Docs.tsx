@@ -225,10 +225,9 @@ digest  = sha256(sha256("Lightning Signed Message:" || message))`}</pre>
         <h3>How your notes are stored: encrypted, locally</h3>
         <p>
           At setup the wallet generates a 12-word BIP39 seed phrase in your
-          browser. From it a <strong>linking key</strong> is derived (the LUD-05
-          derivation against the fixed domain <code>lnurlwallet</code>, the same
-          scheme LNURLserver uses), and from the linking key an AES-256 key for
-          storage.
+          browser, and derives an AES-256 encryption key directly from it
+          (sha256 over the BIP39 seed bytes plus a fixed context string) - no
+          separate identity keypair in between.
         </p>
         <ul>
           <li>
@@ -237,11 +236,11 @@ digest  = sha256(sha256("Lightning Signed Message:" || message))`}</pre>
           </li>
           <li>
             Every <strong>bearer note is AES-GCM encrypted</strong> with the
-            linking-key-derived key before it is written to local storage.
-            Plaintext secrets never touch disk.
+            seed-derived key before it is written to local storage. Plaintext
+            secrets never touch disk.
           </li>
           <li>
-            The <strong>linking key itself is stored encrypted too</strong>:
+            The <strong>derived key itself is stored encrypted too</strong>:
             during setup you are asked for a password, and the key is saved as
             AES-GCM ciphertext under a PBKDF2 (210k iterations) stretch of that
             password. Unlocking decrypts it into memory only. (You can opt out,
@@ -252,6 +251,13 @@ digest  = sha256(sha256("Lightning Signed Message:" || message))`}</pre>
             trigger, straight to the issuing service.
           </li>
         </ul>
+        <p>
+          A wallet created before this scheme shipped instead derives its key
+          through a LUD-05 linking keypair the wallet never actually presents to
+          any service - the Backup page's "Upgrade encryption" action re-derives
+          and re-encrypts everything under the simpler seed-direct key, once,
+          with the seed phrase re-entered to prove it belongs to that wallet.
+        </p>
       </div>
 
       <div class="docs-card">
@@ -259,7 +265,7 @@ digest  = sha256(sha256("Lightning Signed Message:" || message))`}</pre>
         <p>
           The Backup page downloads a single JSON file containing{' '}
           <strong>all your bearer notes exactly as stored - encrypted</strong>.
-          The file never contains a plaintext secret. If your linking key is
+          The file never contains a plaintext secret. If your encryption key is
           password-encrypted, its ciphertext is included as well, so backup +
           password restores everything on a new device; if you opted out of the
           password, the key is excluded and the seed phrase is your recovery
@@ -269,7 +275,7 @@ digest  = sha256(sha256("Lightning Signed Message:" || message))`}</pre>
         <p>
           Restoring merges the file's notes into local storage, skipping ones
           already present. Ciphertexts only become readable again once the same
-          seed (and thus the same linking key) is active - restore order doesn't
+          seed (and thus the same derived key) is active - restore order doesn't
           matter: seed first or file first both work.
         </p>
         <p class="warning">
@@ -281,7 +287,7 @@ digest  = sha256(sha256("Lightning Signed Message:" || message))`}</pre>
         <h3>Forget this wallet</h3>
         <p>
           The Backup page can also wipe this wallet from the device entirely -
-          the linking key <em>and</em> every bearer note, after confirming.
+          the encryption key <em>and</em> every bearer note, after confirming.
           Unlike locking, this isn't undone by restoring the same seed
           afterward: the notes' ciphertext is deleted too, not just re-locked
           behind the key. Download a backup first if there's anything on this

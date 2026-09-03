@@ -7,7 +7,6 @@ import {wordlist} from '@scure/bip39/wordlists/english.js'
 import {HDKey, HARDENED_OFFSET} from '@scure/bip32'
 import {hmac} from '@noble/hashes/hmac.js'
 import {sha256} from '@noble/hashes/sha2.js'
-import {secp256k1} from '@noble/curves/secp256k1.js'
 import {bytesToHex, hexToBytes, utf8ToBytes} from '@noble/hashes/utils.js'
 
 // The wallet's identity is derived against this fixed domain rather than
@@ -63,11 +62,16 @@ export const lud05PathSuffix = (
   return [0, 4, 8, 12].map(i => readUint32BE(material, i))
 }
 
+// Legacy: this wallet's original bearer-encryption root, a full LUD-05
+// linking key (secp256k1 keypair). Superseded by deriveStorageRootKey
+// below - nothing here ever needed the linking key's actual LUD-05
+// identity (no signature is ever presented to a service under it), only
+// its bytes, hashed into an AES key, so the keypair derivation was pure
+// overhead for that. Kept only so a wallet that hasn't run the one-time
+// "upgrade encryption" migration (WalletContext's upgradeEncryption) can
+// still unlock and read what it already encrypted under it.
 export const deriveWalletLinkingKey = (seedPhrase: string): Uint8Array =>
   deriveLud05LinkingKey(seedPhrase, WALLET_DOMAIN)
-
-export const linkingPubKeyHex = (linkingPrivKey: Uint8Array): string =>
-  bytesToHex(secp256k1.getPublicKey(linkingPrivKey, true))
 
 // LUD-25 Seed-recoverable note secrets: the m/139' node - this wallet's own
 // root for deterministic bearer-note secrets (mint-time comment protection,
@@ -82,6 +86,18 @@ export const deriveLud25CashRootNode = (seedPhrase: string): HDKey => {
   const seed = mnemonicToSeedSync(seedPhrase.trim().toLowerCase())
   const master = HDKey.fromMasterSeed(seed)
   return master.deriveChild(139 + HARDENED_OFFSET)
+}
+
+// The current bearer-encryption root: straight from the BIP39 seed, no
+// intermediate identity keypair (see deriveWalletLinkingKey above for why
+// that existed and why it's no longer needed). Domain-separated by its own
+// context string so this can never collide with the master seed being
+// hashed for some other purpose elsewhere.
+const STORAGE_ROOT_CONTEXT = 'lnurlwallet-storage-root-v1'
+
+export const deriveStorageRootKey = (seedPhrase: string): Uint8Array => {
+  const seed = mnemonicToSeedSync(seedPhrase.trim().toLowerCase())
+  return sha256(new Uint8Array([...seed, ...utf8ToBytes(STORAGE_ROOT_CONTEXT)]))
 }
 
 // this wallet's own compact serialization of an HDKey node - privateKey (32
@@ -287,6 +303,69 @@ export const clearSavedLinkingKey = (): void => {
   localStorage.removeItem(LINKING_KEY_STORAGE_KEY)
 }
 
+// The current bearer-encryption root (see deriveStorageRootKey), persisted
+// the same way and under the same StoredSecret shape as the legacy linking
+// key above - same 32 raw bytes either way, deriveBearerAesKey doesn't
+// care which kind it's handed. A wallet holds at most one of these two
+// slots populated at a time: a fresh setup only ever writes this one, an
+// existing wallet writes it once (and clears the legacy slot) the moment
+// it runs the "upgrade encryption" migration (WalletContext's
+// upgradeEncryption) - see WalletContext's own dual-format handling for
+// which slot a given unlock actually reads.
+const STORAGE_ROOT_KEY_STORAGE_KEY = 'lnurlwallet_storage_root_key'
+
+export const savedStorageRootKeyExists = (): boolean =>
+  readSecret(STORAGE_ROOT_KEY_STORAGE_KEY) !== null
+
+export const savedStorageRootKeyIsEncrypted = (): boolean =>
+  readSecret(STORAGE_ROOT_KEY_STORAGE_KEY)?.enc === true
+
+export const getSavedStorageRootKeyStored = (): StoredSecret | null =>
+  readSecret(STORAGE_ROOT_KEY_STORAGE_KEY)
+
+export const getPlainStorageRootKey = (): Uint8Array | null => {
+  const stored = readSecret(STORAGE_ROOT_KEY_STORAGE_KEY)
+  if (stored === null || stored.enc === true) return null
+  return hexToBytes(stored.value)
+}
+
+export const saveStorageRootKey = async (
+  storageRootKey: Uint8Array,
+  password?: string
+): Promise<void> => {
+  const hex = bytesToHex(storageRootKey)
+  if (!password) {
+    localStorage.setItem(
+      STORAGE_ROOT_KEY_STORAGE_KEY,
+      JSON.stringify({enc: false, value: hex})
+    )
+    return
+  }
+  const parts = await encryptSecretParts(hex, password)
+  localStorage.setItem(
+    STORAGE_ROOT_KEY_STORAGE_KEY,
+    JSON.stringify({enc: true, ...parts})
+  )
+}
+
+export const restoreStorageRootKeyStored = (stored: StoredSecret): void => {
+  localStorage.setItem(STORAGE_ROOT_KEY_STORAGE_KEY, JSON.stringify(stored))
+}
+
+export const decryptSavedStorageRootKey = async (
+  password: string
+): Promise<Uint8Array> => {
+  const stored = readSecret(STORAGE_ROOT_KEY_STORAGE_KEY)
+  if (!stored || !stored.enc) {
+    throw new Error('No encrypted storage key saved.')
+  }
+  return hexToBytes(await decryptSecretParts(stored, password))
+}
+
+export const clearSavedStorageRootKey = (): void => {
+  localStorage.removeItem(STORAGE_ROOT_KEY_STORAGE_KEY)
+}
+
 // LUD-25 cash root node (see deriveLud25CashRootNode), stored the same way
 // and under the same password as the linking key above - it's always
 // derived and saved alongside it (WalletContext's setup), so there's no
@@ -349,22 +428,53 @@ export const clearSavedCashRootKey = (): void => {
   localStorage.removeItem(CASH_ROOT_KEY_STORAGE_KEY)
 }
 
-// The bearer-encryption key is derived (not random): sha256 over the linking
-// key plus a fixed context string. Deterministic derivation is what makes
-// backup/restore work with nothing but the seed phrase - restore the seed on
-// a fresh device and every previously exported ciphertext decrypts again.
+// The bearer-encryption key is derived (not random): sha256 over the root
+// key (legacy linking key, or the current storage root key - see
+// deriveWalletLinkingKey/deriveStorageRootKey above, both just 32 raw
+// bytes as far as this is concerned) plus a fixed context string.
+// Deterministic derivation is what makes backup/restore work with nothing
+// but the seed phrase - restore the seed on a fresh device and every
+// previously exported ciphertext decrypts again.
 const BEARER_KEY_CONTEXT = 'lnurlcash-bearer-encryption-v1'
 
-export const deriveBearerAesKey = (
-  linkingPrivKey: Uint8Array
-): Promise<CryptoKey> => {
+export const deriveBearerAesKey = (rootKey: Uint8Array): Promise<CryptoKey> => {
   const material = sha256(
-    new Uint8Array([...linkingPrivKey, ...utf8ToBytes(BEARER_KEY_CONTEXT)])
+    new Uint8Array([...rootKey, ...utf8ToBytes(BEARER_KEY_CONTEXT)])
   )
   return crypto.subtle.importKey('raw', material, 'AES-GCM', false, [
     'encrypt',
     'decrypt'
   ])
+}
+
+// Compares two non-extractable AES-GCM keys for equality without ever
+// exporting either: the same key, same fixed IV and same fixed plaintext
+// always produces byte-identical ciphertext, so a match here is as
+// conclusive as comparing the raw key material directly would be. Used
+// only as a same-session probe (WalletContext's upgradeEncryption, to
+// prove a re-entered seed phrase actually belongs to the active wallet
+// before touching anything) - the fixed IV is fine precisely because no
+// output here is ever kept or reused as real ciphertext.
+const KEY_PROBE_IV = new Uint8Array(12)
+const KEY_PROBE_PLAINTEXT = utf8ToBytes('lnurlwallet-key-probe')
+
+export const aesKeysEqual = async (
+  a: CryptoKey,
+  b: CryptoKey
+): Promise<boolean> => {
+  const [ca, cb] = await Promise.all([
+    crypto.subtle.encrypt(
+      {name: 'AES-GCM', iv: KEY_PROBE_IV},
+      a,
+      KEY_PROBE_PLAINTEXT
+    ),
+    crypto.subtle.encrypt(
+      {name: 'AES-GCM', iv: KEY_PROBE_IV},
+      b,
+      KEY_PROBE_PLAINTEXT
+    )
+  ])
+  return bytesToHex(new Uint8Array(ca)) === bytesToHex(new Uint8Array(cb))
 }
 
 export type EncryptedRecordParts = {iv: string; ciphertext: string}

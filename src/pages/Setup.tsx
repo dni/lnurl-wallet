@@ -4,34 +4,27 @@ import {A, useNavigate, useSearchParams} from '@solidjs/router'
 import {IoRefreshSharp, IoSearchSharp, IoTrashSharp} from 'solid-icons/io'
 
 import {useWallet} from '../WalletContext'
-import {
-  generateSeedPhrase,
-  isValidSeedPhrase,
-  savedKeyIsEncrypted
-} from '../keys'
-import {applyBackup, MAX_BACKUP_FILE_BYTES} from '../storage'
+import {generateSeedPhrase, isValidSeedPhrase} from '../keys'
 import {notify, NotifyKind, msatToSats} from '../helpers'
 import {resolveMintInput} from '../lnurlcash'
 import {PUBLIC_MINTS} from '../trustedMints'
 import {scanMintForNotes, RECOVERY_GAP_LIMIT} from '../recovery'
 import {mergeCashSecretIndices} from '../cashSecrets'
 
-type Tab = 'create' | 'restore' | 'backup'
+type Tab = 'create' | 'restore'
 
 // the linking key's ciphertext sits in localStorage AND travels inside
 // every backup file by design, so this password is the only thing between
 // an offline brute-force and every note the wallet holds - a one-character
 // password is no password at all
-const MIN_PASSWORD_LENGTH = 8
+export const MIN_PASSWORD_LENGTH = 8
 
 const Setup: Component = () => {
-  const {setup, state, refreshState, unlock} = useWallet()
+  const {setup, state} = useWallet()
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const [tab, setTab] = createSignal<Tab>(
-    searchParams.tab === 'restore' || searchParams.tab === 'backup'
-      ? searchParams.tab
-      : 'create'
+    searchParams.tab === 'restore' ? 'restore' : 'create'
   )
   const [seedPhrase, setSeedPhrase] = createSignal<string | null>(null)
   const [restorePhrase, setRestorePhrase] = createSignal('')
@@ -42,15 +35,6 @@ const Setup: Component = () => {
   const [setupPassword, setSetupPassword] = createSignal('')
   const [confirmPassword, setConfirmPassword] = createSignal('')
   const [busy, setBusy] = createSignal(false)
-  const [backupBusy, setBackupBusy] = createSignal(false)
-  // set when a backup file's own key was skipped because this device
-  // already has a wallet - see applyBackup's linkingKeySkipped
-  const [backupSkipped, setBackupSkipped] = createSignal(false)
-  // set when a backup installed its own linking key: the restore then holds
-  // at an explicit source-trust acknowledgment instead of proceeding
-  // straight into a wallet keyed by material the file's author may know
-  const [backupKeyRestored, setBackupKeyRestored] = createSignal(false)
-  let backupFileRef: HTMLInputElement | undefined
   // set once a seed restore succeeds (never for "create new" - a fresh
   // seed has nothing to recover) - holds on the recovery step (see
   // MintRecovery below) instead of navigating straight to /wallet
@@ -106,69 +90,6 @@ const Setup: Component = () => {
     await finishSetup(restorePhrase().trim().toLowerCase())
   }
 
-  // sets this device's wallet up straight from a backup file's own
-  // password-encrypted key (see storage.ts's applyBackup) - no seed phrase
-  // needed, as long as the same password is still known. Only installs the
-  // key onto a device with none yet; bearers from the file merge into
-  // storage regardless of whether the key was.
-  const restoreFromBackupFile = async (e: Event) => {
-    const input = e.currentTarget as HTMLInputElement
-    const file = input.files?.[0]
-    input.value = ''
-    if (!file) return
-    setBackupBusy(true)
-    setBackupSkipped(false)
-    try {
-      if (file.size > MAX_BACKUP_FILE_BYTES) {
-        throw new Error('That file is far too large to be a wallet backup.')
-      }
-      const data = JSON.parse(await file.text())
-      const result = applyBackup(data)
-      if (result.linkingKeyRestored) {
-        // never activated automatically, whatever its storage form: whoever
-        // wrote the file necessarily had the key (encrypted or not), so the
-        // restore pauses for an explicit source-trust acknowledgment - see
-        // the warning shown in this tab
-        setBackupKeyRestored(true)
-        refreshState()
-        return
-      }
-      if (result.linkingKeySkipped) {
-        setBackupSkipped(true)
-        notify(
-          "This device already has a wallet, so the backup's own key was not installed.",
-          NotifyKind.ERROR
-        )
-        return
-      }
-      notify(
-        "This backup doesn't include a password-encrypted key, so it can't set up a wallet on its own - restore its seed phrase instead. Its bearers were still merged into storage and will appear once that seed is restored.",
-        NotifyKind.ERROR
-      )
-    } catch (err) {
-      notify((err as Error).message, NotifyKind.ERROR)
-    } finally {
-      setBackupBusy(false)
-    }
-  }
-
-  // the user has acknowledged the source-trust warning for a
-  // backup-installed key - proceed into it: the unlock screen for an
-  // encrypted key, straight in for a plaintext one
-  const proceedWithBackupKey = async () => {
-    setBackupKeyRestored(false)
-    if (savedKeyIsEncrypted()) {
-      navigate('/wallet')
-      return
-    }
-    try {
-      await unlock()
-      navigate('/wallet')
-    } catch (err) {
-      notify((err as Error).message, NotifyKind.ERROR)
-    }
-  }
-
   return (
     <Show
       when={!showRecovery()}
@@ -176,7 +97,7 @@ const Setup: Component = () => {
     >
       <div id="setup" class="page">
         <h2>Set up your wallet</h2>
-        <Show when={state() !== 'none' && tab() !== 'backup'}>
+        <Show when={state() !== 'none'}>
           <p class="warning">
             A wallet already exists on this device - setting up a new one
             replaces its linking key. Stored bearer tokens encrypted with the
@@ -196,12 +117,6 @@ const Setup: Component = () => {
             onClick={() => setTab('restore')}
           >
             Restore from seed
-          </button>
-          <button
-            classList={{active: tab() === 'backup'}}
-            onClick={() => setTab('backup')}
-          >
-            Restore from backup
           </button>
         </div>
         <div class="setup-card">
@@ -290,58 +205,11 @@ const Setup: Component = () => {
               </button>
             </div>
           </Show>
-          <Show when={tab() === 'backup'}>
-            <p>
-              Sets this device's wallet up straight from a downloaded backup
-              file's own password-encrypted key - no seed phrase needed, as long
-              as you still know the password it was encrypted with. Only works
-              on a device with no wallet on it yet; the file's bearer notes are
-              merged into storage either way and appear once the wallet they
-              belong to is unlocked.
-            </p>
-            <Show when={backupSkipped()}>
-              <p class="warning">
-                This device already has a wallet, so the backup's own key was{' '}
-                <strong>not</strong> installed. If that existing wallet isn't
-                the one this backup belongs to, forget it first (see{' '}
-                <A href="/backup">Backup &amp; restore</A>), then select this
-                file again.
-              </p>
-            </Show>
-            <Show when={backupKeyRestored()}>
-              <p class="warning">
-                The backup's linking key was installed. Whoever wrote that file
-                may know this key - encrypted or not - so only continue if you
-                trust the file's source completely. Otherwise forget this wallet
-                (see <A href="/backup">Backup &amp; restore</A>) and set up a
-                fresh one from your own seed phrase instead.
-              </p>
-              <div class="btns">
-                <button onClick={proceedWithBackupKey}>
-                  I trust this file - continue
-                </button>
-              </div>
-            </Show>
-            <input
-              ref={backupFileRef}
-              type="file"
-              accept="application/json"
-              style="display: none"
-              onChange={restoreFromBackupFile}
-            />
-            <div class="btns">
-              <button
-                disabled={backupBusy()}
-                onClick={() => backupFileRef?.click()}
-              >
-                <Show when={backupBusy()}>
-                  <IoRefreshSharp class="spin" />
-                  &nbsp;
-                </Show>
-                Select backup file
-              </button>
-            </div>
-          </Show>
+          <p>
+            Restoring straight from a backup file instead - no seed phrase
+            needed, as long as you still know its password - happens on the{' '}
+            <A href="/backup">Backup &amp; restore</A> page.
+          </p>
         </div>
       </div>
     </Show>

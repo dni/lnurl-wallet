@@ -57,9 +57,9 @@ const Hero: Component = () => {
           <IoLockClosedSharp />
           <h3>Encrypted at rest</h3>
           <p>
-            Every note is AES-GCM encrypted with a key derived from your linking
-            key before it touches local storage - and the linking key itself can
-            be password-encrypted too.
+            Every note is AES-GCM encrypted with a key derived straight from
+            your seed phrase before it touches local storage - and that derived
+            key itself can be password-encrypted too.
           </p>
         </div>
         <div class="hero-feature">
