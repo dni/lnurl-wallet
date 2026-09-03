@@ -384,6 +384,28 @@ describe('LUD-25 mint address (experimental)', () => {
   })
 })
 
+describe('secret-free device mirrors', () => {
+  it('fails locally instead of asking the mint for a note without k1', async () => {
+    const fetchSpy = vi.fn(mint.fetch)
+    vi.stubGlobal('fetch', fetchSpy as unknown as typeof fetch)
+
+    await expect(fetchNoteInfo(`${WITHDRAW_URL}?amount=21000`)).rejects.toThrow(
+      /reconnect the vault/i
+    )
+    expect(fetchSpy).not.toHaveBeenCalled()
+  })
+
+  it('fails locally instead of sending a mutation with an empty k1', async () => {
+    const fetchSpy = vi.fn(mint.fetch)
+    vi.stubGlobal('fetch', fetchSpy as unknown as typeof fetch)
+
+    await expect(meltNote(WITHDRAW_CALLBACK, '', 'lnbcmock')).rejects.toThrow(
+      /reconnect the vault/i
+    )
+    expect(fetchSpy).not.toHaveBeenCalled()
+  })
+})
+
 describe('mint -> rotate -> split -> merge -> melt', () => {
   it('carries one note through the full LUD-25 lifecycle', async () => {
     const payInfo = await fetchPayRequest(PAY_URL)

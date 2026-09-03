@@ -275,7 +275,7 @@ export const requireNoteK1 = (url: string): string => {
   const k1 = noteK1(url)
   if (!k1) {
     throw new Error(
-      'This note has no secret in the browser - it may be device-backed.'
+      'This note has no secret in the browser. If it is marked "on device", reconnect the vault before refreshing or spending it.'
     )
   }
   return k1
@@ -647,6 +647,12 @@ export type WithdrawRequestInfo = {
 export const fetchNoteInfo = async (
   url: string
 ): Promise<WithdrawRequestInfo> => {
+  // A device-backed bearer deliberately keeps only a secret-free mirror URL
+  // in browser storage. Never send that mirror to /w: SERVICE quite rightly
+  // rejects a withdraw lookup without k1, but its validation error hides the
+  // useful recovery action (reconnect the vault and export there). Every
+  // legitimate caller already reconstructs a secret-bearing URL first.
+  const queried = requireNoteK1(url)
   // `sig` (offline verification) is only meaningful to a holder inspecting
   // the note locally - the service already knows what it signed, so this
   // GET has no use for it and it's dropped before the request goes out
@@ -678,8 +684,7 @@ export const fetchNoteInfo = async (
   // spec MUST: the response's k1 is the actual bearer secret, never a
   // derived/opaque id - a service returning something else for the k1 we
   // queried is non-compliant (or the note was rotated by someone else)
-  const queried = noteK1(url)
-  if (queried && body.k1.toLowerCase() !== queried) {
+  if (body.k1.toLowerCase() !== queried) {
     throw new Error(
       "Service echoed back a different k1 than queried - the note may have been redeemed elsewhere, or the service isn't spec-compliant."
     )
@@ -842,6 +847,16 @@ const callbackRequest = async (
   callback: string,
   params: [string, string][]
 ): Promise<WithdrawSuccessResponse> => {
+  // Every mutation below is a bearer operation and therefore needs at least
+  // one non-empty k1. Fail locally with the same actionable message as a
+  // secret-free informational GET instead of leaking an empty query to the
+  // mint and surfacing its generic request-validation response.
+  const k1s = params.filter(([key]) => key === 'k1').map(([, value]) => value)
+  if (k1s.length === 0 || k1s.some(k1 => k1.trim() === '')) {
+    throw new Error(
+      'This note has no secret in the browser. If it is marked "on device", reconnect the vault before refreshing or spending it.'
+    )
+  }
   let cbUrl: URL
   try {
     cbUrl = new URL(callback)
