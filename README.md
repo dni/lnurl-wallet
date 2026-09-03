@@ -140,45 +140,56 @@ The wallet follows the spec's security guidance:
   side, grouped per service; combine (merge) works across selected
   same-mint notes in a single request.
 
-## Security model: encrypted with your linking key, in your local storage
+## Security model: encrypted with a key derived from your seed, in your local storage
 
 - At setup a 12-word BIP39 **seed phrase** is generated in your browser. It
   is **never stored** - write it down; it is the only way to recover the
   wallet on another device.
-- From the seed a **linking key** is derived using the LUD-05 derivation
-  (same scheme as lnurl_server) against the fixed domain `lnurlwallet`, so
-  the identity is independent of where this page is hosted.
-- Every **bearer note is AES-256-GCM encrypted** with a key derived from
-  the linking key before it is written to local storage. Plaintext secrets
+- Every **bearer note is AES-256-GCM encrypted** with a key derived
+  directly from the seed (sha256 over the BIP39 seed bytes plus a fixed
+  context string) before it is written to local storage. Plaintext secrets
   never touch disk.
-- The **linking key itself is stored encrypted as well**: during setup you
-  are asked for a password (8 characters minimum) and the key is saved as
-  AES-GCM ciphertext under a PBKDF2 (210k iterations, SHA-256) stretch of
-  that password. Unlocking decrypts it into memory only. Opting out is
-  possible but leaves the key readable to anyone using the browser profile.
+- That **derived encryption key is itself stored encrypted as well**
+  (there is no separate identity keypair in between - see below): during
+  setup you are asked for a password (8 characters minimum) and the key is
+  saved as AES-GCM ciphertext under a PBKDF2 (210k iterations, SHA-256)
+  stretch of that password. Unlocking decrypts it into memory only. Opting
+  out is possible but leaves the key readable to anyone using the browser
+  profile.
 - The wallet sends nothing anywhere except the note operations you
   trigger, straight to the issuing service.
+
+A wallet created before this scheme shipped instead derives its encryption
+key through a LUD-05 linking keypair - an identity this wallet never
+actually presents to any service, so the keypair was pure overhead for what
+it was being used for. Those wallets keep working exactly as before (the
+legacy derivation is still supported for unlocking), and the Backup page
+offers a one-time **"Upgrade encryption"** action: re-enter your seed
+phrase, and it re-encrypts every stored note and activity entry under the
+simpler seed-direct key, then retires the old one. Nothing about the seed
+phrase or the notes themselves changes, only how the encryption key is
+derived.
 
 ## Backup & restore
 
 **Backup** downloads a single JSON file with all your bearer notes exactly
-as stored - **still encrypted**. If the linking key is password-encrypted,
-its ciphertext is included too (backup + password restores everything on a
-new device); a plaintext-stored linking key is never exported, the seed
-phrase is its recovery path.
+as stored - **still encrypted**. If your encryption key is password-
+encrypted, its ciphertext is included too (backup + password restores
+everything on a new device); a plaintext-stored key is never exported, the
+seed phrase is its recovery path.
 
 **Restore** merges a backup file's notes into local storage, skipping ones
 already present. Ciphertexts become readable once the same seed (hence the
-same linking key) is active - restore the seed first or the file first,
+same derived key) is active - restore the seed first or the file first,
 either order works. Everything in the file is validated before anything is
-installed: a malformed linking-key record is skipped rather than planted,
-and a restored linking key - encrypted or not - is never activated
-automatically, since whoever wrote the file may know that key; the restore
-pauses on an explicit source-trust warning first. Trusted mints come
-across unlocked and **unconfirmed**: a file can neither pin a key change
-nor plant an irremovable entry, and a file-sourced pin stays out of
-"signed"-badge verification until a live response from that mint advertises
-the same key (any refresh or lookup confirms it).
+installed: a malformed key record is skipped rather than planted, and a
+restored key - encrypted or not - is never activated automatically, since
+whoever wrote the file may know that key; the restore pauses on an
+explicit source-trust warning first. Trusted mints come across unlocked
+and **unconfirmed**: a file can neither pin a key change nor plant an
+irremovable entry, and a file-sourced pin stays out of "signed"-badge
+verification until a live response from that mint advertises the same key
+(any refresh or lookup confirms it).
 
 A backup protects against a lost device, not against theft of the note
 itself: the service settles for whoever presents a `k1` first. Rotation

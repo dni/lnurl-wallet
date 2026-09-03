@@ -6,6 +6,10 @@ import {
   savedKeyExists,
   savedKeyIsEncrypted,
   restoreLinkingKeyStored,
+  getSavedStorageRootKeyStored,
+  savedStorageRootKeyExists,
+  savedStorageRootKeyIsEncrypted,
+  restoreStorageRootKeyStored,
   isValidStoredSecret,
   getSavedCashRootKeyStored,
   savedCashRootKeyIsEncrypted,
@@ -219,6 +223,57 @@ export const clearAllActivity = (): void => {
   localStorage.removeItem(ACTIVITY_STORAGE_KEY)
 }
 
+// WalletContext's upgradeEncryption: rewrites every stored bearer and
+// activity record under a new AES key, in place. Not persistBearer/
+// persistActivityEvent in a loop: the latter is append-only (it would
+// duplicate every existing entry rather than replace it - see its own
+// comment above), and both would lose the original on-disk order - activity
+// in particular relies on staying oldest-first for its own trim-from-the-
+// front logic. Iterating readEncrypted*() directly instead preserves both
+// ids and exact ordering. A record that won't decrypt under the outgoing
+// key either (shouldn't happen - see upgradeEncryption's own seed-match
+// check - but never say never) is left exactly as it was, same
+// "don't destroy what you can't read" rule loadBearers/loadActivity apply.
+export const reencryptAllRecords = async (
+  oldAesKey: CryptoKey,
+  newAesKey: CryptoKey
+): Promise<void> => {
+  await withStorageLock(BEARERS_STORAGE_KEY, async () => {
+    const records = await Promise.all(
+      readEncryptedBearers().map(async record => {
+        try {
+          const {id, ...parts} = record
+          const plain = await decryptRecord<Omit<Bearer, 'id'>>(
+            oldAesKey,
+            parts
+          )
+          return {id, ...(await encryptRecord(newAesKey, plain))}
+        } catch {
+          return record
+        }
+      })
+    )
+    writeEncryptedBearers(records)
+  })
+  await withStorageLock(ACTIVITY_STORAGE_KEY, async () => {
+    const records = await Promise.all(
+      readEncryptedActivity().map(async record => {
+        try {
+          const {id, ...parts} = record
+          const plain = await decryptRecord<Omit<ActivityEvent, 'id'>>(
+            oldAesKey,
+            parts
+          )
+          return {id, ...(await encryptRecord(newAesKey, plain))}
+        } catch {
+          return record
+        }
+      })
+    )
+    writeEncryptedActivity(records)
+  })
+}
+
 // Backup file: everything exactly as it sits in localStorage - bearer
 // ciphertexts always, the linking-key and LUD-25 cash-root-key records only
 // when each is itself password-encrypted (a plaintext one never leaves the
@@ -236,7 +291,14 @@ export type BackupFile = {
   type: 'lnurlwallet-backup'
   version: 1
   createdAt: number
+  // exactly one of these two is ever set on a given file - whichever this
+  // device currently has active (see keys.ts's dual-format storage). Both
+  // are read the same way on restore (isValidStoredSecret doesn't care
+  // which kind of 32 raw bytes it's guarding), so an old backup with only
+  // linkingKey still restores fine on a wallet that's since upgraded, and
+  // vice versa.
   linkingKey?: StoredSecret
+  storageRootKey?: StoredSecret
   cashRootKey?: StoredSecret
   cashIndices?: Record<string, number>
   bearers: EncryptedBearerRecord[]
@@ -252,7 +314,9 @@ export const buildBackup = (): BackupFile => {
     trustedMints: trustedMints(),
     cashIndices: readCashSecretIndices()
   }
-  if (savedKeyIsEncrypted()) {
+  if (savedStorageRootKeyIsEncrypted()) {
+    backup.storageRootKey = getSavedStorageRootKeyStored()!
+  } else if (savedKeyIsEncrypted()) {
     backup.linkingKey = getSavedLinkingKeyStored()!
   }
   if (savedCashRootKeyIsEncrypted()) {
@@ -342,17 +406,24 @@ export const applyBackup = (data: unknown): RestoreResult => {
 
   let linkingKeyRestored = false
   let linkingKeySkipped = false
+  // whichever of the two the file carries (see BackupFile's own comment) -
   // an invalid key record reads as "no key in this backup", never as skipped
-  if (backup.linkingKey && isValidStoredSecret(backup.linkingKey)) {
-    if (savedKeyExists()) {
+  const incomingKey = isValidStoredSecret(backup.storageRootKey)
+    ? {stored: backup.storageRootKey, restore: restoreStorageRootKeyStored}
+    : isValidStoredSecret(backup.linkingKey)
+      ? {stored: backup.linkingKey, restore: restoreLinkingKeyStored}
+      : null
+  if (incomingKey) {
+    if (savedStorageRootKeyExists() || savedKeyExists()) {
       linkingKeySkipped = true
     } else {
-      restoreLinkingKeyStored(backup.linkingKey)
+      incomingKey.restore(incomingKey.stored)
       linkingKeyRestored = true
-      // LUD-25: the cash root key always travels with the linking key
-      // (same password, same lifecycle - see WalletContext's setup), so it
-      // installs under the exact same gate, silently - nothing here needs
-      // its own restored/skipped flags, it's just along for the ride
+      // LUD-25: the cash root key always travels with whichever root key
+      // above (same password, same lifecycle - see WalletContext's setup
+      // and upgradeEncryption), so it installs under the exact same gate,
+      // silently - nothing here needs its own restored/skipped flags, it's
+      // just along for the ride
       if (backup.cashRootKey && isValidStoredSecret(backup.cashRootKey, 128)) {
         restoreCashRootKeyStored(backup.cashRootKey)
       }

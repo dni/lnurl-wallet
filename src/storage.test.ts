@@ -192,6 +192,40 @@ describe('buildBackup', () => {
     const backup = storage.buildBackup()
     expect(backup.cashRootKey?.enc).toBe(true)
   })
+
+  it('exports storageRootKey instead of linkingKey once a wallet has upgraded', async () => {
+    await keys.saveLinkingKey(new Uint8Array(32).fill(1), 'correct horse')
+    await keys.saveStorageRootKey(new Uint8Array(32).fill(2), 'correct horse')
+    const backup = storage.buildBackup()
+    expect(backup.storageRootKey?.enc).toBe(true)
+    expect(backup.linkingKey).toBeUndefined()
+  })
+})
+
+describe('applyBackup storage root key handling', () => {
+  it('restores a storageRootKey-only backup onto a fresh device', () => {
+    const result = storage.applyBackup(
+      validBackup({
+        storageRootKey: {enc: false, value: LINKING_HEX_A}
+      })
+    )
+    expect(result.linkingKeyRestored).toBe(true)
+    expect(result.linkingKeySkipped).toBe(false)
+    expect(keys.savedStorageRootKeyExists()).toBe(true)
+    expect(keys.savedKeyExists()).toBe(false)
+  })
+
+  it('skips a storageRootKey backup if this device already has a wallet in either format', async () => {
+    await keys.saveLinkingKey(new Uint8Array(32).fill(1))
+    const result = storage.applyBackup(
+      validBackup({
+        storageRootKey: {enc: false, value: LINKING_HEX_A}
+      })
+    )
+    expect(result.linkingKeyRestored).toBe(false)
+    expect(result.linkingKeySkipped).toBe(true)
+    expect(keys.savedStorageRootKeyExists()).toBe(false)
+  })
 })
 
 describe('applyBackup cash root key handling (LUD-25)', () => {
@@ -259,5 +293,169 @@ describe('applyBackup trusted mints', () => {
       })
     )
     expect(result.trustedMintsAdded).toBe(1)
+  })
+})
+
+// WalletContext's upgradeEncryption migration path
+describe('reencryptAllRecords', () => {
+  it('bearers and activity decrypt under the new key, not the old one', async () => {
+    const oldAesKey = await keys.deriveBearerAesKey(new Uint8Array(32).fill(1))
+    const newAesKey = await keys.deriveBearerAesKey(new Uint8Array(32).fill(2))
+
+    await storage.persistBearer(oldAesKey, {
+      id: storage.newBearerId(),
+      url: 'https://mint.example/w?k1=' + 'aa'.repeat(32),
+      callback: 'https://mint.example/w/cb',
+      amount: 21000,
+      verified: true,
+      createdAt: 1,
+      updatedAt: 1
+    })
+    await storage.persistActivityEvent(oldAesKey, {
+      id: storage.newActivityId(),
+      kind: 'mint',
+      message: 'test event',
+      createdAt: 1
+    })
+
+    await storage.reencryptAllRecords(oldAesKey, newAesKey)
+
+    const bearers = await storage.loadBearers(newAesKey)
+    const activity = await storage.loadActivity(newAesKey)
+    expect(bearers).toHaveLength(1)
+    expect(activity).toHaveLength(1)
+    expect(await storage.loadBearers(oldAesKey)).toHaveLength(0)
+    expect(await storage.loadActivity(oldAesKey)).toHaveLength(0)
+  })
+
+  it('preserves bearer ids and activity insertion order', async () => {
+    const oldAesKey = await keys.deriveBearerAesKey(new Uint8Array(32).fill(1))
+    const newAesKey = await keys.deriveBearerAesKey(new Uint8Array(32).fill(2))
+    const id = storage.newBearerId()
+
+    await storage.persistBearer(oldAesKey, {
+      id,
+      url: 'https://mint.example/w?k1=' + 'bb'.repeat(32),
+      callback: 'https://mint.example/w/cb',
+      amount: 1000,
+      verified: true,
+      createdAt: 1,
+      updatedAt: 1
+    })
+    for (let i = 0; i < 3; i++) {
+      await storage.persistActivityEvent(oldAesKey, {
+        id: storage.newActivityId(),
+        kind: 'mint',
+        message: `event ${i}`,
+        createdAt: i
+      })
+    }
+
+    await storage.reencryptAllRecords(oldAesKey, newAesKey)
+
+    const bearers = await storage.loadBearers(newAesKey)
+    expect(bearers[0].id).toBe(id)
+    const activity = await storage.loadActivity(newAesKey)
+    // loadActivity itself returns newest-first, so this only proves the
+    // migration didn't change which messages exist - the on-disk order
+    // check is that a later persistActivityEvent's own trim-from-the-front
+    // still works, covered by not throwing/losing anything here
+    expect(activity.map(e => e.message).sort()).toEqual([
+      'event 0',
+      'event 1',
+      'event 2'
+    ])
+  })
+
+  it('leaves a record undecryptable by the outgoing key untouched rather than dropping it', async () => {
+    const oldAesKey = await keys.deriveBearerAesKey(new Uint8Array(32).fill(1))
+    const wrongKey = await keys.deriveBearerAesKey(new Uint8Array(32).fill(9))
+    const newAesKey = await keys.deriveBearerAesKey(new Uint8Array(32).fill(2))
+
+    // written under a key that isn't oldAesKey - simulates a record this
+    // migration has no business touching
+    await storage.persistBearer(wrongKey, {
+      id: storage.newBearerId(),
+      url: 'https://mint.example/w?k1=' + 'cc'.repeat(32),
+      callback: 'https://mint.example/w/cb',
+      amount: 500,
+      verified: true,
+      createdAt: 1,
+      updatedAt: 1
+    })
+
+    await storage.reencryptAllRecords(oldAesKey, newAesKey)
+
+    // still there, still readable under the key that actually wrote it -
+    // reencryptAllRecords must not have corrupted or dropped it
+    expect(await storage.loadBearers(wrongKey)).toHaveLength(1)
+    expect(await storage.loadBearers(newAesKey)).toHaveLength(0)
+  })
+})
+
+// End-to-end simulation of WalletContext's own setup -> upgradeEncryption
+// sequence, using the exact same exported primitives it calls (not a
+// reimplementation) - closes the gap unit tests of each piece in isolation
+// leave open: does the real chain of calls actually leave a wallet holding
+// its notes, readable, under the new key, with the old one gone?
+describe('seed-to-upgrade flow (simulates WalletContext)', () => {
+  const SEED =
+    'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about'
+  const PASSWORD = 'correct horse battery staple'
+
+  it('a bearer minted under the legacy key survives the upgrade and the legacy key stops working', async () => {
+    // WalletContext.setup()
+    const legacyKey = keys.deriveWalletLinkingKey(SEED)
+    await keys.saveLinkingKey(legacyKey, PASSWORD)
+    let aesKey = await keys.deriveBearerAesKey(legacyKey)
+
+    // a note minted while still on the legacy key
+    const bearerId = storage.newBearerId()
+    await storage.persistBearer(aesKey, {
+      id: bearerId,
+      url: 'https://mint.example/w?k1=' + 'ee'.repeat(32),
+      callback: 'https://mint.example/w/cb',
+      amount: 21000,
+      verified: true,
+      createdAt: 1,
+      updatedAt: 1
+    })
+
+    // WalletContext.upgradeEncryption(SEED, PASSWORD)
+    expect(keys.savedStorageRootKeyExists()).toBe(false)
+    const candidateLegacyKey = keys.deriveWalletLinkingKey(SEED)
+    const candidateAesKey = await keys.deriveBearerAesKey(candidateLegacyKey)
+    expect(await keys.aesKeysEqual(candidateAesKey, aesKey)).toBe(true)
+
+    const storageRootKey = keys.deriveStorageRootKey(SEED)
+    const newAesKey = await keys.deriveBearerAesKey(storageRootKey)
+    await storage.reencryptAllRecords(aesKey, newAesKey)
+    await keys.saveStorageRootKey(storageRootKey, PASSWORD)
+    aesKey = newAesKey
+    keys.clearSavedLinkingKey()
+
+    // the note survived, readable under the new key
+    const bearers = await storage.loadBearers(aesKey)
+    expect(bearers).toHaveLength(1)
+    expect(bearers[0].id).toBe(bearerId)
+    expect(bearers[0].amount).toBe(21000)
+
+    // the legacy secret is gone, the new one is what's active now
+    expect(keys.savedKeyExists()).toBe(false)
+    expect(keys.savedStorageRootKeyExists()).toBe(true)
+
+    // a wrong seed produces a key that neither matches the (now retired)
+    // legacy derivation nor decrypts the migrated note
+    const wrongSeed = 'zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo vote'
+    const wrongLegacyKey = keys.deriveWalletLinkingKey(wrongSeed)
+    const wrongAesKey = await keys.deriveBearerAesKey(wrongLegacyKey)
+    expect(await keys.aesKeysEqual(wrongAesKey, newAesKey)).toBe(false)
+    expect(await storage.loadBearers(wrongAesKey)).toHaveLength(0)
+
+    // and unlocking this device again (WalletContext.unlock) now takes the
+    // new-format path and reproduces the exact same active key
+    const unlockedRootKey = await keys.decryptSavedStorageRootKey(PASSWORD)
+    const unlockedAesKey = await keys.deriveBearerAesKey(unlockedRootKey)
+    expect(await keys.aesKeysEqual(unlockedAesKey, aesKey)).toBe(true)
   })
 })

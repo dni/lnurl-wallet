@@ -7,7 +7,8 @@ import {
   deriveWalletLinkingKey,
   deriveLud05LinkingKey,
   lud05PathSuffix,
-  linkingPubKeyHex,
+  deriveStorageRootKey,
+  aesKeysEqual,
   encryptSecretParts,
   decryptSecretParts,
   deriveBearerAesKey,
@@ -43,7 +44,6 @@ describe('linking key derivation', () => {
     const b = deriveWalletLinkingKey(SEED)
     expect(bytesToHex(a)).toBe(bytesToHex(b))
     expect(a).toHaveLength(32)
-    expect(linkingPubKeyHex(a)).toMatch(/^0[23][0-9a-f]{64}$/)
   })
 
   it('matches the generic LUD-05 derivation for the wallet domain', () => {
@@ -68,6 +68,33 @@ describe('linking key derivation', () => {
     expect(bytesToHex(deriveLud05LinkingKey(SEED, 'a.example'))).not.toBe(
       bytesToHex(deriveLud05LinkingKey(SEED, 'b.example'))
     )
+  })
+})
+
+describe('storage root key derivation', () => {
+  it('is deterministic for the same seed, and differs from the legacy linking key', () => {
+    const a = deriveStorageRootKey(SEED)
+    const b = deriveStorageRootKey(SEED)
+    expect(bytesToHex(a)).toBe(bytesToHex(b))
+    expect(a).toHaveLength(32)
+    expect(bytesToHex(a)).not.toBe(bytesToHex(deriveWalletLinkingKey(SEED)))
+  })
+
+  it('differs per seed', () => {
+    const otherSeed = 'zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo vote'
+    expect(bytesToHex(deriveStorageRootKey(SEED))).not.toBe(
+      bytesToHex(deriveStorageRootKey(otherSeed))
+    )
+  })
+})
+
+describe('aesKeysEqual', () => {
+  it('is true for two keys derived from the same root, false otherwise', async () => {
+    const a = await deriveBearerAesKey(deriveStorageRootKey(SEED))
+    const b = await deriveBearerAesKey(deriveStorageRootKey(SEED))
+    const c = await deriveBearerAesKey(deriveWalletLinkingKey(SEED))
+    expect(await aesKeysEqual(a, b)).toBe(true)
+    expect(await aesKeysEqual(a, c)).toBe(false)
   })
 })
 
