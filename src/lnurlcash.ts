@@ -639,9 +639,11 @@ export type WithdrawRequestInfo = {
 }
 
 // the informational GET (LUD-03 step 1) - never burns, rotates or alters
-// the note. Per spec this puts k1 on the wire - callers that keep holding
-// the note afterward SHOULD rotate it (see receive.ts / BearerCard's
-// refresh).
+// the note. This always queries by raw k1, which puts it on the wire; LUD-25
+// also defines an h=hex(sha256(k1)) form of this same GET that a SERVICE MAY
+// support instead (see 25.md's "Checking a note without exposing it"), not
+// implemented here. Callers that keep holding the note afterward SHOULD
+// rotate it (see receive.ts / BearerCard's refresh).
 export const fetchNoteInfo = async (
   url: string
 ): Promise<WithdrawRequestInfo> => {

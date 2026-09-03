@@ -262,7 +262,7 @@ const BearerCard: Component<BearerCardProps> = props => {
             <Show when={isSpent()}>
               <span
                 class="bearer-spent"
-                title="Locked as spent - refresh and split (in the toolbar above) are disabled so this copy can't be reused by accident."
+                title="Locked as spent - rotate and split (in the toolbar above) are disabled so this copy can't be reused by accident."
               >
                 <IoBanSharp />
                 &nbsp;spent
@@ -317,7 +317,7 @@ const BearerCard: Component<BearerCardProps> = props => {
                 <button
                   class="icon-btn bearer-action-right"
                   disabled={refreshing()}
-                  title="Refresh value from the service, then rotate (the GET necessarily exposes k1)"
+                  title="Rotate - fetches the current value from the service first (this GET puts k1 on the wire)"
                   onClick={e => {
                     // refreshThisNote flips refreshing() synchronously,
                     // which swaps this button's own icon (see the Show

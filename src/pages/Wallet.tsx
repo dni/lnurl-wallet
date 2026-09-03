@@ -1714,15 +1714,15 @@ const Wallet: Component = () => {
                     offlineMode()
                       ? 'Offline mode is on'
                       : canRefreshSelected()
-                        ? 'Refresh value from the service, then rotate (the GET necessarily exposes k1) - one at a time for every selected note'
-                        : 'Select notes to refresh'
+                        ? 'Fetch the current value from the service, then rotate (this GET puts k1 on the wire) - one at a time for every selected note'
+                        : 'Select notes to rotate'
                   }
                   onClick={refreshSelected}
                 >
                   <Show when={refreshing()} fallback={<IoRefreshSharp />}>
                     <IoRefreshSharp class="spin" />
                   </Show>
-                  &nbsp;Refresh
+                  &nbsp;Rotate
                   <Show when={selectedBearers().length > 1}>
                     &nbsp;({selectedBearers().length})
                   </Show>
@@ -1795,7 +1795,7 @@ const Wallet: Component = () => {
                   <button
                     type="button"
                     class="icon-btn more-btn"
-                    title="More actions - refresh all, remove all spent, label, mark spent, export"
+                    title="More actions - rotate all, remove all spent, label, mark spent, export"
                     onClick={() => setShowMoreMenu(v => !v)}
                   >
                     <IoEllipsisVerticalSharp />
@@ -1889,7 +1889,7 @@ const Wallet: Component = () => {
                         title={
                           offlineMode()
                             ? 'Offline mode is on'
-                            : 'Refresh every unspent note in the wallet, one at a time'
+                            : 'Rotate every unspent note in the wallet, one at a time'
                         }
                         onClick={() => {
                           refreshAllNotes()
@@ -1902,7 +1902,7 @@ const Wallet: Component = () => {
                         >
                           <IoRefreshSharp class="spin" />
                         </Show>
-                        &nbsp;Refresh all
+                        &nbsp;Rotate all
                       </button>
                       <Show when={spentCount() > 0}>
                         <button
