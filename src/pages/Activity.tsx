@@ -15,7 +15,8 @@ import {
   IoTrashSharp,
   IoReceiptSharp,
   IoArrowBackSharp,
-  IoOpenSharp
+  IoOpenSharp,
+  IoSearchSharp
 } from 'solid-icons/io'
 
 import {useWallet} from '../WalletContext'
@@ -35,6 +36,7 @@ const KIND_ICON: Record<ActivityKind, Component> = {
   transfer: IoSwapHorizontalSharp,
   receive: IoArrowDownCircleSharp,
   refresh: IoRefreshSharp,
+  recovered: IoSearchSharp,
   spent: IoBanSharp,
   unspent: IoArrowUndoSharp,
   deleted: IoTrashSharp

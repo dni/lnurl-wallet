@@ -118,31 +118,24 @@ const Backup: Component = () => {
             <figure class="setup-card">
               <h4>Download backup</h4>
               <p>
-                One JSON file with all {bearers().length} bearer note(s),
-                exactly as they sit in local storage: AES-GCM ciphertext, never
-                plaintext - plus your {trustedMints().length} trusted mint(s),
-                which aren't secret and so travel in plain. Notes marked "on
-                device" are only a blank mirror here (amount/host/label) - their
-                real secret lives on your paired vault, not in this file, so
-                recovering them needs the vault itself, not this backup. Also
-                included: the small per-mint counters (LUD-25) behind every note
-                secret this wallet derives from your seed rather than drawing at
-                random - not secret on their own, just bookkeeping that keeps a
-                restored wallet from ever reusing one.
+                One JSON file: your {bearers().length} bearer note(s)
+                (encrypted, never plaintext) and {trustedMints().length} trusted
+                mint(s). Notes marked "on device" are just a blank mirror -
+                recovering those needs the paired vault, not this file.
                 <Show
                   when={savedKeyIsEncrypted()}
                   fallback={
                     <>
                       {' '}
-                      Your linking key is stored unencrypted, so it is{' '}
-                      <strong>not</strong> included - restoring this backup on
-                      another device needs your seed phrase.
+                      Your linking key isn't encrypted, so it's{' '}
+                      <strong>not</strong> included - restoring elsewhere needs
+                      your seed phrase.
                     </>
                   }
                 >
                   {' '}
-                  Your password-encrypted linking key is included, so on a new
-                  device the backup plus your password is enough.
+                  Your password-encrypted linking key is included too, so this
+                  file plus your password is enough on a new device.
                 </Show>
               </p>
               <div class="btns">
@@ -157,11 +150,10 @@ const Backup: Component = () => {
             <figure class="setup-card">
               <h4>Forget this wallet</h4>
               <p class="warning">
-                This removes <strong>everything</strong> from this device - the
-                linking key, every bearer note, trusted mints, and saved links.
-                Unlike locking, restoring the same seed phrase afterward will
-                not bring the notes back: their ciphertext is gone too, not just
-                re-locked. A backup downloaded beforehand is the only way back.
+                Removes <strong>everything</strong> from this device - key,
+                notes, trusted mints, saved links. Restoring the same seed
+                afterward won't bring the notes back; only a backup downloaded
+                first can.
               </p>
               <div class="btns">
                 <button onClick={download}>
@@ -199,24 +191,18 @@ const Backup: Component = () => {
           <figure class="setup-card">
             <h4>Restore backup</h4>
             <p>
-              Bearers from the file are merged into this wallet (already-present
-              ones are skipped) - but they only decrypt under the exact
-              seed-derived key they were encrypted with, and this device's
-              existing wallet, if it has one, is never replaced by a backup
-              file. So <strong>order matters</strong>: do this{' '}
-              <strong>before</strong> creating or restoring any wallet here -
-              either restore your seed phrase first (see{' '}
-              <A href="/setup">Restore from seed</A>), or, if the backup's own
-              password-encrypted key is included, just select the file while
-              this device has no wallet yet. Setting up a wallet here first and
-              importing afterward merges the notes into storage, but they stay
-              invisible - wrong key, nothing to decrypt them with.
+              Notes from the file merge in (duplicates skipped), but only
+              decrypt under the key they were encrypted with.{' '}
+              <strong>Order matters</strong>: restore your seed first (see{' '}
+              <A href="/setup">Restore from seed</A>), or select this file while
+              the device has no wallet yet, if it carries its own encrypted key.
+              Setting up a wallet here first and importing after leaves the
+              notes present but undecryptable.
             </p>
             <Show when={state() === 'none'}>
               <p>
-                No wallet on this device yet: restoring a backup that includes a
-                password-encrypted linking key sets the wallet up from it -
-                otherwise restore your seed phrase first.
+                No wallet here yet: a backup with its own encrypted key sets one
+                up automatically; otherwise restore your seed phrase first.
               </p>
             </Show>
             <input
@@ -236,20 +222,18 @@ const Backup: Component = () => {
             </div>
             <Show when={keyRestored()}>
               <p class="warning">
-                The backup's linking key was installed on this device. Whoever
-                wrote that file may know this key - encrypted or not - so only
-                keep using this wallet if you trust the file's source
-                completely; otherwise forget it below and set up a fresh one
-                from your own seed phrase.
+                This backup's linking key is now installed. Whoever created the
+                file may know it - only continue if you trust its source;
+                otherwise forget this wallet below and set up fresh from your
+                own seed.
               </p>
               <Show
                 when={savedKeyIsEncrypted()}
                 fallback={
                   <>
                     <p class="warning">
-                      The restored key was <strong>not</strong>{' '}
-                      password-encrypted and is now stored in plaintext.
-                      Activating it is withheld until you explicitly confirm:
+                      This key wasn't password-encrypted, so it's now stored in
+                      plaintext. Confirm before activating it:
                     </p>
                     <div class="btns">
                       <button onClick={activateRestoredKey}>
@@ -267,13 +251,10 @@ const Backup: Component = () => {
             </Show>
             <Show when={keySkipped()}>
               <p class="warning">
-                This device already has a wallet, so the backup's own saved key
-                was <strong>not</strong> applied, and any of its notes encrypted
-                under a different key won't show up here. If the wallet already
-                on this device isn't the one this backup belongs to, forget it
-                below - free if it's new/empty - then select this backup file
-                again: restoring straight onto a wallet-less device is what
-                actually installs the backup's own key.
+                This device already has a wallet, so the backup's own key wasn't
+                applied - its notes won't show up here. If this isn't the right
+                wallet, forget it below (free if empty) and select the file
+                again on a wallet-less device.
               </p>
             </Show>
           </figure>

@@ -1686,6 +1686,17 @@ const Wallet: Component = () => {
                         <IoCloseSharp />
                       </button>
                     </Show>
+                    <button
+                      type="button"
+                      class="icon-btn"
+                      title="Close search"
+                      onClick={() => {
+                        setShowSearch(false)
+                        setSearchQuery('')
+                      }}
+                    >
+                      <IoCloseCircleSharp />
+                    </button>
                   </div>
                 </Show>
                 <span class="list-controls-label">Sort:</span>
@@ -1758,10 +1769,12 @@ const Wallet: Component = () => {
                   <Show when={refreshing()} fallback={<IoRefreshSharp />}>
                     <IoRefreshSharp class="spin" />
                   </Show>
-                  &nbsp;Rotate
-                  <Show when={selectedBearers().length > 1}>
-                    &nbsp;({selectedBearers().length})
-                  </Show>
+                  <span class="btn-label">
+                    &nbsp;Rotate
+                    <Show when={selectedBearers().length > 1}>
+                      &nbsp;({selectedBearers().length})
+                    </Show>
+                  </span>
                 </button>
                 <button
                   class="icon-btn split-single-btn"
@@ -1776,7 +1789,7 @@ const Wallet: Component = () => {
                   onClick={() => setShowSplitSingleInput(v => !v)}
                 >
                   <IoGitBranchSharp />
-                  &nbsp;Split
+                  <span class="btn-label">&nbsp;Split</span>
                 </button>
                 <button
                   class="icon-btn combine-btn"
@@ -1793,7 +1806,7 @@ const Wallet: Component = () => {
                   <Show when={combining()} fallback={<IoGitMergeSharp />}>
                     <IoRefreshSharp class="spin" />
                   </Show>
-                  &nbsp;Combine
+                  <span class="btn-label">&nbsp;Combine</span>
                 </button>
                 <button
                   class="icon-btn split-btn"
@@ -1810,7 +1823,7 @@ const Wallet: Component = () => {
                   <Show when={splitting()} fallback={<IoGitBranchSharp />}>
                     <IoRefreshSharp class="spin" />
                   </Show>
-                  &nbsp;Combine &amp; split
+                  <span class="btn-label">&nbsp;Combine &amp; split</span>
                 </button>
                 <button
                   class="icon-btn transfer-btn"
@@ -1825,7 +1838,7 @@ const Wallet: Component = () => {
                   onClick={() => setTransferSource(selectedEligible()[0])}
                 >
                   <IoSwapHorizontalSharp />
-                  &nbsp;Transfer
+                  <span class="btn-label">&nbsp;Transfer</span>
                 </button>
                 <div class="more-menu" ref={el => (moreMenuRef = el)}>
                   <button
@@ -1963,7 +1976,8 @@ const Wallet: Component = () => {
                     onClick={() => setSelected(new Set<string>())}
                   >
                     <IoCloseCircleSharp />
-                    &nbsp;Clear selection ({selected().size})
+                    <span class="btn-label">&nbsp;Clear selection</span>
+                    &nbsp;({selected().size})
                   </button>
                 </Show>
               </div>

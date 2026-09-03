@@ -112,10 +112,9 @@ h2 {
 // still reads as a primary call to action even standing alone next to the
 // scan/NFC/paste widget (.hero-paste-widget) that replaced Receive/Send/Melt
 .wallet-hero-btn {
-  padding: 10px 18px;
+  padding: 9px 18px;
   font-size: 1em;
-  margin-right: 10px;
-  margin-bottom: 10px;
+  margin-right: 8px;
 }
 
 // sits on the same row as the Mint button, in both the empty-state
@@ -629,8 +628,6 @@ pre {
 // ---- paste widget (same structure as lnurl_server's Paste) ----
 
 .paste-widget {
-  width: 100%;
-  max-width: 480px;
   background: rgba($bg, $transparency);
 }
 
@@ -1006,14 +1003,6 @@ nav {
     flex-direction: column;
     align-items: stretch;
   }
-  // flex-basis applies to the main axis - once .hero-actions/.btns stack
-  // into a column above, a leftover 320px flex-basis would set a preferred
-  // height instead of width. Reset to a plain full-width block, same as
-  // .paste-widget's own default, now that there's no row to share
-  .hero-paste-widget {
-    flex: none;
-    width: 100%;
-  }
 }
 
 // ---- wallet page ----
@@ -1129,6 +1118,27 @@ nav {
         $transparency
       );
     }
+  }
+}
+
+@media (max-width: 700px) {
+  // icons only for the note-action row on a small screen - Rotate/Split/
+  // Combine/etc's labels (.btn-label, set on each button above) just crowd
+  // a narrow viewport into wrapping several lines deep; the icon plus each
+  // button's own title tooltip (a long-press on mobile) still says what it
+  // does. Padding drops from the row's normal 18px sides to match, so a
+  // hidden label doesn't leave a wide button around a small icon.
+  .selection-toolbar .btn-label {
+    display: none;
+  }
+  .refresh-btn,
+  .split-single-btn,
+  .combine-btn,
+  .split-btn,
+  .transfer-btn,
+  .more-btn,
+  .clear-selection-btn {
+    padding: 10px;
   }
 }
 
@@ -1495,6 +1505,15 @@ nav {
 }
 
 // click-to-select mint lists on the Mint page (trusted + public)
+// Setup.tsx's seed-recovery mint picker - one checkbox per public mint,
+// stacked instead of .mint-picker's inline chips, so a longer list stays
+// scannable rather than wrapping mid-address
+.recovery-mint-option {
+  display: flex;
+  align-items: center;
+  padding: 3px 0;
+}
+
 .mint-picker {
   display: flex;
   flex-wrap: wrap;

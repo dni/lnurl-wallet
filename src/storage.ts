@@ -134,6 +134,7 @@ export type ActivityKind =
   | 'transfer'
   | 'receive'
   | 'refresh'
+  | 'recovered'
   | 'spent'
   | 'unspent'
   | 'deleted'

@@ -1,0 +1,144 @@
+import {beforeEach, describe, expect, it, vi} from 'vitest'
+
+// same in-memory localStorage stand-in as cashSecrets.test.ts/storage.test.ts -
+// cashSecrets.ts persists per-SERVICE indices there, and a fresh module
+// graph per test keeps them from bleeding across cases
+const store = new Map<string, string>()
+vi.stubGlobal('localStorage', {
+  getItem: (key: string) => store.get(key) ?? null,
+  setItem: (key: string, value: string) => void store.set(key, String(value)),
+  removeItem: (key: string) => void store.delete(key),
+  clear: () => store.clear(),
+  key: () => null,
+  get length() {
+    return store.size
+  }
+})
+
+const SEED =
+  'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about'
+const SERVER = 'mock-mint.test'
+const WITHDRAW_CALLBACK = `https://${SERVER}/w/cb`
+
+let recovery: typeof import('./recovery')
+let cashSecrets: typeof import('./cashSecrets')
+let keys: typeof import('./keys')
+
+beforeEach(async () => {
+  store.clear()
+  vi.resetModules()
+  recovery = await import('./recovery')
+  cashSecrets = await import('./cashSecrets')
+  keys = await import('./keys')
+  cashSecrets.setCashRoot(keys.deriveLud25CashRootNode(SEED))
+})
+
+// mocked fetch response shape matches mockMint.test.ts's own convention -
+// lnurlFetch only ever calls .json() on the result, never inspects
+// status/ok, so a bare {json} stand-in is enough
+const jsonResponse = (body: unknown) =>
+  Promise.resolve({json: async () => body} as unknown as Response)
+
+// a minimal LUD-25 mint fake: `liveAtIndex`'s secret is a live outstanding
+// note, `spentAtIndex`'s (if given) is already spent, every other index was
+// never minted - enough to exercise recovery/spent/gap-limit handling
+// without pulling in mockMint.test.ts's much larger stateful mock
+const fakeMint = (liveAtIndex: number, spentAtIndex: number | null) => {
+  const liveSecret = cashSecrets.cashSecretAtIndex(SERVER, liveAtIndex)!
+  const spentSecret =
+    spentAtIndex === null
+      ? null
+      : cashSecrets.cashSecretAtIndex(SERVER, spentAtIndex)!
+  return (input: string | URL) => {
+    const url = new URL(input.toString())
+    if (url.pathname === '/.well-known/lnurlp/mint') {
+      return jsonResponse({
+        tag: 'payRequest',
+        callback: `https://${SERVER}/pay/cb`,
+        minSendable: 1000,
+        maxSendable: 100_000_000,
+        metadata: '[]',
+        withdrawLink: `https://${SERVER}/w`
+      })
+    }
+    if (url.pathname === '/w') {
+      const k1 = url.searchParams.get('k1')
+      if (k1 === liveSecret) {
+        return jsonResponse({
+          tag: 'withdrawRequest',
+          callback: WITHDRAW_CALLBACK,
+          k1,
+          minWithdrawable: 21000,
+          maxWithdrawable: 21000
+        })
+      }
+      if (spentSecret && k1 === spentSecret) {
+        return jsonResponse({status: 'ERROR', reason: 'Note already spent.'})
+      }
+      return jsonResponse({status: 'ERROR', reason: 'Unknown note.'})
+    }
+    return jsonResponse({status: 'ERROR', reason: 'not found'})
+  }
+}
+
+describe('scanMintForNotes', () => {
+  it('recovers a live note and stops after the gap limit', async () => {
+    vi.stubGlobal('fetch', fakeMint(0, null) as unknown as typeof fetch)
+    const result = await recovery.scanMintForNotes(`mint@${SERVER}`)
+    expect(result.error).toBeUndefined()
+    expect(result.recovered).toHaveLength(1)
+    expect(result.recovered[0].amount).toBe(21000)
+    expect(result.highestUsedIndex).toBe(0)
+  })
+
+  it("a spent index doesn't count toward the gap, but yields nothing", async () => {
+    vi.stubGlobal(
+      'fetch',
+      fakeMint(0, recovery.RECOVERY_GAP_LIMIT) as unknown as typeof fetch
+    )
+    const result = await recovery.scanMintForNotes(`mint@${SERVER}`)
+    expect(result.recovered).toHaveLength(1)
+    expect(result.highestUsedIndex).toBe(recovery.RECOVERY_GAP_LIMIT)
+  })
+
+  it('a mint with nothing outstanding stops at the gap limit and finds nothing', async () => {
+    vi.stubGlobal('fetch', fakeMint(-1, null) as unknown as typeof fetch)
+    const result = await recovery.scanMintForNotes(`mint@${SERVER}`)
+    expect(result.recovered).toHaveLength(0)
+    expect(result.highestUsedIndex).toBeNull()
+    expect(result.error).toBeUndefined()
+  })
+
+  it('reports an unresolvable address without ever calling fetch', async () => {
+    const fetchSpy = vi.fn()
+    vi.stubGlobal('fetch', fetchSpy)
+    const result = await recovery.scanMintForNotes('not a mint address')
+    expect(result.error).toMatch(/not a recognizable/i)
+    expect(fetchSpy).not.toHaveBeenCalled()
+  })
+
+  it('aborts on a transport failure instead of treating it as a gap', async () => {
+    let calls = 0
+    vi.stubGlobal('fetch', ((input: string | URL) => {
+      const url = new URL(input.toString())
+      if (url.pathname === '/.well-known/lnurlp/mint') {
+        return fakeMint(0, null)(input)
+      }
+      calls++
+      if (calls === 1) {
+        return jsonResponse({
+          tag: 'withdrawRequest',
+          callback: WITHDRAW_CALLBACK,
+          k1: url.searchParams.get('k1'),
+          minWithdrawable: 21000,
+          maxWithdrawable: 21000
+        })
+      }
+      return Promise.reject(new Error('network down'))
+    }) as unknown as typeof fetch)
+    const result = await recovery.scanMintForNotes(`mint@${SERVER}`)
+    // the first index (live) was recovered before the second call blew up
+    expect(result.recovered).toHaveLength(1)
+    expect(result.error).toBeTruthy()
+  })
+})
