@@ -18,7 +18,8 @@ import {
   IoTrashSharp,
   IoAddCircleSharp,
   IoLockClosedSharp,
-  IoHelpCircleSharp
+  IoHelpCircleSharp,
+  IoCopySharp
 } from 'solid-icons/io'
 import {MdSharpKeyboard} from 'solid-icons/md'
 
@@ -220,10 +221,10 @@ const Mint: Component = () => {
         stopPolling()
         const deviceAttempt = deviceMintAttempt()
         if (deviceAttempt) {
-          notify(
-            'Payment settled - authenticating the vault receipt...',
-            NotifyKind.LOADING
-          )
+          // no "settled, claiming..." toast here - verifying()/busy() below
+          // already put the UI into its own visible in-progress state, and
+          // stacking one on top of the claim's own result toast is exactly
+          // the clutter this was trimmed down from
           await claimDeviceMint(deviceAttempt, result)
           return
         }
@@ -231,10 +232,6 @@ const Mint: Component = () => {
         // settlement preimage the service discloses here.
         const secret = mintSecret()
         if (secret) {
-          notify(
-            'Payment settled - claiming automatically...',
-            NotifyKind.LOADING
-          )
           await claim(secret, invoicedMsat(), invoicedGrossMsat())
         } else {
           notify(
@@ -752,13 +749,10 @@ const Mint: Component = () => {
           NotifyKind.ERROR
         )
       }
+      // folded into whichever success toast fires below rather than shown
+      // on its own - three toasts for one claim (settled, fee paid, minted)
+      // is more than this deserves
       const feePaidMsat = grossPaidMsat - noteInfo.maxWithdrawable
-      if (feePaidMsat > 0) {
-        notify(
-          `Mint fee paid: ${msatToSats(feePaidMsat)} sats (paid ${msatToSats(grossPaidMsat)}, note is worth ${msatToSats(noteInfo.maxWithdrawable)}).`,
-          NotifyKind.SUCCESS
-        )
-      }
       const mintPubkey = noteInfo.mintPubkey
 
       // if a vault is connected, this note's secret is generated and held
@@ -794,7 +788,10 @@ const Mint: Component = () => {
               (verifyUrl() ? ` Verify: ${verifyUrl()}.` : '')
           )
           notify(
-            `Minted a bearer note of ${msatToSats(result.amountMsat)} sats.`,
+            `Minted a bearer note of ${msatToSats(result.amountMsat)} sats.` +
+              (feePaidMsat > 0
+                ? ` (${msatToSats(feePaidMsat)} sat mint fee.)`
+                : ''),
             NotifyKind.SUCCESS
           )
         } catch (err) {
@@ -898,7 +895,10 @@ const Mint: Component = () => {
         )
       } else {
         notify(
-          `Minted a bearer note of ${msatToSats(noteInfo.maxWithdrawable)} sats.`,
+          `Minted a bearer note of ${msatToSats(noteInfo.maxWithdrawable)} sats.` +
+            (feePaidMsat > 0
+              ? ` (${msatToSats(feePaidMsat)} sat mint fee.)`
+              : ''),
           NotifyKind.SUCCESS
         )
       }
@@ -1480,18 +1480,15 @@ const Mint: Component = () => {
                       </Show>
                       {mint.nodeAlias || mint.server}
                     </h4>
-                    {/* h4 above already reads as mint.server when there's no
-                    alias to show instead - this line only adds anything new
-                    when there's an alias (so the bare hostname still needs
-                    showing somewhere) or a cached username (so it's worth
-                    spelling out the full address, not just the host) */}
-                    <Show when={mint.nodeAlias || mint.username}>
-                      <p class="mint-date">
-                        {mint.username
-                          ? `${mint.username}@${mint.server}`
-                          : mint.server}
-                      </p>
-                    </Show>
+                    {/* always shown, same prominence .mint-pubkey used to
+                    give the signing key before that moved to a copy button
+                    in .btns below - the URL is what's left to visually
+                    anchor on here, alias or not */}
+                    <p class="mint-pubkey">
+                      {mint.username
+                        ? `${mint.username}@${mint.server}`
+                        : mint.server}
+                    </p>
                     <Show when={mint.nodeCapacityMsat !== undefined}>
                       <p class="mint-date">
                         Channel capacity: {msatToSats(mint.nodeCapacityMsat!)}{' '}
@@ -1527,7 +1524,6 @@ const Mint: Component = () => {
                         {msatToSats(mint.outstandingNotesMsat!)} sats
                       </p>
                     </Show>
-                    <p class="mint-pubkey">{mint.mintPubkey}</p>
                     <p class="mint-date">added {formatDate(mint.addedAt)}</p>
                     {/* advance warning of a planned shutdown (see
                     trustedMints.ts's TrustedMint.sunsetDate) - shown for any
@@ -1613,6 +1609,13 @@ const Mint: Component = () => {
                       >
                         <IoGlobeSharp />
                       </a>
+                      <button
+                        class="icon-btn icon-btn-gap"
+                        title="Copy this mint's signing pubkey"
+                        onClick={() => copyToClipboard(mint.mintPubkey)}
+                      >
+                        <IoCopySharp />
+                      </button>
                       <a
                         class="icon-btn icon-btn-gap"
                         title="Look up this Lightning node on mempool.space"
