@@ -595,10 +595,25 @@ pre {
 }
 // BearerCard's tap-to-reveal gate around an embedded Qr (Unveil to hand
 // over) - kept separate from .qr-frame (Qr's own internal sizing) so the
-// overlay covers the whole revealed area, download button included
+// overlay covers the whole revealed area, download button included. Sized
+// well past .qr-frame's own 266px cap: this is the one QR in the app meant
+// to be scanned by someone else's camera across a table, not just glanced
+// at, so it gets the room to be scanned easily rather than sharing the
+// same modest default every other embedded QR uses.
 .qr-wrapper {
   position: relative;
-  display: inline-block;
+  display: block;
+  width: 100%;
+  max-width: 400px;
+  margin: 0 auto;
+  .qr-frame {
+    max-width: none;
+  }
+}
+@media (max-width: 700px) {
+  .qr-wrapper {
+    max-width: 100%;
+  }
 }
 .qr-overlay {
   position: absolute;
@@ -1034,11 +1049,6 @@ nav {
   }
 }
 
-.list-controls-label {
-  opacity: 0.85;
-  font-size: 0.9em;
-}
-
 // the wallet-wide selection bar (selection count/clear, combine/split/
 // transfer) that replaced the old per-mint MintGroupCard header - sits
 // below .list-controls, since acting on a selection only makes sense once
@@ -1076,9 +1086,10 @@ nav {
   margin-left: 8px;
 }
 
-// wraps the More toggle so its panel can anchor under it
+// wraps the More/Sort toggles so their panels can anchor under them
 .more-menu,
-.currency-menu {
+.currency-menu,
+.sort-menu {
   position: relative;
   display: inline-flex;
 }
@@ -1452,6 +1463,13 @@ nav {
   grid-template-columns: 1fr 1fr;
   align-items: start;
   gap: 21px;
+}
+
+// the Mint page's left column (paste/lookup + active flow + trusted
+// mints) carries the actual work; the right column (storeable/public
+// quick-pick lists) is reference material, so it gets less of the row
+#mint .two-columns {
+  grid-template-columns: 2fr 1fr;
 }
 
 @media (max-width: 700px) {

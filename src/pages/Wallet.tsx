@@ -23,7 +23,8 @@ import {
   IoQrCodeSharp,
   IoClipboardSharp,
   IoReturnDownForwardSharp,
-  IoEllipsisVerticalSharp
+  IoEllipsisVerticalSharp,
+  IoSwapVerticalSharp
 } from 'solid-icons/io'
 import {MdSharpKeyboard} from 'solid-icons/md'
 
@@ -125,11 +126,20 @@ const Wallet: Component = () => {
   // below that wrap each item's action)
   const [showMoreMenu, setShowMoreMenu] = createSignal(false)
   let moreMenuRef: HTMLDivElement | null = null
+  // same collapse-behind-one-button treatment as More below, for the same
+  // reason: Amount vs. Updated (plus each one's own direction) was four
+  // buttons/states fighting for space next to a plain "Sort:" label -
+  // one button showing the active choice, a panel for picking the other
+  const [showSortMenu, setShowSortMenu] = createSignal(false)
+  let sortMenuRef: HTMLDivElement | null = null
   onMount(() => {
     const onDocClick = (e: MouseEvent) => {
       const target = e.target as Node
       if (moreMenuRef && !moreMenuRef.contains(target)) {
         setShowMoreMenu(false)
+      }
+      if (sortMenuRef && !sortMenuRef.contains(target)) {
+        setShowSortMenu(false)
       }
     }
     document.addEventListener('mousedown', onDocClick)
@@ -1711,33 +1721,56 @@ const Wallet: Component = () => {
                     </button>
                   </div>
                 </Show>
-                <span class="list-controls-label">Sort:</span>
-                <button
-                  type="button"
-                  classList={{active: sortKey() === 'amount'}}
-                  onClick={() => toggleSort('amount')}
-                >
-                  Amount
-                  <Show when={sortKey() === 'amount'}>
+                <div class="sort-menu" ref={el => (sortMenuRef = el)}>
+                  <button
+                    type="button"
+                    title={`Sort by ${sortKey()} (${sortDesc() ? 'descending' : 'ascending'})`}
+                    onClick={() => setShowSortMenu(v => !v)}
+                  >
+                    <IoSwapVerticalSharp />
+                    &nbsp;{sortKey() === 'amount' ? 'Amount' : 'Updated'}
                     &nbsp;
                     <Show when={sortDesc()} fallback={<IoArrowUpSharp />}>
                       <IoArrowDownSharp />
                     </Show>
+                  </button>
+                  <Show when={showSortMenu()}>
+                    <div class="more-menu-panel">
+                      <button
+                        type="button"
+                        classList={{active: sortKey() === 'amount'}}
+                        onClick={() => {
+                          toggleSort('amount')
+                          setShowSortMenu(false)
+                        }}
+                      >
+                        Amount
+                        <Show when={sortKey() === 'amount'}>
+                          &nbsp;
+                          <Show when={sortDesc()} fallback={<IoArrowUpSharp />}>
+                            <IoArrowDownSharp />
+                          </Show>
+                        </Show>
+                      </button>
+                      <button
+                        type="button"
+                        classList={{active: sortKey() === 'updated'}}
+                        onClick={() => {
+                          toggleSort('updated')
+                          setShowSortMenu(false)
+                        }}
+                      >
+                        Updated
+                        <Show when={sortKey() === 'updated'}>
+                          &nbsp;
+                          <Show when={sortDesc()} fallback={<IoArrowUpSharp />}>
+                            <IoArrowDownSharp />
+                          </Show>
+                        </Show>
+                      </button>
+                    </div>
                   </Show>
-                </button>
-                <button
-                  type="button"
-                  classList={{active: sortKey() === 'updated'}}
-                  onClick={() => toggleSort('updated')}
-                >
-                  Updated
-                  <Show when={sortKey() === 'updated'}>
-                    &nbsp;
-                    <Show when={sortDesc()} fallback={<IoArrowUpSharp />}>
-                      <IoArrowDownSharp />
-                    </Show>
-                  </Show>
-                </button>
+                </div>
                 <Show when={spentCount() > 0}>
                   <button
                     type="button"
@@ -1757,7 +1790,7 @@ const Wallet: Component = () => {
                   onClick={() => setGroupByMint(v => !v)}
                 >
                   <IoLayersSharp />
-                  &nbsp;Group by mint
+                  &nbsp;Group
                 </button>
               </div>
             </section>
