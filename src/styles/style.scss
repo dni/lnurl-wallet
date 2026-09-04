@@ -803,8 +803,7 @@ nav {
 
 .nav-links,
 .nav-persistent {
-  a,
-  .nav-icon-toggle {
+  a {
     display: flex;
     align-items: center;
     margin-right: 8px;
@@ -817,13 +816,6 @@ nav {
       color: $bg;
     }
   }
-}
-
-// on: same look as a hover, but held - a glance at the row shows whether
-// it's active without needing to hover first
-.nav-icon-toggle.active {
-  background: rgba($font-color, $transparency);
-  color: $bg;
 }
 
 // wraps .nav-links + .nav-persistent so both collapse into one dropdown on
@@ -843,12 +835,7 @@ nav {
   display: flex;
   align-items: center;
   margin-left: auto;
-  // direct-child only - .currency-menu wraps its own toggle button, so an
-  // unscoped :last-child here also matches that button as the last (only)
-  // child of .currency-menu whenever its dropdown panel is closed, wiping
-  // out the margin between it and the next nav item
-  > a:last-child,
-  > .nav-icon-toggle:last-child {
+  > a:last-child {
     margin-right: 0;
   }
 }
@@ -916,8 +903,7 @@ nav {
     justify-content: center;
     align-items: stretch;
     margin-left: 0;
-    a,
-    .nav-icon-toggle {
+    a {
       flex: 1 1 auto;
       justify-content: center;
       margin-right: 0;
@@ -1059,6 +1045,13 @@ nav {
   align-items: center;
   flex-wrap: wrap;
   gap: 10px;
+  // the row's own gap already spaces every direct child apart - without
+  // this, a plain <button> child (Search's fallback, Show spent, Group)
+  // also carries the base button rule's own margin-right: 9px, stacking
+  // both for a much wider gap than .sort-menu/.more-menu's wrapper divs get
+  > button {
+    margin-right: 0;
+  }
   > button.active {
     opacity: 1;
     box-shadow: inset 0 0 0 1px $font-color;
@@ -1108,10 +1101,18 @@ nav {
 
 // wraps the More/Sort toggles so their panels can anchor under them
 .more-menu,
-.currency-menu,
 .sort-menu {
   position: relative;
   display: inline-flex;
+}
+// the toggle button itself: most already reset this via .icon-btn, but
+// Sort's doesn't (it carries a text label, not just an icon) - without
+// this its own margin-right: 9px (base button rule) tacks onto the
+// wrapper's own layout box, adding extra space after it beyond whatever
+// gap its container already applies between siblings
+.more-menu > button,
+.sort-menu > button {
+  margin-right: 0;
 }
 
 .more-menu-panel {
@@ -1290,12 +1291,16 @@ nav {
   cursor: pointer;
 }
 
-// one full-width card per row on a phone instead of the fixed 200-300px
-// tile - .bearer-list's own flex-wrap already stacks them, this just stops
-// max-width capping each one to a sliver of the viewport
+// two cards per row on a phone instead of the fixed 200-300px tile - half
+// the row's width minus half the .bearer-list gap (21px), so two side by
+// side plus the gap between them exactly fill it. min-width resets to 0:
+// the base rule's 200px floor is what a phone-width row can't actually fit
+// two of, and would otherwise force back down to one per row regardless of
+// this width
 @media (max-width: 700px) {
   .bearer-card {
-    width: 100%;
+    width: calc(50% - 10.5px);
+    min-width: 0;
     max-width: none;
   }
 }
@@ -1508,15 +1513,16 @@ nav {
 }
 
 @media (max-width: 700px) {
-  .two-columns {
-    grid-template-columns: 1fr;
-  }
-  // Mint keeps its 66/33 split even on a narrow screen instead of
-  // collapsing to the generic single-column stack above - both columns
-  // are still worth seeing side by side rather than one pushing the
-  // other far down the page
+  // applies to every .two-columns page, Mint's 66/33 split included - two
+  // narrow columns side by side on a phone-width screen is worse than one
+  // full-width stack, regardless of how the desktop ratio is split. #mint
+  // .two-columns above is itself an id selector, so it outranks a bare
+  // .two-columns here on specificity alone (media query or not) - it needs
+  // its own explicit override at matching specificity, or this collapse
+  // silently never applies to the Mint page
+  .two-columns,
   #mint .two-columns {
-    grid-template-columns: 2fr 1fr;
+    grid-template-columns: 1fr;
   }
 }
 

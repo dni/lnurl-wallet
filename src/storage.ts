@@ -325,6 +325,25 @@ export const buildBackup = (): BackupFile => {
   return backup
 }
 
+// shared by Backup.tsx's own download and Settings.tsx's "Forget this
+// wallet" (which offers the same download right before its irreversible
+// action) - triggers the actual file save, no toast of its own so each
+// caller's own wording ("Backup downloaded.", etc.) stays theirs to pick.
+// DOM APIs only touched inside the function body, not at module load, so
+// this stays safe to import from storage.test.ts's plain-Node environment
+export const downloadBackupFile = (): void => {
+  const backup = buildBackup()
+  const blob = new Blob([JSON.stringify(backup, null, 2)], {
+    type: 'application/json'
+  })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `lnurlwallet-backup-${new Date().toISOString().slice(0, 10)}.json`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
 export type RestoreResult = {
   added: number
   skipped: number

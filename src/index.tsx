@@ -20,10 +20,10 @@ import Wallet from './pages/Wallet'
 import Setup from './pages/Setup'
 import Mint from './pages/Mint'
 import Activity from './pages/Activity'
-import Backup from './pages/Backup'
 import Docs from './pages/Docs'
 import Vault from './pages/Vault'
 import Claim from './pages/Claim'
+import Settings from './pages/Settings'
 
 const root = document.getElementById('root')
 
@@ -56,7 +56,7 @@ const App = (props: any) => {
               <p>
                 The last view failed to render ({err.message}). Your notes are
                 still safe in storage - reload the page, and if this keeps
-                happening, use Backup to export them.
+                happening, use Settings to export a backup.
               </p>
             </div>
           )}
@@ -86,8 +86,12 @@ const cleanup = render(
       somewhere useful instead of 404ing */}
       <Route path="/melt" component={() => <Navigate href="/wallet" />} />
       <Route path="/activity" component={Activity} />
-      <Route path="/backup" component={Backup} />
+      {/* /backup merged into /settings (backup/restore/forget now live
+      alongside the other wallet-wide settings there) - kept as a redirect
+      so old links/bookmarks still land somewhere useful instead of 404ing */}
+      <Route path="/backup" component={() => <Navigate href="/settings" />} />
       <Route path="/docs" component={Docs} />
+      <Route path="/settings" component={Settings} />
       <Route path="/vault" component={Vault} />
       <Route path="/claim" component={Claim} />
       <Route path="*" component={() => <h1>Page not found</h1>} />
