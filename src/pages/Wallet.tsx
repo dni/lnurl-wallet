@@ -552,7 +552,6 @@ const Wallet: Component = () => {
           amount: result.amountMsat,
           verified: true,
           mintPubkey: result.mintPubkey ?? bearer.mintPubkey,
-          previousPubkeys: result.previousPubkeys ?? bearer.previousPubkeys,
           deviceId: result.deviceId,
           deviceHash: result.deviceHash
         })
@@ -579,7 +578,6 @@ const Wallet: Component = () => {
           amount: info.maxWithdrawable,
           verified: true,
           mintPubkey: info.mintPubkey ?? bearer.mintPubkey,
-          previousPubkeys: info.previousPubkeys ?? bearer.previousPubkeys,
           deviceId: migrated.deviceId,
           deviceHash: migrated.deviceHash
         })
@@ -625,8 +623,7 @@ const Wallet: Component = () => {
               callback: info.callback,
               amount: info.maxWithdrawable,
               verified: false,
-              mintPubkey: info.mintPubkey ?? bearer.mintPubkey,
-              previousPubkeys: info.previousPubkeys ?? bearer.previousPubkeys
+              mintPubkey: info.mintPubkey ?? bearer.mintPubkey
             })
             rotationError = `${(err as Error).message} The rotation may still have gone through - the possible new copy is stored unverified alongside this one; refresh both to reconcile.`
           } else {
@@ -641,8 +638,7 @@ const Wallet: Component = () => {
         callback: info.callback,
         amount: info.maxWithdrawable,
         verified: true,
-        mintPubkey: info.mintPubkey ?? bearer.mintPubkey,
-        previousPubkeys: info.previousPubkeys ?? bearer.previousPubkeys
+        mintPubkey: info.mintPubkey ?? bearer.mintPubkey
       })
       logActivity(
         'refresh',

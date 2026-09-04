@@ -39,7 +39,7 @@ import {
   NotifyKind
 } from '../helpers'
 import {
-  getTrustedMintPubkeys,
+  getTrustedMintPubkey,
   getTrustedMintNodeColor,
   getTrustedMintSunsetDate,
   isMintUnconfirmed
@@ -126,35 +126,30 @@ const BearerCard: Component<BearerCardProps> = props => {
   }
 
   // Offline-verifiable iff the note carries a signature and this wallet has
-  // accepted the issuing SERVICE's current or previous key.  A freshly minted
-  // note, or one recovered after a lost mutation response, may not have its
-  // certificate yet. The trusted-mints registry is authoritative; the
-  // bearer's own field is only a fallback for the edge case of a restored
-  // record whose server isn't in the registry yet - and withheld entirely
-  // when the registry's pin is unconfirmed (file-sourced): then the
-  // bearer's cached claim is just as uncorroborated
+  // accepted the issuing SERVICE's pinned key.  A freshly minted note, or
+  // one recovered after a lost mutation response, may not have its
+  // certificate yet; nor does one signed under a key this mint has since
+  // rotated away from, which a single rotate re-issues under the new key.
+  // The trusted-mints registry is authoritative; the bearer's own field is
+  // only a fallback for the edge case of a restored record whose server
+  // isn't in the registry yet - and withheld entirely when the registry's
+  // pin is unconfirmed (file-sourced): then the bearer's cached claim is
+  // just as uncorroborated
   const offlineVerified = createMemo(() => {
     const sig = noteSignature(props.bearer.url)
     const origin = serviceOriginOf(props.bearer.url)
-    const mintPubkeys = getTrustedMintPubkeys(origin)
-    if (
-      mintPubkeys.length === 0 &&
-      !isMintUnconfirmed(origin) &&
-      props.bearer.mintPubkey
-    ) {
-      mintPubkeys.push(props.bearer.mintPubkey)
-    }
-    if (!sig || mintPubkeys.length === 0) return false
-    return mintPubkeys.some(mintPubkey =>
-      props.bearer.deviceHash
-        ? verifyNoteSignatureHash(
-            props.bearer.deviceHash,
-            props.bearer.amount,
-            sig,
-            mintPubkey
-          )
-        : verifyNoteSignature(k1(), props.bearer.amount, sig, mintPubkey)
-    )
+    const mintPubkey =
+      getTrustedMintPubkey(origin) ??
+      (isMintUnconfirmed(origin) ? null : (props.bearer.mintPubkey ?? null))
+    if (!sig || !mintPubkey) return false
+    return props.bearer.deviceHash
+      ? verifyNoteSignatureHash(
+          props.bearer.deviceHash,
+          props.bearer.amount,
+          sig,
+          mintPubkey
+        )
+      : verifyNoteSignature(k1(), props.bearer.amount, sig, mintPubkey)
   })
 
   // a quick, direct refresh right from the card - same

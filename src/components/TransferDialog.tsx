@@ -272,7 +272,6 @@ const TransferDialog: Component<TransferDialogProps> = props => {
           amount: result.amountMsat,
           verified: true,
           mintPubkey: noteInfo.mintPubkey,
-          previousPubkeys: noteInfo.previousPubkeys,
           deviceId: result.deviceId,
           deviceHash: result.deviceHash
         })
@@ -333,8 +332,7 @@ const TransferDialog: Component<TransferDialogProps> = props => {
               callback: noteInfo.callback,
               amount: noteInfo.maxWithdrawable,
               verified: false,
-              mintPubkey,
-              previousPubkeys: noteInfo.previousPubkeys
+              mintPubkey
             })
             rotationError = `${(err as Error).message} The rotation may still have gone through - the possible rotated copy is stored unverified alongside this one; refresh both to reconcile.`
           } else {
@@ -349,8 +347,7 @@ const TransferDialog: Component<TransferDialogProps> = props => {
         callback: noteInfo.callback,
         amount: noteInfo.maxWithdrawable,
         verified: true,
-        mintPubkey,
-        previousPubkeys: noteInfo.previousPubkeys
+        mintPubkey
       })
       setClaimed(true)
       stopPolling()
@@ -497,8 +494,7 @@ const TransferDialog: Component<TransferDialogProps> = props => {
               callback: props.sourceBearer.callback,
               amount: props.sourceBearer.amount,
               verified: false,
-              mintPubkey: props.sourceBearer.mintPubkey,
-              previousPubkeys: props.sourceBearer.previousPubkeys
+              mintPubkey: props.sourceBearer.mintPubkey
             })
             setSourceConfirmed(true)
             notify(

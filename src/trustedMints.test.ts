@@ -50,26 +50,16 @@ describe('lockTrustedMint', () => {
 
   it('never silently replaces a differing advertised key - it stages it', () => {
     mod.lockTrustedMint('mint.example', KEY_A)
-    expect(mod.lockTrustedMint('mint.example', KEY_B, [KEY_A, KEY_C])).toBe(
-      'rekey-pending'
-    )
+    expect(mod.lockTrustedMint('mint.example', KEY_B)).toBe('rekey-pending')
     const entry = mod
       .trustedMints()
       .find(m => m.server === 'https://mint.example')
     expect(entry?.mintPubkey).toBe(KEY_A) // the pin is untouched
     expect(entry?.pendingMintPubkey).toBe(KEY_B)
-    expect(entry?.pendingPreviousPubkeys).toEqual([KEY_C])
     // the offline-verification lookup must keep answering the pinned key
     expect(mod.getTrustedMintPubkey('mint.example')).toBe(KEY_A)
-    // re-seeing the same candidate updates, but never accepts, its advertised
-    // history before review
-    expect(mod.lockTrustedMint('mint.example', KEY_B, [KEY_A])).toBe(
-      'rekey-pending'
-    )
-    expect(
-      mod.trustedMints().find(m => m.server === 'https://mint.example')
-        ?.pendingPreviousPubkeys
-    ).toBeUndefined()
+    // re-seeing the same candidate stages it once, never twice
+    expect(mod.lockTrustedMint('mint.example', KEY_B)).toBe('rekey-pending')
     expect(mod.trustedMints()).toHaveLength(1)
   })
 
@@ -86,17 +76,6 @@ describe('lockTrustedMint', () => {
     expect(mod.getTrustedMintPubkey('https://localhost:8000/other')).toBe(KEY_B)
     expect(mod.trustedMints()).toHaveLength(2)
   })
-
-  it('pins a held note current key but stages advertised history', () => {
-    expect(mod.lockTrustedMint('mint.example', KEY_A, [KEY_B])).toBe(
-      'rekey-pending'
-    )
-    const entry = mod.trustedMints()[0]
-    expect(entry?.mintPubkey).toBe(KEY_A)
-    expect(entry?.previousPubkeys).toBeUndefined()
-    expect(entry?.pendingPreviousPubkeys).toEqual([KEY_B])
-    expect(mod.getTrustedMintPubkeys('mint.example')).toEqual([KEY_A])
-  })
 })
 
 describe('rekey review', () => {
@@ -108,43 +87,23 @@ describe('rekey review', () => {
       .trustedMints()
       .find(m => m.server === 'https://mint.example')
     expect(entry?.mintPubkey).toBe(KEY_B)
-    expect(entry?.previousPubkeys).toEqual([KEY_A])
     expect(entry?.pendingMintPubkey).toBeUndefined()
     expect(mod.getTrustedMintPubkey('mint.example')).toBe(KEY_B)
     // the lock survives the rotation
     expect(entry?.locked).toBe(true)
   })
 
-  it('stages newly advertised history and accepts it only after review', () => {
-    mod.addTrustedMint('mint.example', KEY_A, undefined, [KEY_B])
-    expect(mod.getTrustedMintPubkeys('mint.example')).toEqual([KEY_A, KEY_B])
-
-    expect(
-      mod.addTrustedMint('mint.example', KEY_A, undefined, [KEY_B, KEY_C])
-    ).toBe('rekey-pending')
-    let entry = mod
+  it('retires the old key on an approved rotation', () => {
+    mod.addTrustedMint('mint.example', KEY_A)
+    expect(mod.addTrustedMint('mint.example', KEY_B)).toBe('rekey-pending')
+    mod.confirmTrustedMintRekey('mint.example')
+    expect(mod.getTrustedMintPubkey('mint.example')).toBe(KEY_B)
+    // the old key is gone, not archived - notes signed under it stop
+    // verifying offline until a rotate re-signs them under KEY_B
+    const entry = mod
       .trustedMints()
       .find(m => m.server === 'https://mint.example')
-    expect(entry?.pendingPreviousPubkeys).toEqual([KEY_C])
-    expect(mod.getTrustedMintPubkeys('mint.example')).toEqual([KEY_A, KEY_B])
-
-    mod.confirmTrustedMintRekey('mint.example')
-    entry = mod.trustedMints().find(m => m.server === 'https://mint.example')
-    expect(entry?.previousPubkeys).toEqual([KEY_B, KEY_C])
-    expect(entry?.pendingPreviousPubkeys).toBeUndefined()
-  })
-
-  it('retains the old current key and advertised history after an approved rotation', () => {
-    mod.addTrustedMint('mint.example', KEY_A)
-    expect(
-      mod.addTrustedMint('mint.example', KEY_B, undefined, [KEY_A, KEY_C])
-    ).toBe('rekey-pending')
-    mod.confirmTrustedMintRekey('mint.example')
-    expect(mod.getTrustedMintPubkeys('mint.example')).toEqual([
-      KEY_B,
-      KEY_A,
-      KEY_C
-    ])
+    expect(JSON.stringify(entry)).not.toContain(KEY_A)
   })
 
   it('dismiss drops the candidate and keeps the original pin', () => {
@@ -253,9 +212,7 @@ describe('mergeTrustedMints (backup restore)', () => {
         mintPubkey: KEY_A,
         addedAt: 1,
         locked: true,
-        previousPubkeys: [KEY_C],
-        pendingMintPubkey: KEY_B,
-        pendingPreviousPubkeys: [KEY_C]
+        pendingMintPubkey: KEY_B
       } as never
     ])
     expect(added).toBe(1)
@@ -267,8 +224,6 @@ describe('mergeTrustedMints (backup restore)', () => {
     // the pin sits out of signature verification until corroborated live
     expect(entry?.locked).toBe(false)
     expect(entry?.pendingMintPubkey).toBeUndefined()
-    expect(entry?.previousPubkeys).toBeUndefined()
-    expect(entry?.pendingPreviousPubkeys).toBeUndefined()
     expect(entry?.unconfirmed).toBe(true)
   })
 

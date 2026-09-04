@@ -12,10 +12,6 @@ export type TrustedMint = {
   // merely a hostname.
   server: string
   mintPubkey: string
-  // Accepted earlier SERVICE keys.  Notes issued before a deliberate key
-  // rotation continue to verify against these without weakening the current
-  // pin.
-  previousPubkeys?: string[]
   addedAt: number
   // true once a bearer is held from this server - trust then follows
   // holding funds there, not a standalone opinion, so it can't be revoked
@@ -36,9 +32,6 @@ export type TrustedMint = {
   // would defeat the entire pinning model (a compromised mint could sign
   // unbacked notes that then show the "signed" badge).
   pendingMintPubkey?: string
-  // Newly advertised historical keys are also staged.  An unsigned SERVICE
-  // response cannot silently widen the set of keys trusted to issue notes.
-  pendingPreviousPubkeys?: string[]
   // best-effort node identity/capacity, cached from the mint-address
   // discovery endpoint (see lnurlcash.ts's fetchMintAddress) purely for
   // display (Mint.tsx) - absent for a mint that doesn't support it, or one
@@ -141,30 +134,6 @@ const normalizeOrigin = (value: string): string | null => {
   }
 }
 
-const normalizePubkeys = (
-  values: unknown,
-  excluding?: string
-): string[] | undefined => {
-  if (!Array.isArray(values)) return undefined
-  const keys = values
-    .filter((key): key is string => typeof key === 'string')
-    .map(key => key.toLowerCase())
-    .filter(key => PUBKEY_PATTERN.test(key) && key !== excluding)
-  return [...new Set(keys)].length ? [...new Set(keys)] : undefined
-}
-
-const unacceptedPreviousPubkeys = (
-  advertised: string[] | undefined,
-  existing: TrustedMint
-): string[] | undefined => {
-  const candidates = advertised?.filter(
-    candidate =>
-      candidate !== existing.mintPubkey &&
-      !existing.previousPubkeys?.includes(candidate)
-  )
-  return candidates?.length ? candidates : undefined
-}
-
 const readStored = (): TrustedMint[] => {
   const raw = localStorage.getItem(STORAGE_KEY)
   if (!raw) return []
@@ -193,19 +162,7 @@ const readStored = (): TrustedMint[] => {
         m.pendingMintPubkey.toLowerCase() !== mintPubkey
           ? m.pendingMintPubkey.toLowerCase()
           : undefined
-      return [
-        {
-          ...m,
-          server,
-          mintPubkey,
-          previousPubkeys: normalizePubkeys(m.previousPubkeys, mintPubkey),
-          pendingMintPubkey,
-          pendingPreviousPubkeys: normalizePubkeys(
-            m.pendingPreviousPubkeys,
-            pendingMintPubkey ?? mintPubkey
-          )
-        } as TrustedMint
-      ]
+      return [{...m, server, mintPubkey, pendingMintPubkey} as TrustedMint]
     })
   } catch {
     return []
@@ -228,13 +185,6 @@ export const getTrustedMintPubkey = (server: string): string | null =>
   trustedMints().find(
     m => m.server === normalizeOrigin(server) && !m.unconfirmed
   )?.mintPubkey ?? null
-
-export const getTrustedMintPubkeys = (server: string): string[] => {
-  const mint = trustedMints().find(
-    m => m.server === normalizeOrigin(server) && !m.unconfirmed
-  )
-  return mint ? [mint.mintPubkey, ...(mint.previousPubkeys ?? [])] : []
-}
 
 // true when a server has a pin that came from a file/storage rather than a
 // live response (see TrustedMint.unconfirmed) - callers should treat a
@@ -300,87 +250,38 @@ export type TrustKeyResult = 'added' | 'unchanged' | 'rekey-pending'
 // to confirm or dismiss on the Mints page (see confirmTrustedMintRekey).
 export const lockTrustedMint = (
   server: string,
-  mintPubkey: string,
-  advertisedPreviousPubkeys: string[] = []
+  mintPubkey: string
 ): TrustKeyResult => {
   const origin = normalizeOrigin(server)
   const key = mintPubkey.trim().toLowerCase()
   if (!origin || !PUBKEY_PATTERN.test(key)) return 'unchanged'
-  const advertisedPrevious = normalizePubkeys(advertisedPreviousPubkeys, key)
   const current = trustedMints()
   const existing = current.find(m => m.server === origin)
   if (existing) {
     if (existing.mintPubkey === key) {
-      const pendingPreviousPubkeys = unacceptedPreviousPubkeys(
-        advertisedPrevious,
-        existing
-      )
-      if (
-        existing.locked &&
-        !existing.unconfirmed &&
-        !pendingPreviousPubkeys?.length
-      )
-        return 'unchanged'
+      if (existing.locked && !existing.unconfirmed) return 'unchanged'
       // a match here is a live response from the server advertising this
       // exact key - it corroborates an unconfirmed (file-sourced) pin
       persist(
         current.map(m =>
-          m.server === origin
-            ? {
-                ...m,
-                locked: true,
-                unconfirmed: undefined,
-                pendingPreviousPubkeys
-              }
-            : m
+          m.server === origin ? {...m, locked: true, unconfirmed: undefined} : m
         )
       )
-      return pendingPreviousPubkeys?.length ? 'rekey-pending' : 'unchanged'
+      return 'unchanged'
     }
-    if (existing.pendingMintPubkey === key) {
-      const pendingPreviousPubkeys = unacceptedPreviousPubkeys(
-        advertisedPrevious,
-        existing
-      )
-      if (
-        JSON.stringify(existing.pendingPreviousPubkeys ?? []) !==
-        JSON.stringify(pendingPreviousPubkeys ?? [])
-      ) {
-        persist(
-          current.map(m =>
-            m.server === origin ? {...m, pendingPreviousPubkeys} : m
-          )
-        )
-      }
-      return 'rekey-pending'
-    }
+    if (existing.pendingMintPubkey === key) return 'rekey-pending'
     persist(
       current.map(m =>
-        m.server === origin
-          ? {
-              ...m,
-              pendingMintPubkey: key,
-              pendingPreviousPubkeys: unacceptedPreviousPubkeys(
-                advertisedPrevious,
-                existing
-              )
-            }
-          : m
+        m.server === origin ? {...m, pendingMintPubkey: key} : m
       )
     )
     return 'rekey-pending'
   }
   persist([
     ...current,
-    {
-      server: origin,
-      mintPubkey: key,
-      pendingPreviousPubkeys: advertisedPrevious,
-      addedAt: Date.now(),
-      locked: true
-    }
+    {server: origin, mintPubkey: key, addedAt: Date.now(), locked: true}
   ])
-  return advertisedPrevious?.length ? 'rekey-pending' : 'added'
+  return 'added'
 }
 
 // unlock-time grandfathering of the mints behind already-stored bearers
@@ -435,8 +336,7 @@ export const grandfatherTrustedMint = (
 export const addTrustedMint = (
   server: string,
   mintPubkey: string,
-  nodeInfo?: TrustedMintNodeInfo,
-  advertisedPreviousPubkeys: string[] = []
+  nodeInfo?: TrustedMintNodeInfo
 ): TrustKeyResult => {
   const origin = normalizeOrigin(server)
   const key = mintPubkey.trim().toLowerCase()
@@ -448,7 +348,6 @@ export const addTrustedMint = (
       'Signing key must be a 33-byte compressed pubkey (66 hex characters).'
     )
   }
-  const advertisedPrevious = normalizePubkeys(advertisedPreviousPubkeys, key)
   const current = trustedMints()
   const existing = current.find(m => m.server === origin)
   if (existing) {
@@ -457,38 +356,14 @@ export const addTrustedMint = (
       // unconfirmed (file-sourced) flag
       persist(
         current.map(m =>
-          m.server === origin
-            ? {
-                ...m,
-                ...nodeInfo,
-                unconfirmed: undefined,
-                pendingPreviousPubkeys: advertisedPrevious?.filter(
-                  candidate =>
-                    !m.previousPubkeys?.includes(candidate) &&
-                    candidate !== m.mintPubkey
-                )
-              }
-            : m
+          m.server === origin ? {...m, ...nodeInfo, unconfirmed: undefined} : m
         )
       )
-      return advertisedPrevious?.some(
-        candidate =>
-          !existing.previousPubkeys?.includes(candidate) &&
-          candidate !== existing.mintPubkey
-      )
-        ? 'rekey-pending'
-        : 'unchanged'
+      return 'unchanged'
     }
     persist(
       current.map(m =>
-        m.server === origin
-          ? {
-              ...m,
-              pendingMintPubkey: key,
-              pendingPreviousPubkeys: advertisedPrevious,
-              ...nodeInfo
-            }
-          : m
+        m.server === origin ? {...m, pendingMintPubkey: key, ...nodeInfo} : m
       )
     )
     return 'rekey-pending'
@@ -498,7 +373,6 @@ export const addTrustedMint = (
     {
       server: origin,
       mintPubkey: key,
-      previousPubkeys: advertisedPrevious,
       addedAt: Date.now(),
       locked: false,
       ...nodeInfo
@@ -508,36 +382,26 @@ export const addTrustedMint = (
 }
 
 // the holder confirms a mint's advertised new signing key (Mints page) -
-// The pending current/history set becomes accepted. Legitimate rotations,
-// whether caused by a node move or a dedicated-key change, go through here;
-// nothing else ever replaces or widens a pin.
+// the staged candidate replaces the pin. Legitimate rotations, whether
+// caused by a node move or a dedicated-key change, go through here; nothing
+// else ever replaces a pin. Notes signed under the old key stop verifying
+// offline, which LUD-25 expects: rotating such a note once re-signs it
+// under the current key.
 export const confirmTrustedMintRekey = (server: string): void => {
   const origin = normalizeOrigin(server)
   if (!origin) return
   const current = trustedMints()
   const existing = current.find(m => m.server === origin)
-  if (!existing?.pendingMintPubkey && !existing?.pendingPreviousPubkeys?.length)
-    return
+  if (!existing?.pendingMintPubkey) return
   persist(
     current.map(m =>
       m.server === origin
-        ? (() => {
-            const nextCurrent =
-              existing.pendingMintPubkey ?? existing.mintPubkey
-            const previousPubkeys = [
-              ...(existing.previousPubkeys ?? []),
-              ...(existing.pendingMintPubkey ? [existing.mintPubkey] : []),
-              ...(existing.pendingPreviousPubkeys ?? [])
-            ].filter(key => key !== nextCurrent)
-            return {
-              ...m,
-              mintPubkey: nextCurrent,
-              previousPubkeys: [...new Set(previousPubkeys)],
-              pendingMintPubkey: undefined,
-              pendingPreviousPubkeys: undefined,
-              unconfirmed: undefined
-            }
-          })()
+        ? {
+            ...m,
+            mintPubkey: existing.pendingMintPubkey!,
+            pendingMintPubkey: undefined,
+            unconfirmed: undefined
+          }
         : m
     )
   )
@@ -553,13 +417,7 @@ export const dismissTrustedMintRekey = (server: string): void => {
   if (!current.some(m => m.server === origin)) return
   persist(
     current.map(m =>
-      m.server === origin
-        ? {
-            ...m,
-            pendingMintPubkey: undefined,
-            pendingPreviousPubkeys: undefined
-          }
-        : m
+      m.server === origin ? {...m, pendingMintPubkey: undefined} : m
     )
   )
 }
@@ -623,9 +481,9 @@ export const clearTrustedMints = (): void => {
 // the backup's (possibly stale) copy. Three fields never come across from a
 // file: `locked` (a crafted backup could otherwise plant irremovable junk
 // entries - real locks re-establish themselves from held bearers on live
-// operations anyway), accepted/pending previous keys, and
-// `pendingMintPubkey` (a key change must be re-detected from the mint's own
-// live responses, never staged by a file). Every merged entry is marked `unconfirmed`, keeping it out of offline
+// operations anyway) and `pendingMintPubkey` (a key change must be
+// re-detected from the mint's own live responses, never staged by a file).
+// Every merged entry is marked `unconfirmed`, keeping it out of offline
 // signature verification until a live response from that server advertises
 // the same key (a crafted backup could otherwise forge "signed" badges)
 export const mergeTrustedMints = (incoming: TrustedMint[]): number => {

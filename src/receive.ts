@@ -47,8 +47,7 @@ export const receiveNote = async (
       callback: info.callback,
       amount: info.maxWithdrawable,
       verified: true,
-      mintPubkey: info.mintPubkey,
-      previousPubkeys: info.previousPubkeys
+      mintPubkey: info.mintPubkey
     }
   } catch (err) {
     // the service positively told us this k1 is dead - that's worth more

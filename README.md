@@ -122,11 +122,12 @@ wire layout and the recovery-id-leading layout at least one real
 implementation has sent in the past, trying both rather than hard-failing
 real notes over a byte-order mismatch. Signing keys are pinned to the
 service's full origin, including scheme and port. They never rotate silently:
-if a mint advertises a **different** current key, or adds an earlier key to
-`previousPubkeys`, the change is staged for review on the Mints page. The
-remembered current and previous keys keep deciding the badge until you
-explicitly confirm the change. An unsigned key history does not authenticate
-itself.
+if a mint advertises a **different** key, the change is staged for review on
+the Mints page, and the pinned key keeps deciding the badge until you
+explicitly confirm it. An unsigned response cannot authorise its own
+replacement. Confirming a rotation retires the old key outright - notes
+signed under it stop verifying offline, and a single refresh re-signs them
+under the new one.
 
 The wallet follows the spec's security guidance:
 

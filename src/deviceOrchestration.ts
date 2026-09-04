@@ -235,7 +235,6 @@ export const deviceSettle = async (
 // that partial credit for a simpler, always-consistent local state.
 export type DeviceRefreshResult = DeviceMutationResult & {
   mintPubkey?: string
-  previousPubkeys?: string[]
 }
 
 export const deviceRefresh = async (
@@ -251,11 +250,7 @@ export const deviceRefresh = async (
     k1,
     info.maxWithdrawable
   )
-  return {
-    ...rotated,
-    mintPubkey: info.mintPubkey,
-    previousPubkeys: info.previousPubkeys
-  }
+  return {...rotated, mintPubkey: info.mintPubkey}
 }
 
 // merge: burns every input (device-exported or browser-read as
@@ -646,7 +641,6 @@ export type AdoptedDeviceNote = {
   callback: string
   amountMsat: number
   mintPubkey?: string
-  previousPubkeys?: string[]
   deviceId: string
   deviceHash: string
 }
@@ -694,7 +688,6 @@ export const adoptDeviceNote = async (
         callback: info.callback,
         amountMsat: info.maxWithdrawable,
         mintPubkey: info.mintPubkey,
-        previousPubkeys: info.previousPubkeys,
         deviceId: note.id,
         deviceHash: h
       }

@@ -50,7 +50,6 @@ const MINT_ADDRESS_URL = `${BASE}/mintaddress`
 const MINT_ADDRESS_BAD_URL = `${BASE}/mintaddress-bad`
 const MINT_ADDRESS_UNKNOWN_URL = `${BASE}/mintaddress-unknown`
 const MINT_KEY = `02${'11'.repeat(32)}`
-const PREVIOUS_MINT_KEY = `03${'22'.repeat(32)}`
 const NODE_KEY = `02${'33'.repeat(32)}`
 const NOTE_SIGNATURE = '00'.repeat(65)
 
@@ -219,7 +218,6 @@ class MockMint {
         maxWithdrawable: 100_000_000,
         payLink: PAY_URL,
         mintPubkey: MINT_KEY,
-        previousPubkeys: [PREVIOUS_MINT_KEY],
         nodeAlias: 'mock node',
         nodeUri: `${NODE_KEY}@127.0.0.1:9735`,
         nodeColor: '#3399ff',
@@ -281,8 +279,7 @@ class MockMint {
         ...(k1 ? {k1} : {}),
         minWithdrawable: note.amountMsat,
         maxWithdrawable: note.amountMsat,
-        mintPubkey: MINT_KEY,
-        previousPubkeys: [PREVIOUS_MINT_KEY]
+        mintPubkey: MINT_KEY
       })
     }
 
@@ -373,7 +370,6 @@ describe('LUD-25 mint address (experimental)', () => {
     expect(info.minWithdrawable).toBe(1000)
     expect(info.maxWithdrawable).toBe(100_000_000)
     expect(info.mintPubkey).toBe(MINT_KEY)
-    expect(info.previousPubkeys).toEqual([PREVIOUS_MINT_KEY])
     expect(info.nodePubkey).toBe(NODE_KEY)
     expect(info.nodeAlias).toBe('mock node')
     expect(info.nodeUri).toBe(`${NODE_KEY}@127.0.0.1:9735`)

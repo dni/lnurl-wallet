@@ -435,9 +435,7 @@ export const noteEndpointOf = (url: string): string => {
 const MINT_PUBKEY_PATTERN = /^0[23][0-9a-f]{64}$/i
 const NOTE_SIGNATURE_PATTERN = /^[0-9a-f]{130}$/i
 
-const parseMintKeys = (
-  body: any
-): {mintPubkey: string; previousPubkeys?: string[]} => {
+const parseMintKey = (body: any): {mintPubkey: string} => {
   if (
     typeof body?.mintPubkey !== 'string' ||
     !MINT_PUBKEY_PATTERN.test(body.mintPubkey)
@@ -446,30 +444,7 @@ const parseMintKeys = (
       'SERVICE did not publish a valid persistent signing key (mintPubkey).'
     )
   }
-  const mintPubkey = body.mintPubkey.toLowerCase()
-  if (body.previousPubkeys === undefined) return {mintPubkey}
-  if (
-    !Array.isArray(body.previousPubkeys) ||
-    body.previousPubkeys.some(
-      (key: unknown) =>
-        typeof key !== 'string' || !MINT_PUBKEY_PATTERN.test(key)
-    )
-  ) {
-    throw new Error('SERVICE published an invalid previous signing-key list.')
-  }
-  const previousPubkeys = body.previousPubkeys.map((key: string) =>
-    key.toLowerCase()
-  )
-  if (
-    previousPubkeys.includes(mintPubkey) ||
-    new Set(previousPubkeys).size !== previousPubkeys.length
-  ) {
-    throw new Error('SERVICE published an inconsistent signing-key history.')
-  }
-  return {
-    mintPubkey,
-    previousPubkeys: previousPubkeys.length ? previousPubkeys : undefined
-  }
+  return {mintPubkey: body.mintPubkey.toLowerCase()}
 }
 
 const requireMutationSignature = (body: any, field: 'sig' | 'sig2'): string => {
@@ -711,7 +686,6 @@ export type WithdrawRequestInfo = {
   maxWithdrawable: number
   defaultDescription?: string
   mintPubkey: string
-  previousPubkeys?: string[]
 }
 
 export type HashWithdrawRequestInfo = Omit<WithdrawRequestInfo, 'k1'>
@@ -731,7 +705,7 @@ const parseNoteLookupBody = (body: any): HashWithdrawRequestInfo => {
   ) {
     throw new Error('Not a withdrawRequest (unexpected response).')
   }
-  return {...body, ...parseMintKeys(body)} as HashWithdrawRequestInfo
+  return {...body, ...parseMintKey(body)} as HashWithdrawRequestInfo
 }
 
 const requestNoteInfoByHash = async (
@@ -854,7 +828,6 @@ export type MintAddressInfo = {
   // SERVICE signing identity.  It is deliberately separate from nodePubkey:
   // backends without a compatible node signer use a persistent dedicated key.
   mintPubkey: string
-  previousPubkeys?: string[]
   // Best-effort Lightning node identity parsed from nodeUri, for display only.
   nodePubkey?: string
   payLink: string
@@ -903,14 +876,8 @@ export const fetchMintAddress = async (
   ) {
     throw new Error('Not a mint address response (unexpected shape).')
   }
-  const {
-    mintPubkey,
-    previousPubkeys,
-    nodeCapacity,
-    outstandingNotesMsat,
-    ...rest
-  } = body
-  const signingKeys = parseMintKeys({mintPubkey, previousPubkeys})
+  const {mintPubkey, nodeCapacity, outstandingNotesMsat, ...rest} = body
+  const signingKey = parseMintKey({mintPubkey})
   const nodePubkey =
     typeof body.nodeUri === 'string' &&
     MINT_PUBKEY_PATTERN.test(body.nodeUri.split('@')[0] ?? '')
@@ -918,7 +885,7 @@ export const fetchMintAddress = async (
       : undefined
   return {
     ...rest,
-    ...signingKeys,
+    ...signingKey,
     nodePubkey,
     nodeCapacityMsat:
       typeof nodeCapacity === 'number' ? nodeCapacity : undefined,

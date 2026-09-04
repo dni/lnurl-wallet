@@ -414,15 +414,10 @@ const Mint: Component = () => {
         sameOriginUsername
       )
       if (mintPubkey) {
-        const trust = addTrustedMint(
-          server,
-          mintPubkey,
-          cached,
-          sameOriginNodeInfo?.previousPubkeys
-        )
+        const trust = addTrustedMint(server, mintPubkey, cached)
         if (trust === 'rekey-pending') {
           notify(
-            `${server} advertises signing-key changes which are not pinned. Review them below before minting a receipt-backed note.`,
+            `${server} advertises a different signing key than the one pinned. Review it below before minting a receipt-backed note.`,
             NotifyKind.ERROR
           )
           return
@@ -459,8 +454,7 @@ const Mint: Component = () => {
     addTrustedMint(
       pending.server,
       pending.mintPubkey,
-      mintAddressCacheInfo(pending.nodeInfo, pending.username),
-      pending.nodeInfo?.previousPubkeys
+      mintAddressCacheInfo(pending.nodeInfo, pending.username)
     )
     setPendingTrust(null)
     proceedWithPayRequest(pending.info)
@@ -805,7 +799,6 @@ const Mint: Component = () => {
             amount: result.amountMsat,
             verified: true,
             mintPubkey,
-            previousPubkeys: noteInfo.previousPubkeys,
             deviceId: result.deviceId,
             deviceHash: result.deviceHash
           })
@@ -833,7 +826,6 @@ const Mint: Component = () => {
             amount: err.imported.amountMsat,
             verified: false,
             mintPubkey,
-            previousPubkeys: noteInfo.previousPubkeys,
             deviceId: err.imported.deviceId,
             deviceHash: err.imported.deviceHash
           })
@@ -888,8 +880,7 @@ const Mint: Component = () => {
               callback: noteInfo.callback,
               amount: noteInfo.maxWithdrawable,
               verified: false,
-              mintPubkey,
-              previousPubkeys: noteInfo.previousPubkeys
+              mintPubkey
             })
             rotationError = `${(err as Error).message} The rotation may still have gone through - the possible rotated copy is stored unverified alongside this one; refresh both to reconcile.`
           } else {
@@ -904,8 +895,7 @@ const Mint: Component = () => {
         callback: noteInfo.callback,
         amount: noteInfo.maxWithdrawable,
         verified: true,
-        mintPubkey,
-        previousPubkeys: noteInfo.previousPubkeys
+        mintPubkey
       })
       logActivity(
         'mint',
@@ -971,7 +961,6 @@ const Mint: Component = () => {
   const [addressTrust, setAddressTrust] = createSignal<{
     server: string
     pubkey: string
-    previousPubkeys?: string[]
     nodeInfo?: TrustedMintNodeInfo
   } | null>(null)
   // which trusted mint's own refresh button is currently in flight - only
@@ -1016,23 +1005,13 @@ const Mint: Component = () => {
       // key before anything is pinned - already-trusted mints (including
       // every Refresh button below) skip straight to the upsert
       if (!isMintTrusted(mintServer)) {
-        setAddressTrust({
-          server: mintServer,
-          pubkey: info.mintPubkey,
-          previousPubkeys: info.previousPubkeys,
-          nodeInfo
-        })
+        setAddressTrust({server: mintServer, pubkey: info.mintPubkey, nodeInfo})
         return
       }
-      const result = addTrustedMint(
-        mintServer,
-        info.mintPubkey,
-        nodeInfo,
-        info.previousPubkeys
-      )
+      const result = addTrustedMint(mintServer, info.mintPubkey, nodeInfo)
       if (result === 'rekey-pending') {
         notify(
-          `${mintServer} advertises signing-key changes which are not pinned - review them below before trusting signed notes from it.`,
+          `${mintServer} advertises a different signing key than the one pinned - review it below before trusting signed notes from it.`,
           NotifyKind.ERROR
         )
       } else {
@@ -1052,8 +1031,7 @@ const Mint: Component = () => {
       const result = addTrustedMint(
         pending.server,
         pending.pubkey,
-        pending.nodeInfo,
-        pending.previousPubkeys
+        pending.nodeInfo
       )
       setAddressTrust(null)
       if (result === 'rekey-pending') {
@@ -1312,17 +1290,6 @@ const Mint: Component = () => {
                         holding a note from it.
                       </p>
                       <pre>{pending().mintPubkey}</pre>
-                      <Show when={pending().nodeInfo?.previousPubkeys?.length}>
-                        <p>
-                          This also accepts{' '}
-                          {pending().nodeInfo!.previousPubkeys!.length} earlier
-                          signing{' '}
-                          {pending().nodeInfo!.previousPubkeys!.length === 1
-                            ? 'key'
-                            : 'keys'}{' '}
-                          published by the mint.
-                        </p>
-                      </Show>
                       <div class="btns">
                         <button onClick={confirmTrust}>Trust this mint</button>
                         <button onClick={cancelTrust}>Cancel</button>
@@ -1585,12 +1552,6 @@ const Mint: Component = () => {
                       </p>
                     </Show>
                     <p class="mint-pubkey">{mint.mintPubkey}</p>
-                    <Show when={mint.previousPubkeys?.length}>
-                      <p class="mint-date">
-                        {mint.previousPubkeys!.length} accepted previous signing{' '}
-                        {mint.previousPubkeys!.length === 1 ? 'key' : 'keys'}
-                      </p>
-                    </Show>
                     <p class="mint-date">added {formatDate(mint.addedAt)}</p>
                     {/* advance warning of a planned shutdown (see
                     trustedMints.ts's TrustedMint.sunsetDate) - shown for any
@@ -1618,33 +1579,25 @@ const Mint: Component = () => {
                         advertises the same key confirms it.
                       </p>
                     </Show>
-                    {/* staged current/history changes (see trustedMints.ts).
-                    Accepted keys keep deciding the "signed" badge until the
-                    holder explicitly approves the candidates here */}
-                    <Show
-                      when={
-                        mint.pendingMintPubkey ||
-                        mint.pendingPreviousPubkeys?.length
-                      }
-                    >
+                    {/* a staged key change (see trustedMints.ts). The pinned
+                    key keeps deciding the "signed" badge until the holder
+                    explicitly approves the candidate here */}
+                    <Show when={mint.pendingMintPubkey}>
                       <p class="warning">
-                        This mint advertises signing-key changes. They are not
+                        This mint advertises a different signing key. It is not
                         trusted yet because an unsigned response cannot
-                        authorise its own key history. Only accept them after
-                        checking an announcement from the mint:
+                        authorise its own replacement. Only accept it after
+                        checking an announcement from the mint. Notes signed
+                        under the old key stop verifying offline - refresh them
+                        to re-sign under the new one:
                       </p>
-                      <Show when={mint.pendingMintPubkey}>
-                        <p class="mint-pubkey">{mint.pendingMintPubkey}</p>
-                      </Show>
-                      <For each={mint.pendingPreviousPubkeys ?? []}>
-                        {key => <p class="mint-pubkey">{key}</p>}
-                      </For>
+                      <p class="mint-pubkey">{mint.pendingMintPubkey}</p>
                       <div class="btns">
                         <button onClick={() => rekey(mint.server)}>
-                          Trust key changes
+                          Trust the new key
                         </button>
                         <button onClick={() => dismissRekey(mint.server)}>
-                          Keep current keys
+                          Keep the current key
                         </button>
                       </div>
                     </Show>
@@ -1839,14 +1792,6 @@ const Mint: Component = () => {
                   (its own site, not a forwarded link).
                 </p>
                 <p class="mint-pubkey">{pending().pubkey}</p>
-                <Show when={pending().previousPubkeys?.length}>
-                  <p>
-                    This also accepts {pending().previousPubkeys!.length}{' '}
-                    earlier signing{' '}
-                    {pending().previousPubkeys!.length === 1 ? 'key' : 'keys'}{' '}
-                    published by the mint.
-                  </p>
-                </Show>
                 <div class="btns">
                   <button onClick={confirmAddressTrust}>Trust this key</button>
                   <button onClick={cancelAddressTrust}>Cancel</button>

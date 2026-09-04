@@ -211,20 +211,21 @@ digest  = sha256(sha256("Lightning Signed Message:" || message))`}</pre>
         </p>
         <p>
           Signing keys are pinned to the service's full origin, including its
-          scheme and port. Every accepted current and previous key lives in the{' '}
+          scheme and port. Every accepted key lives in the{' '}
           <A href="/mint">Trusted mints</A> section, at the bottom of the Mint
           page. The first time it sees a brand new one - looking a mint up,
           before minting anything from it - it asks whether to trust it;
-          declining cancels that lookup. A different current key, or newly
-          advertised <code>previousPubkeys</code>, is staged for review and
-          never silently widens the trusted set: an unsigned key history cannot
-          authenticate itself. A mint you already hold a bearer note from is
-          trusted automatically instead (holding funds there already implied
-          trusting it) and can't be removed from the list; anything you added
-          yourself - by confirming a lookup or typing it in directly - can be.
-          The list travels with your <A href="/settings">backup</A> file, in
-          plain (a signing key isn't a secret), but restored keys remain
-          unconfirmed until corroborated by a live lookup.
+          declining cancels that lookup. A different key is staged for review
+          and never silently replaces the pin, since an unsigned response cannot
+          authorise its own replacement. Notes signed under a retired key stop
+          verifying offline; a refresh re-signs them under the current one. A
+          mint you already hold a bearer note from is trusted automatically
+          instead (holding funds there already implied trusting it) and can't be
+          removed from the list; anything you added yourself - by confirming a
+          lookup or typing it in directly - can be. The list travels with your{' '}
+          <A href="/settings">backup</A> file, in plain (a signing key isn't a
+          secret), but restored keys remain unconfirmed until corroborated by a
+          live lookup.
         </p>
       </div>
 

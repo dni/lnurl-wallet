@@ -34,9 +34,6 @@ export type Bearer = {
   // payRequest's optional mintPubkey) - lets a note's ?sig= be checked
   // offline against it without a network round trip
   mintPubkey?: string
-  // Earlier signing keys advertised by the same live withdrawRequest.  The
-  // trust registry stages additions for explicit review before using them.
-  previousPubkeys?: string[]
   // a local-only lock, not a server-verified state: true once this wallet
   // has melted/handed over the note, or the holder marked it manually. It
   // just disables further mutating actions here so this copy can't be

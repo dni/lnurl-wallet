@@ -94,7 +94,6 @@ export type NewBearer = {
   amount: number
   verified: boolean
   mintPubkey?: string
-  previousPubkeys?: string[]
   deviceId?: string
   deviceHash?: string
 }
@@ -387,7 +386,7 @@ export const WalletProvider = (props: {children: JSX.Element}) => {
       notifyIfRekeyPending(
         serviceOriginOf(bearer.url),
         bearer.mintPubkey,
-        (server, key) => lockTrustedMint(server, key, bearer.previousPubkeys)
+        lockTrustedMint
       )
     }
     return bearer
@@ -412,7 +411,7 @@ export const WalletProvider = (props: {children: JSX.Element}) => {
       notifyIfRekeyPending(
         serviceOriginOf(updated.url),
         updated.mintPubkey,
-        (server, key) => lockTrustedMint(server, key, updated.previousPubkeys)
+        lockTrustedMint
       )
     }
   }
