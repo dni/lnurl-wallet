@@ -101,7 +101,11 @@ export type WalletContextType = {
   state: Accessor<WalletState>
   bearers: Accessor<Bearer[]>
   encrypted: () => boolean
-  setup: (seedPhrase: string, password?: string) => Promise<void>
+  setup: (
+    seedPhrase: string,
+    password?: string,
+    fresh?: boolean
+  ) => Promise<void>
   unlock: (password?: string) => Promise<void>
   lock: () => void
   forgetWallet: () => void
@@ -231,26 +235,40 @@ export const WalletProvider = (props: {children: JSX.Element}) => {
     setState('unlocked')
   }
 
-  // still writes the legacy linking key, deliberately: this always runs on
-  // either a brand new wallet (nothing to lose) or a re-entered seed on a
-  // device that may still hold OLD-format ciphertext for it (see the
-  // "stored bearer tokens ... become unreadable until that seed is
-  // restored again" behavior Setup.tsx documents) - switching this to the
-  // new root here would silently strand that data, since a bearer record
-  // carries no marker saying which key it needs. upgradeEncryption is the
-  // only path that's actually safe to move a wallet onto the new root,
-  // because it starts from an already-unlocked, already-decrypted state
-  // instead of guessing.
-  const setup = async (seedPhrase: string, password?: string) => {
-    const linkingKey = deriveWalletLinkingKey(seedPhrase)
-    await saveLinkingKey(linkingKey, password)
-    // LUD-25: derived and saved alongside the linking key, under the same
-    // password - there's no separate password to ask for, and both "Create
-    // new" and "Restore from seed" (Setup.tsx) already route through this
-    // same function, so either one backfills a wallet that predates this
-    // feature the moment its seed is entered again
+  // `fresh` (Setup.tsx's "Create new" only) goes straight to the current
+  // seed-direct root, skipping the legacy linking key entirely: a
+  // just-generated seed phrase has by construction never encrypted
+  // anything anywhere, so there's no OLD-format ciphertext it could
+  // strand. "Restore from seed" always passes fresh=false instead, since a
+  // re-entered seed may be reappearing on a device that still holds
+  // OLD-format ciphertext for it (see the "stored bearer tokens ... become
+  // unreadable until that seed is restored again" behavior Setup.tsx
+  // documents) - switching that case straight to the new root would
+  // silently strand that data, since a bearer record carries no marker
+  // saying which key it needs. upgradeEncryption is the only path that's
+  // safe to move an already-legacy wallet onto the new root, because it
+  // starts from an already-unlocked, already-decrypted state instead of
+  // guessing.
+  const setup = async (
+    seedPhrase: string,
+    password?: string,
+    fresh = false
+  ) => {
+    // LUD-25: derived and saved alongside whichever root key below, under
+    // the same password - there's no separate password to ask for, and
+    // both "Create new" and "Restore from seed" (Setup.tsx) already route
+    // through this same function, so either one backfills a wallet that
+    // predates this feature the moment its seed is entered again
     const cashRootHex = cashRootToHex(deriveLud25CashRootNode(seedPhrase))
     await saveCashRootKey(cashRootHex, password)
+    if (fresh) {
+      const storageRootKey = deriveStorageRootKey(seedPhrase)
+      await saveStorageRootKey(storageRootKey, password)
+      await activate(storageRootKey, cashRootHex)
+      return
+    }
+    const linkingKey = deriveWalletLinkingKey(seedPhrase)
+    await saveLinkingKey(linkingKey, password)
     await activate(linkingKey, cashRootHex)
   }
 

@@ -62,10 +62,10 @@ import {useDevice} from '../DeviceContext'
 import {offlineMode} from '../offlineMode'
 import {notify, NotifyKind, msatToSats, pasteFromClipboard} from '../helpers'
 import {takeMeltInvoice} from '../meltHandoff'
+import {receiveIntoWallet} from '../receive'
 import BearerCard from '../components/BearerCard'
 import Dialog from '../components/Dialog'
 import TransferDialog from '../components/TransferDialog'
-import ReceiveDialog from '../components/ReceiveDialog'
 import MeltDialog from '../components/MeltDialog'
 import ScanToggle from '../components/ScanToggle'
 import NfcToggle from '../components/NfcToggle'
@@ -145,10 +145,7 @@ const Wallet: Component = () => {
   // No 'send' anymore - carving an exact amount out of one or more notes is
   // already covered by this page's own Combine & split / Split toolbar
   // actions, so a standalone Send dialog was pure duplication
-  const [openDialog, setOpenDialog] = createSignal<'receive' | 'melt' | null>(
-    null
-  )
-  const showReceive = () => openDialog() === 'receive'
+  const [openDialog, setOpenDialog] = createSignal<'melt' | null>(null)
   const showMelt = () => openDialog() === 'melt'
   // a bolt11 pasted into Receive hands off here (see meltHandoff.ts) rather
   // than duplicating invoice-vs-note detection on this page too - MeltDialog
@@ -164,11 +161,6 @@ const Wallet: Component = () => {
       setOpenDialog('melt')
     }
   })
-  // ReceiveDialog's own bolt11 detection - see its onMelt prop
-  const openMelt = (pr: string) => {
-    setMeltHandoffInvoice(pr)
-    setOpenDialog('melt')
-  }
 
   // the hero's own scan/NFC/paste widget replaces the separate
   // Receive/Send/Melt buttons it used to have - whatever's recognized
@@ -181,11 +173,12 @@ const Wallet: Component = () => {
   // typing is the fallback. Desktop ignores this signal entirely (CSS only
   // hides the field under the mobile breakpoint)
   const [showHeroKeyboard, setShowHeroKeyboard] = createSignal(false)
-  // prefilled into ReceiveDialog for a scanned/pasted bearer note - shown,
-  // not auto-accepted, same reasoning as ReceiveDialog's own initialValue
-  const [receiveHandoffValue, setReceiveHandoffValue] = createSignal<
-    string | null
-  >(null)
+  // a scanned/pasted bearer note redeems immediately - no confirmation
+  // dialog in between, unlike ReceiveDialog's own review-first flow for a
+  // vault handoff link (Claim.tsx), where there's an actual reason to
+  // pause: the person hasn't asked for anything yet, they've just followed
+  // a link. Here they scanned or pasted with clear intent to receive.
+  const [heroReceiving, setHeroReceiving] = createSignal(false)
   // same idea as meltHandoffInvoice above, for a scanned/pasted Lightning
   // Address that doesn't have an invoice yet - MeltDialog resolves it via
   // its own initialAddress
@@ -193,10 +186,6 @@ const Wallet: Component = () => {
     string | null
   >(null)
 
-  const closeReceive = () => {
-    setOpenDialog(null)
-    setReceiveHandoffValue(null)
-  }
   const closeMelt = () => {
     setOpenDialog(null)
     setMeltHandoffInvoice(null)
@@ -206,13 +195,33 @@ const Wallet: Component = () => {
   const isValidHeroInput = (v: string) =>
     isValidNoteInput(v) || isBolt11Invoice(v) || isLightningAddress(v)
 
+  // re-entrancy-guarded the same way ReceiveDialog's own receive is: a
+  // scanner double-fire or Enter-key/confirm-click landing together must
+  // not run two receives for the same k1
+  const receiveHero = async (noteValue: string) => {
+    if (heroReceiving()) return
+    setHeroReceiving(true)
+    try {
+      await receiveIntoWallet(noteValue, {
+        bearers: bearers(),
+        addBearer,
+        updateBearer,
+        logActivity,
+        deviceClient: deviceClient()
+      })
+    } catch (err) {
+      notify((err as Error).message, NotifyKind.ERROR)
+    } finally {
+      setHeroReceiving(false)
+    }
+  }
+
   const handleHeroValue = (raw: string) => {
     const trimmed = raw.trim()
     if (trimmed === '') return
     if (isValidNoteInput(trimmed)) {
-      setReceiveHandoffValue(trimmed)
       setHeroValue('')
-      setOpenDialog('receive')
+      receiveHero(trimmed)
       return
     }
     if (isBolt11Invoice(trimmed)) {
@@ -1493,21 +1502,19 @@ const Wallet: Component = () => {
                         class="icon-btn paste-confirm-btn"
                         classList={{'mobile-open': showHeroKeyboard()}}
                         title="Receive a note, or pay an invoice/address"
-                        disabled={heroValue() === ''}
+                        disabled={heroValue() === '' || heroReceiving()}
                         onClick={handleHero}
                       >
-                        <IoReturnDownForwardSharp />
+                        <Show
+                          when={heroReceiving()}
+                          fallback={<IoReturnDownForwardSharp />}
+                        >
+                          <IoRefreshSharp class="spin" />
+                        </Show>
                       </button>
                     </div>
                   </figure>
                 </div>
-                <Show when={showReceive()}>
-                  <ReceiveDialog
-                    initialValue={receiveHandoffValue() ?? undefined}
-                    onClose={closeReceive}
-                    onMelt={openMelt}
-                  />
-                </Show>
                 <Show when={showMelt()}>
                   <MeltDialog
                     initialInvoice={meltHandoffInvoice() ?? undefined}
@@ -1520,21 +1527,26 @@ const Wallet: Component = () => {
           }
         >
           <div id="wallet" class="page">
+            <Show when={confirmClearSpent()}>
+              <Dialog onClose={() => setConfirmClearSpent(false)}>
+                <>
+                  <h4>Remove all spent notes</h4>
+                  <p class="warning">
+                    Clear all {spentCount()} spent note
+                    {spentCount() === 1 ? '' : 's'} from the wallet? If any of
+                    them turn out not to have actually been spent, those sats
+                    are gone unless you saved them elsewhere.
+                  </p>
+                  <div class="btns">
+                    <button onClick={clearAllSpent}>Clear all</button>
+                    <button onClick={() => setConfirmClearSpent(false)}>
+                      Cancel
+                    </button>
+                  </div>
+                </>
+              </Dialog>
+            </Show>
             <section class="wallet-hero">
-              <Show when={confirmClearSpent()}>
-                <p class="warning">
-                  Clear all {spentCount()} spent note
-                  {spentCount() === 1 ? '' : 's'} from the wallet? If any of
-                  them turn out not to have actually been spent, those sats are
-                  gone unless you saved them elsewhere.
-                </p>
-                <div class="btns">
-                  <button onClick={clearAllSpent}>Clear all</button>
-                  <button onClick={() => setConfirmClearSpent(false)}>
-                    Cancel
-                  </button>
-                </div>
-              </Show>
               <div class="wallet-stats">
                 <div class="wallet-stat">
                   <span class="wallet-stat-value">
@@ -1623,22 +1635,20 @@ const Wallet: Component = () => {
                       class="icon-btn paste-confirm-btn"
                       classList={{'mobile-open': showHeroKeyboard()}}
                       title="Receive a note, or pay an invoice/address"
-                      disabled={heroValue() === ''}
+                      disabled={heroValue() === '' || heroReceiving()}
                       onClick={handleHero}
                     >
-                      <IoReturnDownForwardSharp />
+                      <Show
+                        when={heroReceiving()}
+                        fallback={<IoReturnDownForwardSharp />}
+                      >
+                        <IoRefreshSharp class="spin" />
+                      </Show>
                     </button>
                   </div>
                 </div>
               </div>
             </section>
-            <Show when={showReceive()}>
-              <ReceiveDialog
-                initialValue={receiveHandoffValue() ?? undefined}
-                onClose={closeReceive}
-                onMelt={openMelt}
-              />
-            </Show>
             <Show when={showMelt()}>
               <MeltDialog
                 initialInvoice={meltHandoffInvoice() ?? undefined}
