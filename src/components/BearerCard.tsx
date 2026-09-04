@@ -20,6 +20,7 @@ import {
   noteK1,
   noteSignature,
   serverOf,
+  serviceOriginOf,
   toBech32Lnurl,
   verifyNoteSignature,
   verifyNoteSignatureHash
@@ -88,13 +89,15 @@ const BearerCard: Component<BearerCardProps> = props => {
   // has ever cached one for this server, same fallback story as
   // offlineVerified's mintPubkey below.
   const noteColor = createMemo(() =>
-    getTrustedMintNodeColor(serverOf(props.bearer.url))
+    getTrustedMintNodeColor(serviceOriginOf(props.bearer.url))
   )
   // this note's issuing mint's self-reported planned shutdown date (see
   // trustedMints.ts's getTrustedMintSunsetDate) - a spent note doesn't need
   // the warning, there's nothing left to move away from this mint
   const sunsetDate = createMemo(() =>
-    isSpent() ? null : getTrustedMintSunsetDate(serverOf(props.bearer.url))
+    isSpent()
+      ? null
+      : getTrustedMintSunsetDate(serviceOriginOf(props.bearer.url))
   )
   const cardStyle = createMemo(() =>
     noteColor() ? {'--note-tint': noteColor()!} : {}
@@ -122,21 +125,22 @@ const BearerCard: Component<BearerCardProps> = props => {
     }
   }
 
-  // offline-verifiable iff the note carries a signature AND this wallet
-  // already knows the issuing service's mintPubkey - both optional per
-  // spec. The trusted-mints registry is the authoritative source (it can
-  // hold a newer key than this one bearer's own cached copy, e.g. if a
-  // sibling bearer from the same server refreshed more recently); the
-  // bearer's own field is only a fallback for the edge case of a restored
-  // record whose server isn't in the registry yet - and withheld entirely
-  // when the registry's pin is unconfirmed (file-sourced): then the
-  // bearer's cached claim is just as uncorroborated
+  // Offline-verifiable iff the note carries a signature and this wallet has
+  // accepted the issuing SERVICE's pinned key.  A freshly minted note, or
+  // one recovered after a lost mutation response, may not have its
+  // certificate yet; nor does one signed under a key this mint has since
+  // rotated away from, which a single rotate re-issues under the new key.
+  // The trusted-mints registry is authoritative; the bearer's own field is
+  // only a fallback for the edge case of a restored record whose server
+  // isn't in the registry yet - and withheld entirely when the registry's
+  // pin is unconfirmed (file-sourced): then the bearer's cached claim is
+  // just as uncorroborated
   const offlineVerified = createMemo(() => {
     const sig = noteSignature(props.bearer.url)
-    const server = serverOf(props.bearer.url)
+    const origin = serviceOriginOf(props.bearer.url)
     const mintPubkey =
-      getTrustedMintPubkey(server) ??
-      (isMintUnconfirmed(server) ? null : props.bearer.mintPubkey)
+      getTrustedMintPubkey(origin) ??
+      (isMintUnconfirmed(origin) ? null : (props.bearer.mintPubkey ?? null))
     if (!sig || !mintPubkey) return false
     return props.bearer.deviceHash
       ? verifyNoteSignatureHash(
@@ -336,7 +340,7 @@ const BearerCard: Component<BearerCardProps> = props => {
                 <button
                   class="icon-btn bearer-action-right"
                   disabled={refreshing()}
-                  title="Rotate - fetches the current value from the service first (this GET puts k1 on the wire)"
+                  title="Rotate - fetches the current value by note hash first"
                   onClick={e => {
                     // refreshThisNote flips refreshing() synchronously,
                     // which swaps this button's own icon (see the Show

@@ -518,10 +518,9 @@ const Wallet: Component = () => {
     )
   }
 
-  // the informational GET always puts k1 on the wire now (the spec dropped
-  // the optional hash-based lookup), so every refresh is followed by a
-  // rotate - per "WALLET SHOULD ... rotate ... after an informational GET
-  // on a note it intends to keep holding". When a vault is connected, that
+  // The informational GET prefers h=sha256(k1), keeping the secret off the
+  // wire on current services. Refresh still rotates to renew the note and to
+  // handle the explicit raw-k1 compatibility fallback safely. When a vault is connected, that
   // replacement secret is generated and held there instead of in this
   // browser - for an already device-backed note that's deviceRefresh
   // (export, then GET+rotate with the same secret); for a browser-only
@@ -541,7 +540,7 @@ const Wallet: Component = () => {
         // A device-backed bearer's stored URL is deliberately only a
         // secret-free mirror. If its vault is disconnected, stop here with
         // the recovery action instead of falling through to fetchNoteInfo
-        // and sending /w a request with no k1.
+        // and sending /w a request with neither k1 nor its device-held hash.
         const connectedClient = requireDeviceClient(client)
         const result = await deviceRefresh(connectedClient, {
           ...bearer,
@@ -1042,8 +1041,7 @@ const Wallet: Component = () => {
         removeBearer(remainderId)
         remainderId = remainder.id
         // settleNote learns the change's true value (a mint MAY have
-        // deducted a fee - LUD-25) and rotates it, since the GET that
-        // learns it necessarily puts k1 on the wire
+        // deducted a fee - LUD-25) by hash, without another rotation
         try {
           const settled = await settleNote(
             currentUrl,
@@ -1185,9 +1183,9 @@ const Wallet: Component = () => {
         // a mint MAY refund part of its earlier per-note mint fees on merge
         // (LUD-25: (n - 1) * base_fee_msat back into the result) -
         // settleNote reads the actual value back authoritatively rather
-        // than assume the naive sum, and rotates the merged secret (that
-        // GET necessarily put it on the wire), so both the stored amount
-        // and the notice below reflect what the mint actually credited
+        // than assume the naive sum. The hash lookup leaves the merged secret
+        // untouched, while the stored amount and notice below still reflect
+        // what the mint actually credited
         actualAmount = sum
         try {
           const settled = await settleNote(
@@ -1809,6 +1807,27 @@ const Wallet: Component = () => {
                 >
                   <IoLayersSharp />
                   <span class="btn-label">&nbsp;Group</span>
+                </button>
+                <button
+                  type="button"
+                  disabled={
+                    refreshingAll() ||
+                    offlineMode() ||
+                    spendableBearers().length === 0
+                  }
+                  title={
+                    offlineMode()
+                      ? 'Offline mode is on'
+                      : canRefreshSelected()
+                        ? 'Fetch the current value by note hash, then rotate - one at a time for every selected note'
+                        : 'Select notes to rotate'
+                  }
+                  onClick={refreshAllNotes}
+                >
+                  <Show when={refreshingAll()} fallback={<IoRefreshSharp />}>
+                    <IoRefreshSharp class="spin" />
+                  </Show>
+                  <span class="btn-label">&nbsp;Rotate all</span>
                 </button>
                 <div class="more-menu" ref={el => (listMoreMenuRef = el)}>
                   <button

@@ -1,4 +1,5 @@
 import {beforeEach, describe, expect, it, vi} from 'vitest'
+import {hashK1 as sha256Hex} from './lnurlcash'
 
 // same in-memory localStorage stand-in as cashSecrets.test.ts/storage.test.ts -
 // cashSecrets.ts persists per-SERVICE indices there, and a fresh module
@@ -36,6 +37,12 @@ beforeEach(async () => {
 // mocked fetch response shape matches mockMint.test.ts's own convention -
 // lnurlFetch only ever calls .json() on the result, never inspects
 // status/ok, so a bare {json} stand-in is enough
+// LUD-25 made offline verification mandatory on 2026-09-02: a SERVICE MUST
+// publish the key its notes verify against on every withdrawRequest, and this
+// wallet refuses one that does not. A stand-in mint has to publish it too, or
+// it is standing in for a mint no wallet will talk to.
+const MINT_PUBKEY = '02' + 'cd'.repeat(32)
+
 const jsonResponse = (body: unknown) =>
   Promise.resolve({json: async () => body} as unknown as Response)
 
@@ -51,6 +58,7 @@ const fakeMint = (liveAtIndex: number, spentAtIndex: number | null) => {
       : cashSecrets.cashSecretAtIndex(SERVER, spentAtIndex)!
   return (input: string | URL) => {
     const url = new URL(input.toString())
+    console.log('REQ', url.pathname, url.search)
     if (url.pathname === '/.well-known/lnurlp/mint') {
       return jsonResponse({
         tag: 'payRequest',
@@ -62,12 +70,29 @@ const fakeMint = (liveAtIndex: number, spentAtIndex: number | null) => {
       })
     }
     if (url.pathname === '/w') {
-      const k1 = url.searchParams.get('k1')
+      // This wallet asks by h=hex(sha256(k1)) first, so a note's bearer
+      // secret never goes on the wire just to read its value. Both live
+      // mints answer that lookup, so the stand-in does too - answering only
+      // k1 would make it a mint this wallet deliberately never sends a
+      // secret to, and every index would read as an empty gap.
+      const askedHash = url.searchParams.get('h')
+      const k1 =
+        url.searchParams.get('k1') ??
+        (askedHash === sha256Hex(liveSecret)
+          ? liveSecret
+          : spentSecret && askedHash === sha256Hex(spentSecret)
+            ? spentSecret
+            : null)
       if (k1 === liveSecret) {
         return jsonResponse({
           tag: 'withdrawRequest',
           callback: WITHDRAW_CALLBACK,
-          k1,
+          mintPubkey: MINT_PUBKEY,
+          // LUD-25: the hash lookup's response omits k1. The convenience it
+          // normally serves does not apply - a wallet asking by hash already
+          // holds the value it hashed - and echoing it back would hand over a
+          // bearer secret nobody asked for.
+          ...(askedHash ? {} : {k1}),
           minWithdrawable: 21000,
           maxWithdrawable: 21000
         })
@@ -126,10 +151,12 @@ describe('scanMintForNotes', () => {
       }
       calls++
       if (calls === 1) {
+        // answered as the hash lookup this wallet actually sends, so k1 is
+        // omitted - see the note in fakeMint
         return jsonResponse({
           tag: 'withdrawRequest',
           callback: WITHDRAW_CALLBACK,
-          k1: url.searchParams.get('k1'),
+          mintPubkey: MINT_PUBKEY,
           minWithdrawable: 21000,
           maxWithdrawable: 21000
         })

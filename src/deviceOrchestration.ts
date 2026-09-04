@@ -5,6 +5,7 @@ import {
   mergeNotesWithHash,
   meltNote,
   fetchNoteInfo,
+  fetchNoteInfoByHash,
   withNewK1,
   withoutK1,
   fromLud17,
@@ -119,7 +120,7 @@ const ambiguousStagedError = (err: unknown): Error =>
     `${(err as Error).message} The operation may still have gone through mint-side, so the staged secret was kept on the vault - refresh this note with the vault connected to reconcile.`
   )
 
-// shared core of rotate/migrate/mint/receive/settle: given a secret already
+// shared core of rotate/migrate/mint/receive: given a secret already
 // in hand (exported, imported, or just read from browser storage) and
 // where it should be re-custodied, stages a fresh device secret, makes the
 // mint call, and commits. `parentDeviceId` is null for a note that was
@@ -195,44 +196,35 @@ export const migrateNoteToDevice = async (
 }
 
 // merge/split's on-device output(s) may charge/refund a LUD-25 fee this
-// wallet's own pre-computed amount doesn't reflect - reads the true value
-// back via an informational GET (which itself briefly puts the device's
-// freshly-minted secret on the wire) and immediately re-custodies it,
-// closing that exposure. Mirrors lnurlcash.ts's settleNote exactly, one
-// physical button press (the export needed for the GET; the follow-up
-// rotate reuses that same k1, no second export).
+// wallet's own pre-computed amount doesn't reflect. Read the true value by
+// the output's public hash, so the device neither exports nor rotates its
+// freshly minted secret merely to learn the fee-adjusted amount. A legacy
+// result without deviceHash falls back to export plus fetchNoteInfo.
 export const deviceSettle = async (
   client: DeviceClient,
   pending: DeviceMutationResult
 ): Promise<DeviceMutationResult> => {
-  const k1 = await client.exportSecret(pending.deviceId)
-  const info = await fetchNoteInfo(
-    withNewK1(pending.url, k1, pending.amountMsat, pending.signature)
-  )
-  try {
-    return await rotateK1OnDevice(
-      client,
-      {url: pending.url, callback: info.callback},
-      pending.deviceId,
-      k1,
-      info.maxWithdrawable
-    )
-  } catch {
-    // best-effort re-custody, same fallback settleNote itself uses: keep
-    // the authoritative amount even if closing the exposure failed
-    return {
-      ...pending,
-      amountMsat: info.maxWithdrawable,
-      callback: info.callback
-    }
+  const info = pending.deviceHash
+    ? await fetchNoteInfoByHash(pending.url, pending.deviceHash)
+    : await fetchNoteInfo(
+        withNewK1(
+          pending.url,
+          await client.exportSecret(pending.deviceId),
+          pending.amountMsat,
+          pending.signature
+        )
+      )
+  return {
+    ...pending,
+    amountMsat: info.maxWithdrawable,
+    callback: info.callback
   }
 }
 
 // refresh: like deviceRotate, but first re-reads the note's current
-// authoritative value/callback/mintPubkey via an informational GET, the
-// same reason BearerCard's own browser-only refresh does this. The export
-// needed for that GET (this bearer's own url carries no k1 to GET with) is
-// reused for the following rotate, not requested a second time.
+// authoritative value/callback/mintPubkey via a hash-only informational GET,
+// the same reason BearerCard's own browser-only refresh does this. This path
+// already exports k1 for the following rotate; the GET itself sends only h.
 //
 // Unlike the browser-only refresh, this has no partial-failure fallback:
 // if anything here fails (export declined/timed out, the GET, or the

@@ -53,7 +53,7 @@ import {
   newActivityId,
   reencryptAllRecords
 } from './storage'
-import {serverOf} from './lnurlcash'
+import {serverOf, serviceOriginOf} from './lnurlcash'
 import type {TrustKeyResult} from './trustedMints'
 import {
   trustedMints,
@@ -66,9 +66,9 @@ import {clearStoreableLinks} from './storeableLinks'
 import {clearPendingDeviceOps} from './deviceQueue'
 import {clearPendingDeviceMint} from './pendingDeviceMint'
 
-// the one lockTrustedMint outcome a holder must hear about: the mint is
-// advertising a DIFFERENT signing key than the one pinned - the new key was
-// staged for review on the Mints page, not applied (see trustedMints.ts).
+// The one lockTrustedMint outcome a holder must hear about: the mint is
+// advertising a different current key or new history.  The changes are staged
+// for review on the Mints page, not applied (see trustedMints.ts).
 // Everything else (first trust, re-lock, unchanged) is silent by design.
 const notifyIfRekeyPending = (
   server: string,
@@ -77,7 +77,7 @@ const notifyIfRekeyPending = (
 ): void => {
   if (trust(server, mintPubkey) === 'rekey-pending') {
     notify(
-      `${server} now advertises a different signing key than the one pinned - review it on the Mints page before trusting "signed" notes from it.`,
+      `${server} advertises signing-key changes which are not pinned - review them on the Mints page before trusting signed notes from it.`,
       NotifyKind.ERROR
     )
   }
@@ -227,7 +227,7 @@ export const WalletProvider = (props: {children: JSX.Element}) => {
     for (const bearer of loaded) {
       if (bearer.mintPubkey) {
         notifyIfRekeyPending(
-          serverOf(bearer.url),
+          serviceOriginOf(bearer.url),
           bearer.mintPubkey,
           grandfatherTrustedMint
         )
@@ -383,7 +383,11 @@ export const WalletProvider = (props: {children: JSX.Element}) => {
     // already trusted (from a lookup, a manual add, or another bearer) or
     // not - this is the one path that never asks (see trustedMints.ts)
     if (bearer.mintPubkey) {
-      notifyIfRekeyPending(serverOf(bearer.url), bearer.mintPubkey)
+      notifyIfRekeyPending(
+        serviceOriginOf(bearer.url),
+        bearer.mintPubkey,
+        lockTrustedMint
+      )
     }
     return bearer
   }
@@ -404,7 +408,11 @@ export const WalletProvider = (props: {children: JSX.Element}) => {
     // a mint's last note would otherwise re-lock it in the same tick,
     // permanently defeating "removeable once no notes are held")
     if (changes.url !== undefined && updated.mintPubkey) {
-      notifyIfRekeyPending(serverOf(updated.url), updated.mintPubkey)
+      notifyIfRekeyPending(
+        serviceOriginOf(updated.url),
+        updated.mintPubkey,
+        lockTrustedMint
+      )
     }
   }
 
@@ -433,7 +441,7 @@ export const WalletProvider = (props: {children: JSX.Element}) => {
     const heldServers = new Set(
       bearers()
         .filter(b => !b.spent)
-        .map(b => serverOf(b.url))
+        .map(b => serviceOriginOf(b.url))
     )
     untrack(() => {
       for (const mint of trustedMints()) {

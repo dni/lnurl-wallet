@@ -19,6 +19,7 @@ import {
   meltNote,
   requireNoteK1,
   serverOf,
+  serviceOriginOf,
   noteEndpointOf,
   isPreimage,
   applyMintFee,
@@ -119,8 +120,9 @@ const TransferDialog: Component<TransferDialogProps> = props => {
         )
         return
       }
-      const server = serverOf(url)
-      if (server === serverOf(props.sourceBearer.url)) {
+      const server = serverOf(info.withdrawLink)
+      const origin = serviceOriginOf(info.withdrawLink)
+      if (origin === serviceOriginOf(props.sourceBearer.url)) {
         notify("That's the mint this note is already on.", NotifyKind.ERROR)
         return
       }
@@ -134,8 +136,12 @@ const TransferDialog: Component<TransferDialogProps> = props => {
         )
         return
       }
-      if (info.mintPubkey && !isMintTrusted(server)) {
-        setPendingTrust({server, mintPubkey: info.mintPubkey, info})
+      if (
+        serviceOriginOf(url) === origin &&
+        info.mintPubkey &&
+        !isMintTrusted(origin)
+      ) {
+        setPendingTrust({server: origin, mintPubkey: info.mintPubkey, info})
         return
       }
       setPayRequest(info)
@@ -559,7 +565,7 @@ const TransferDialog: Component<TransferDialogProps> = props => {
                 {mint => (
                   <button
                     disabled={busy() || offlineMode()}
-                    onClick={() => selectMint(`mint@${mint.server}`)}
+                    onClick={() => selectMint(`mint@${serverOf(mint.server)}`)}
                   >
                     {mint.server}
                   </button>

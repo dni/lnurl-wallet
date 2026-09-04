@@ -340,8 +340,8 @@ export const buildNoteUrl = (
 
 // the same note with its secret swapped out - after rotate/split/merge. A
 // signature only carries over when the response actually returned a fresh
-// one for this k1 (a rotate/split/merge without offline verification
-// support drops any stale sig, since it no longer matches the new secret).
+// one for this k1.  An ambiguous or non-conformant response drops any stale
+// sig because it cannot match the new secret.
 export const withNewK1 = (
   url: string,
   k1: string,
@@ -381,6 +381,28 @@ export const serverOf = (url: string): string => {
   }
 }
 
+// The security identity of a SERVICE.  Unlike serverOf's display-only host,
+// this retains the scheme and port, so two services at the same hostname do
+// not share a signing-key pin.  Bare hosts are accepted for migration and
+// manual-entry callers, using the same scheme policy as every network URL.
+export const serviceOriginOf = (value: string): string => {
+  const expanded = fromLud17(value.trim())
+  try {
+    if (
+      /^[a-z][a-z0-9+.-]*:\/\//i.test(expanded) &&
+      !/^https?:\/\//i.test(expanded)
+    ) {
+      return ''
+    }
+    const candidate = /^https?:\/\//i.test(expanded)
+      ? expanded
+      : `${defaultSchemeFor(expanded)}://${expanded}`
+    return isAllowedServiceUrl(candidate) ? new URL(candidate).origin : ''
+  } catch {
+    return ''
+  }
+}
+
 // The withdraw endpoint's host AND path - what a note has to be rebuilt from,
 // and so what a vault must be told to store as a note's `host`.
 //
@@ -408,7 +430,35 @@ export const noteEndpointOf = (url: string): string => {
   }
 }
 
-// ---- offline verification (optional) ----
+// ---- offline verification ----
+
+const MINT_PUBKEY_PATTERN = /^0[23][0-9a-f]{64}$/i
+const NOTE_SIGNATURE_PATTERN = /^[0-9a-f]{130}$/i
+
+const parseMintKey = (body: any): {mintPubkey: string} => {
+  if (
+    typeof body?.mintPubkey !== 'string' ||
+    !MINT_PUBKEY_PATTERN.test(body.mintPubkey)
+  ) {
+    throw new Error(
+      'SERVICE did not publish a valid persistent signing key (mintPubkey).'
+    )
+  }
+  return {mintPubkey: body.mintPubkey.toLowerCase()}
+}
+
+const requireMutationSignature = (body: any, field: 'sig' | 'sig2'): string => {
+  const signature = body?.[field]
+  if (typeof signature === 'string' && NOTE_SIGNATURE_PATTERN.test(signature)) {
+    return signature.toLowerCase()
+  }
+  // The SERVICE has already answered OK, so callers must preserve the fresh
+  // output secret even though the response is non-conformant.  Reuse the
+  // ambiguous-result path which carries or commits those secrets safely.
+  throw new AmbiguousMintError(
+    `SERVICE confirmed the mutation without a valid ${field} signature.`
+  )
+}
 
 // Signed the same way LUD-13 signs its auth seed phrase - the standard
 // Lightning node `signmessage` wrapping:
@@ -635,41 +685,15 @@ export type WithdrawRequestInfo = {
   minWithdrawable: number
   maxWithdrawable: number
   defaultDescription?: string
-  mintPubkey?: string
+  mintPubkey: string
 }
 
-// the informational GET (LUD-03 step 1) - never burns, rotates or alters
-// the note. This always queries by raw k1, which puts it on the wire; LUD-25
-// also defines an h=hex(sha256(k1)) form of this same GET that a SERVICE MAY
-// support instead (see 25.md's "Checking a note without exposing it"), not
-// implemented here. Callers that keep holding the note afterward SHOULD
-// rotate it (see receive.ts / BearerCard's refresh).
-export const fetchNoteInfo = async (
-  url: string
-): Promise<WithdrawRequestInfo> => {
-  // A device-backed bearer deliberately keeps only a secret-free mirror URL
-  // in browser storage. Never send that mirror to /w: SERVICE quite rightly
-  // rejects a withdraw lookup without k1, but its validation error hides the
-  // useful recovery action (reconnect the vault and export there). Every
-  // legitimate caller already reconstructs a secret-bearing URL first.
-  const queried = requireNoteK1(url)
-  // `sig` (offline verification) is only meaningful to a holder inspecting
-  // the note locally - the service already knows what it signed, so this
-  // GET has no use for it and it's dropped before the request goes out
-  // rather than sent along for nothing. `k1` (and `amount`, which the spec
-  // has the service ignore here anyway) are left as-is.
-  const reqUrl = new URL(url)
-  reqUrl.searchParams.delete('sig')
-  let body: any
-  try {
-    body = await lnurlFetch(reqUrl)
-  } catch (err) {
-    throw classifyNoteError(err as Error)
-  }
+export type HashWithdrawRequestInfo = Omit<WithdrawRequestInfo, 'k1'>
+
+const parseNoteLookupBody = (body: any): HashWithdrawRequestInfo => {
   if (
     body?.tag !== 'withdrawRequest' ||
     typeof body.callback !== 'string' ||
-    typeof body.k1 !== 'string' ||
     typeof body.maxWithdrawable !== 'number' ||
     !Number.isFinite(body.maxWithdrawable) ||
     body.maxWithdrawable < 0 ||
@@ -681,15 +705,88 @@ export const fetchNoteInfo = async (
   ) {
     throw new Error('Not a withdrawRequest (unexpected response).')
   }
-  // spec MUST: the response's k1 is the actual bearer secret, never a
-  // derived/opaque id - a service returning something else for the k1 we
-  // queried is non-compliant (or the note was rotated by someone else)
-  if (body.k1.toLowerCase() !== queried) {
+  return {...body, ...parseMintKey(body)} as HashWithdrawRequestInfo
+}
+
+const requestNoteInfoByHash = async (
+  url: string,
+  h: string
+): Promise<HashWithdrawRequestInfo> => {
+  if (!/^[0-9a-f]{64}$/i.test(h)) {
+    throw new Error('A note hash must be 32 bytes of hex.')
+  }
+  const hashUrl = new URL(url)
+  hashUrl.searchParams.delete('k1')
+  hashUrl.searchParams.delete('amount')
+  hashUrl.searchParams.delete('sig')
+  hashUrl.searchParams.set('h', h.toLowerCase())
+  const body = await lnurlFetch(hashUrl)
+  if (body.k1 !== undefined) {
+    throw new Error('SERVICE returned k1 in a hash-only lookup response.')
+  }
+  return parseNoteLookupBody(body)
+}
+
+// For device-held notes the companion already has h in public recovery
+// metadata and never needs to export k1 merely to inspect value or signing
+// keys.  No raw-k1 compatibility fallback is possible or attempted here.
+export const fetchNoteInfoByHash = async (
+  url: string,
+  h: string
+): Promise<HashWithdrawRequestInfo> => {
+  try {
+    return await requestNoteInfoByHash(url, h)
+  } catch (err) {
+    throw classifyNoteError(err as Error)
+  }
+}
+
+// The informational GET (LUD-03 step 1) never burns, rotates or alters the
+// note.  Prefer LUD-25's h=hex(sha256(k1)) lookup so merely checking value and
+// signing keys does not expose the bearer secret.  Fall back to raw k1 only
+// when an older SERVICE explicitly reports that k1 is the missing/required
+// parameter.  Unknown/spent replies and transport failures never trigger a
+// secret-revealing retry.
+export const fetchNoteInfo = async (
+  url: string
+): Promise<WithdrawRequestInfo> => {
+  // A device-backed bearer deliberately keeps only a secret-free mirror URL
+  // in browser storage. Never send that mirror to /w: SERVICE quite rightly
+  // rejects a withdraw lookup without k1, but its validation error hides the
+  // useful recovery action (reconnect the vault and export there). Every
+  // legitimate caller already reconstructs a secret-bearing URL first.
+  const queried = requireNoteK1(url)
+  const rawUrl = new URL(url)
+  rawUrl.searchParams.delete('sig')
+  try {
+    const info = await requestNoteInfoByHash(rawUrl.toString(), hashK1(queried))
+    return {...info, k1: queried}
+  } catch (err) {
+    const missingK1 =
+      err instanceof ServiceError &&
+      /(?:missing|required|specify).{0,40}\bk1\b|\bk1\b.{0,40}(?:missing|required)/i.test(
+        err.reason
+      )
+    if (!missingK1) throw classifyNoteError(err as Error)
+  }
+  let body: any
+  try {
+    body = await lnurlFetch(rawUrl)
+  } catch (fallbackError) {
+    throw classifyNoteError(fallbackError as Error)
+  }
+  // A raw compatibility response MUST echo the actual bearer secret, never a
+  // derived/opaque id.  The hash response omits it; restore the wallet's own
+  // already-known value only in the local return object for existing callers.
+  if (typeof body.k1 !== 'string' || body.k1.toLowerCase() !== queried) {
     throw new Error(
       "Service echoed back a different k1 than queried - the note may have been redeemed elsewhere, or the service isn't spec-compliant."
     )
   }
-  return body as WithdrawRequestInfo
+  return {
+    ...parseNoteLookupBody(body),
+    k1: queried
+  } as WithdrawRequestInfo
 }
 
 // after an AmbiguousMutationError: did the burn the request asked for
@@ -728,11 +825,10 @@ export type MintAddressInfo = {
   minWithdrawable: number
   maxWithdrawable: number
   defaultDescription?: string
-  // the wire field is still `mintPubkey` (LUD-25's term for a note's own
-  // signing key) - renamed on this side to sit next to nodeAlias/nodeUri/
-  // nodeColor, since at this endpoint it's never a note's key, always this
-  // mint's own underlying node identity (see lnurl-mint's
-  // _mint_address_response: derived straight from NodeInfo.uri)
+  // SERVICE signing identity.  It is deliberately separate from nodePubkey:
+  // backends without a compatible node signer use a persistent dedicated key.
+  mintPubkey: string
+  // Best-effort Lightning node identity parsed from nodeUri, for display only.
   nodePubkey?: string
   payLink: string
   nodeAlias?: string
@@ -781,9 +877,16 @@ export const fetchMintAddress = async (
     throw new Error('Not a mint address response (unexpected shape).')
   }
   const {mintPubkey, nodeCapacity, outstandingNotesMsat, ...rest} = body
+  const signingKey = parseMintKey({mintPubkey})
+  const nodePubkey =
+    typeof body.nodeUri === 'string' &&
+    MINT_PUBKEY_PATTERN.test(body.nodeUri.split('@')[0] ?? '')
+      ? body.nodeUri.split('@')[0]!.toLowerCase()
+      : undefined
   return {
     ...rest,
-    nodePubkey: mintPubkey,
+    ...signingKey,
+    nodePubkey,
     nodeCapacityMsat:
       typeof nodeCapacity === 'number' ? nodeCapacity : undefined,
     outstandingNotesMsat:
@@ -828,11 +931,10 @@ export class NoteSpentError extends Error {
   }
 }
 
-// thrown when SERVICE reports the k1 as never having been a valid note at
-// all - never minted here, minted at a different service, or simply
-// mistyped/corrupted. Distinct from NoteSpentError: nothing here proves
-// this wallet's copy was ever real, so it's surfaced as an error rather
-// than silently locked as spent
+// Thrown when SERVICE reports an unknown note.  For privacy, a hash lookup
+// uses this same response for burned and never-issued identifiers, so it is a
+// definitive "not outstanding" verdict but not proof the note never existed.
+// It remains distinct from a raw-k1 NoteSpentError for honest local wording.
 export class NoteUnknownError extends Error {
   constructor(reason: string) {
     super(
@@ -948,7 +1050,7 @@ export const meltNote = async (
 // generateNoteSecret(). rotateNote/splitNote/mergeNotes below are just the
 // browser-generates-its-own-secret case of these.
 
-export type HashedMutationResult = {signature?: string}
+export type HashedMutationResult = {signature: string}
 
 export const rotateNoteWithHash = async (
   callback: string,
@@ -959,12 +1061,12 @@ export const rotateNoteWithHash = async (
     ['k1', k1],
     ['h', h]
   ])
-  return {signature: body.sig}
+  return {signature: requireMutationSignature(body, 'sig')}
 }
 
 export type HashedSplitResult = {
-  signature?: string
-  changeSignature?: string
+  signature: string
+  changeSignature: string
 }
 
 export const splitNoteWithHash = async (
@@ -980,7 +1082,10 @@ export const splitNoteWithHash = async (
     ['h', h],
     ['h2', h2]
   ])
-  return {signature: body.sig, changeSignature: body.sig2}
+  return {
+    signature: requireMutationSignature(body, 'sig'),
+    changeSignature: requireMutationSignature(body, 'sig2')
+  }
 }
 
 export const mergeNotesWithHash = async (
@@ -992,10 +1097,10 @@ export const mergeNotesWithHash = async (
     ...k1s.map((k1): [string, string] => ['k1', k1]),
     ['h', h]
   ])
-  return {signature: body.sig}
+  return {signature: requireMutationSignature(body, 'sig')}
 }
 
-export type RotateResult = {k1: string; signature?: string}
+export type RotateResult = {k1: string; signature: string}
 
 // rotate: burn k1, get a fresh secret of the same value - closes the window
 // in which any previous holder (or logged URL) could redeem the note. Also
@@ -1025,9 +1130,9 @@ export const rotateNote = async (
 
 export type SplitResult = {
   k1: string
-  signature?: string
+  signature: string
   change: string
-  changeSignature?: string
+  changeSignature: string
 }
 
 // split: burn one or many k1s (LUD-25: "one or many | no | yes"), mint one
@@ -1097,18 +1202,16 @@ export type SettledNote = {
   callback: string
 }
 
-// resolves what a split's change note or a merge's result note is
-// ACTUALLY worth, and rotates it before further use. Neither response
+// Resolves what a split's change note or a merge's result note is actually
+// worth without mutating it again. Neither response
 // carries its own amount (WithdrawSuccessResponse has none - the spec's
 // only source of truth for a note's value is an informational GET), and a
 // mint that charges fees (LUD-25) may have deducted some from a split's
 // change, or refunded some into a merge's result - using the naively
 // computed pre-fee amount instead pairs a wrong `amount` with a signature
 // the mint actually issued for the true one, so the note looks unsigned
-// even though it isn't. That GET necessarily puts k1 on the wire in turn,
-// so - same as BearerCard's refresh() - a rotate immediately follows,
-// best-effort: a mint that doesn't support it keeps the GET-exposed k1
-// and its original signature rather than fail the whole operation over it.
+// even though it isn't. The lookup uses h=sha256(k1), so the existing note and
+// its signature can be retained without another mutation.
 export const settleNote = async (
   baseUrl: string,
   k1: string,
@@ -1118,21 +1221,11 @@ export const settleNote = async (
   const info = await fetchNoteInfo(
     withNewK1(baseUrl, k1, expectedAmountMsat, signature)
   )
-  try {
-    const rotated = await rotateNote(info.callback, k1)
-    return {
-      k1: rotated.k1,
-      amountMsat: info.maxWithdrawable,
-      signature: rotated.signature,
-      callback: info.callback
-    }
-  } catch {
-    return {
-      k1,
-      amountMsat: info.maxWithdrawable,
-      signature,
-      callback: info.callback
-    }
+  return {
+    k1,
+    amountMsat: info.maxWithdrawable,
+    signature,
+    callback: info.callback
   }
 }
 
@@ -1153,12 +1246,8 @@ export type PayRequestInfo = {
   // LUD-17 withdraw endpoint. Current minting binds the note to a
   // wallet-chosen secret through the mandatory callback comment.
   withdrawLink?: string
-  // rarely present here in practice: a WALLET that pays the invoice can
-  // recover SERVICE's node id straight from its own BOLT-11 signature, so
-  // the spec only has SERVICE publish mintPubkey where there's no invoice
-  // to recover it from - the withdrawRequest response, for rotated/split/
-  // merged notes. Kept optional here too since nothing forbids a SERVICE
-  // from including it anyway.
+  // Optional on this payRequest shape.  When present it is the SERVICE
+  // signing key, which may deliberately differ from the invoice/node key.
   mintPubkey?: string
   // LUD-25 (optional): parsed from metadata (see parseMintFee) - absent
   // means SERVICE didn't advertise one, which the spec says to read as

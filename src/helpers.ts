@@ -108,10 +108,8 @@ export const readNfcTag = async (): Promise<string | null> => {
   }
 }
 
-// a mint's published mintPubkey is its Lightning node's own identity key
-// (signing happens via that node's signmessage RPC - see lnurlcash.ts's
-// verifyNoteSignature) - mempool.space's explorer is a quick way to look up
-// what that node actually is before trusting it
+// A Lightning node pubkey from nodeUri, not the SERVICE's mintPubkey.  A
+// dedicated SERVICE signing key is deliberately not a routable node identity.
 export const mempoolNodeUrl = (pubkey: string): string =>
   `https://mempool.space/lightning/node/${pubkey}`
 

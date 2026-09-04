@@ -31,7 +31,9 @@ beforeEach(async () => {
 describe('lockTrustedMint', () => {
   it('trusts and locks a first-seen mint', () => {
     expect(mod.lockTrustedMint('mint.example', KEY_A)).toBe('added')
-    const entry = mod.trustedMints().find(m => m.server === 'mint.example')
+    const entry = mod
+      .trustedMints()
+      .find(m => m.server === 'https://mint.example')
     expect(entry?.mintPubkey).toBe(KEY_A)
     expect(entry?.locked).toBe(true)
   })
@@ -40,7 +42,7 @@ describe('lockTrustedMint', () => {
     mod.addTrustedMint('mint.example', KEY_A)
     expect(mod.lockTrustedMint('mint.example', KEY_A)).toBe('unchanged')
     expect(
-      mod.trustedMints().find(m => m.server === 'mint.example')?.locked
+      mod.trustedMints().find(m => m.server === 'https://mint.example')?.locked
     ).toBe(true)
     expect(mod.lockTrustedMint('mint.example', KEY_A)).toBe('unchanged')
     expect(mod.trustedMints()).toHaveLength(1)
@@ -49,12 +51,14 @@ describe('lockTrustedMint', () => {
   it('never silently replaces a differing advertised key - it stages it', () => {
     mod.lockTrustedMint('mint.example', KEY_A)
     expect(mod.lockTrustedMint('mint.example', KEY_B)).toBe('rekey-pending')
-    const entry = mod.trustedMints().find(m => m.server === 'mint.example')
+    const entry = mod
+      .trustedMints()
+      .find(m => m.server === 'https://mint.example')
     expect(entry?.mintPubkey).toBe(KEY_A) // the pin is untouched
     expect(entry?.pendingMintPubkey).toBe(KEY_B)
     // the offline-verification lookup must keep answering the pinned key
     expect(mod.getTrustedMintPubkey('mint.example')).toBe(KEY_A)
-    // re-seeing the same candidate is idempotent
+    // re-seeing the same candidate stages it once, never twice
     expect(mod.lockTrustedMint('mint.example', KEY_B)).toBe('rekey-pending')
     expect(mod.trustedMints()).toHaveLength(1)
   })
@@ -64,6 +68,14 @@ describe('lockTrustedMint', () => {
     expect(mod.lockTrustedMint('', KEY_A)).toBe('unchanged')
     expect(mod.trustedMints()).toHaveLength(0)
   })
+
+  it('keeps pins for different full origins separate', () => {
+    expect(mod.lockTrustedMint('http://localhost:8000/w', KEY_A)).toBe('added')
+    expect(mod.lockTrustedMint('https://localhost:8000/w', KEY_B)).toBe('added')
+    expect(mod.getTrustedMintPubkey('http://localhost:8000/other')).toBe(KEY_A)
+    expect(mod.getTrustedMintPubkey('https://localhost:8000/other')).toBe(KEY_B)
+    expect(mod.trustedMints()).toHaveLength(2)
+  })
 })
 
 describe('rekey review', () => {
@@ -71,7 +83,9 @@ describe('rekey review', () => {
     mod.lockTrustedMint('mint.example', KEY_A)
     mod.lockTrustedMint('mint.example', KEY_B)
     mod.confirmTrustedMintRekey('mint.example')
-    const entry = mod.trustedMints().find(m => m.server === 'mint.example')
+    const entry = mod
+      .trustedMints()
+      .find(m => m.server === 'https://mint.example')
     expect(entry?.mintPubkey).toBe(KEY_B)
     expect(entry?.pendingMintPubkey).toBeUndefined()
     expect(mod.getTrustedMintPubkey('mint.example')).toBe(KEY_B)
@@ -79,17 +93,32 @@ describe('rekey review', () => {
     expect(entry?.locked).toBe(true)
   })
 
+  it('retires the old key on an approved rotation', () => {
+    mod.addTrustedMint('mint.example', KEY_A)
+    expect(mod.addTrustedMint('mint.example', KEY_B)).toBe('rekey-pending')
+    mod.confirmTrustedMintRekey('mint.example')
+    expect(mod.getTrustedMintPubkey('mint.example')).toBe(KEY_B)
+    // the old key is gone, not archived - notes signed under it stop
+    // verifying offline until a rotate re-signs them under KEY_B
+    const entry = mod
+      .trustedMints()
+      .find(m => m.server === 'https://mint.example')
+    expect(JSON.stringify(entry)).not.toContain(KEY_A)
+  })
+
   it('dismiss drops the candidate and keeps the original pin', () => {
     mod.lockTrustedMint('mint.example', KEY_A)
     mod.lockTrustedMint('mint.example', KEY_B)
     mod.dismissTrustedMintRekey('mint.example')
-    const entry = mod.trustedMints().find(m => m.server === 'mint.example')
+    const entry = mod
+      .trustedMints()
+      .find(m => m.server === 'https://mint.example')
     expect(entry?.mintPubkey).toBe(KEY_A)
     expect(entry?.pendingMintPubkey).toBeUndefined()
     // a fresh detection can be staged again afterwards
     expect(mod.lockTrustedMint('mint.example', KEY_C)).toBe('rekey-pending')
     expect(
-      mod.trustedMints().find(m => m.server === 'mint.example')
+      mod.trustedMints().find(m => m.server === 'https://mint.example')
         ?.pendingMintPubkey
     ).toBe(KEY_C)
   })
@@ -99,7 +128,8 @@ describe('rekey review', () => {
     mod.confirmTrustedMintRekey('mint.example')
     mod.dismissTrustedMintRekey('mint.example')
     expect(
-      mod.trustedMints().find(m => m.server === 'mint.example')?.mintPubkey
+      mod.trustedMints().find(m => m.server === 'https://mint.example')
+        ?.mintPubkey
     ).toBe(KEY_A)
   })
 })
@@ -107,7 +137,9 @@ describe('rekey review', () => {
 describe('addTrustedMint', () => {
   it('adds a new mint unlocked', () => {
     expect(mod.addTrustedMint('mint.example', KEY_A)).toBe('added')
-    const entry = mod.trustedMints().find(m => m.server === 'mint.example')
+    const entry = mod
+      .trustedMints()
+      .find(m => m.server === 'https://mint.example')
     expect(entry?.locked).toBe(false)
   })
 
@@ -116,7 +148,9 @@ describe('addTrustedMint', () => {
     expect(
       mod.addTrustedMint('mint.example', KEY_A, {nodeAlias: 'Better Mint'})
     ).toBe('unchanged')
-    const entry = mod.trustedMints().find(m => m.server === 'mint.example')
+    const entry = mod
+      .trustedMints()
+      .find(m => m.server === 'https://mint.example')
     expect(entry?.nodeAlias).toBe('Better Mint')
     expect(entry?.pendingMintPubkey).toBeUndefined()
   })
@@ -126,7 +160,9 @@ describe('addTrustedMint', () => {
     expect(mod.addTrustedMint('mint.example', KEY_B, {nodeAlias: 'x'})).toBe(
       'rekey-pending'
     )
-    const entry = mod.trustedMints().find(m => m.server === 'mint.example')
+    const entry = mod
+      .trustedMints()
+      .find(m => m.server === 'https://mint.example')
     expect(entry?.mintPubkey).toBe(KEY_A)
     expect(entry?.pendingMintPubkey).toBe(KEY_B)
     expect(entry?.nodeAlias).toBe('x') // display info still refreshed
@@ -136,6 +172,35 @@ describe('addTrustedMint', () => {
     expect(() => mod.addTrustedMint('', KEY_A)).toThrow()
     expect(() => mod.addTrustedMint('mint.example', 'nope')).toThrow()
     expect(mod.trustedMints()).toHaveLength(0)
+  })
+
+  it('reconstructs a Lightning Address from an origin-backed pin', () => {
+    mod.addTrustedMint('https://mint.example:8443/w', KEY_A, {
+      username: 'cash'
+    })
+    expect(mod.getTrustedMintAddress('https://mint.example:8443')).toBe(
+      'cash@mint.example:8443'
+    )
+  })
+})
+
+describe('stored origin migration', () => {
+  it('upgrades a legacy host-only pin to its canonical origin', async () => {
+    store.set(
+      'lnurlcash_trusted_mints',
+      JSON.stringify([
+        {
+          server: 'mint.example',
+          mintPubkey: KEY_A,
+          addedAt: 1,
+          locked: false
+        }
+      ])
+    )
+    vi.resetModules()
+    mod = await import('./trustedMints')
+    expect(mod.trustedMints()[0]?.server).toBe('https://mint.example')
+    expect(mod.getTrustedMintPubkey('https://mint.example/w')).toBe(KEY_A)
   })
 })
 
@@ -151,7 +216,9 @@ describe('mergeTrustedMints (backup restore)', () => {
       } as never
     ])
     expect(added).toBe(1)
-    const entry = mod.trustedMints().find(m => m.server === 'mint.example')
+    const entry = mod
+      .trustedMints()
+      .find(m => m.server === 'https://mint.example')
     // a crafted backup must not be able to plant an irremovable entry or a
     // pre-staged "key change" - locks re-establish from held bearers - and
     // the pin sits out of signature verification until corroborated live
@@ -216,7 +283,9 @@ describe('unconfirmed (file-sourced) pins', () => {
 describe('grandfatherTrustedMint (unlock-time)', () => {
   it('adds unknown servers unlocked and unconfirmed', () => {
     expect(mod.grandfatherTrustedMint('mint.example', KEY_A)).toBe('added')
-    const entry = mod.trustedMints().find(m => m.server === 'mint.example')
+    const entry = mod
+      .trustedMints()
+      .find(m => m.server === 'https://mint.example')
     expect(entry?.locked).toBe(false)
     expect(entry?.unconfirmed).toBe(true)
     // a storage-sourced claim never decides the "signed" badge
@@ -227,13 +296,14 @@ describe('grandfatherTrustedMint (unlock-time)', () => {
     mod.lockTrustedMint('mint.example', KEY_A)
     expect(mod.grandfatherTrustedMint('mint.example', KEY_A)).toBe('unchanged')
     expect(
-      mod.trustedMints().find(m => m.server === 'mint.example')?.locked
+      mod.trustedMints().find(m => m.server === 'https://mint.example')?.locked
     ).toBe(true)
     expect(mod.grandfatherTrustedMint('mint.example', KEY_B)).toBe(
       'rekey-pending'
     )
     expect(
-      mod.trustedMints().find(m => m.server === 'mint.example')?.mintPubkey
+      mod.trustedMints().find(m => m.server === 'https://mint.example')
+        ?.mintPubkey
     ).toBe(KEY_A)
   })
 })
@@ -254,7 +324,7 @@ describe('unlockTrustedMint', () => {
     expect(() => mod.removeTrustedMint('held.example')).toThrow()
     mod.unlockTrustedMint('held.example')
     expect(
-      mod.trustedMints().find(m => m.server === 'held.example')?.locked
+      mod.trustedMints().find(m => m.server === 'https://held.example')?.locked
     ).toBe(false)
     mod.removeTrustedMint('held.example')
     expect(mod.isMintTrusted('held.example')).toBe(false)
@@ -264,7 +334,7 @@ describe('unlockTrustedMint', () => {
     mod.addTrustedMint('open.example', KEY_A)
     mod.unlockTrustedMint('open.example') // already unlocked
     expect(
-      mod.trustedMints().find(m => m.server === 'open.example')?.locked
+      mod.trustedMints().find(m => m.server === 'https://open.example')?.locked
     ).toBe(false)
     mod.unlockTrustedMint('nowhere.example') // not trusted at all
     expect(mod.trustedMints()).toHaveLength(1)
@@ -273,13 +343,15 @@ describe('unlockTrustedMint', () => {
   it('leaves the pinned key and other fields untouched', () => {
     mod.lockTrustedMint('held.example', KEY_A)
     mod.unlockTrustedMint('held.example')
-    const entry = mod.trustedMints().find(m => m.server === 'held.example')
+    const entry = mod
+      .trustedMints()
+      .find(m => m.server === 'https://held.example')
     expect(entry?.mintPubkey).toBe(KEY_A)
     // holding another bearer from this mint re-locks it the same as the
     // first time
     expect(mod.lockTrustedMint('held.example', KEY_A)).toBe('unchanged')
     expect(
-      mod.trustedMints().find(m => m.server === 'held.example')?.locked
+      mod.trustedMints().find(m => m.server === 'https://held.example')?.locked
     ).toBe(true)
   })
 })
