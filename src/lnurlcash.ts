@@ -1558,3 +1558,56 @@ export const decodeBolt11AmountMsat = (pr: string): number | null => {
   const msat = Number(digits) * BOLT11_AMOUNT_MSAT_PER_UNIT[multiplier || '']
   return Number.isInteger(msat) ? msat : null
 }
+
+// BOLT-11's tagged-field type values - each is the data part's own bech32
+// charset index of the letter the spec names it after (e.g. 'p' is index 1
+// in "qpzry9x8gf2tvdw0s3jn54khce6mua7l"), not an arbitrary enum
+const BOLT11_TAG_PAYMENT_HASH = 1
+
+// full bech32 decode this time (decodeBolt11AmountMsat above only reads the
+// human-readable part) - walks the tagged-field section to pull out
+// payment_hash ('p', always exactly 52 5-bit words = 260 bits = the 256-bit
+// hash plus 4 padding bits) so a disclosed melt/mint preimage can be
+// checked against the actual invoice it claims to settle, not just trusted
+// on the service's word. Layout after the checksum-stripped data words:
+// [7 words timestamp][tagged fields: 1 word type + 2 words length + data]
+// [104 words signature] - the signature isn't tagged, so the field loop
+// stops 104 words short of the end rather than trying to parse it as one
+export const decodeBolt11PaymentHash = (pr: string): string | null => {
+  const trimmed = pr.trim().toLowerCase()
+  try {
+    const decoded = bech32.decode(trimmed as `${string}1${string}`, 2048)
+    const words = decoded.words
+    const fieldsEnd = words.length - 104
+    let pos = 7
+    while (pos + 3 <= fieldsEnd) {
+      const tag = words[pos]
+      const len = words[pos + 1] * 32 + words[pos + 2]
+      const start = pos + 3
+      const end = start + len
+      if (end > fieldsEnd) break
+      if (tag === BOLT11_TAG_PAYMENT_HASH && len === 52) {
+        return bytesToHex(
+          bech32.fromWords(words.slice(start, end)).slice(0, 32)
+        )
+      }
+      pos = end
+    }
+    return null
+  } catch {
+    return null
+  }
+}
+
+// true only when preimage is well-formed AND actually hashes to the exact
+// payment_hash this invoice commits to - the one thing that turns a
+// service's bare {"preimage": "..."} claim into independent proof, the same
+// way offline verification (see above) turns a bare mintPubkey claim into
+// one. Never throws: an undecodable invoice or malformed preimage is simply
+// not verified, same as a missing preimage
+export const verifyMeltPreimage = (pr: string, preimage: string): boolean => {
+  if (!isPreimage(preimage)) return false
+  const expected = decodeBolt11PaymentHash(pr)
+  if (!expected) return false
+  return bytesToHex(sha256(hexToBytes(preimage))) === expected
+}

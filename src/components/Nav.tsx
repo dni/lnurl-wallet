@@ -1,4 +1,4 @@
-import {Show, For, createSignal, onMount, onCleanup} from 'solid-js'
+import {Show, createSignal} from 'solid-js'
 import {A, useNavigate} from '@solidjs/router'
 import {
   IoMenuSharp,
@@ -6,41 +6,19 @@ import {
   IoWalletSharp,
   IoAddCircleSharp,
   IoLockClosedSharp,
-  IoSaveSharp,
   IoBookSharp,
-  IoCloudOfflineSharp,
+  IoCogSharp,
   IoHardwareChipSharp,
-  IoCashSharp,
   IoReceiptSharp
 } from 'solid-icons/io'
 import {useWallet} from '../WalletContext'
 import {useDevice} from '../DeviceContext'
-import {offlineMode, setOfflineMode} from '../offlineMode'
-import {currency, setCurrency, CURRENCY_LABEL} from '../currency'
-import type {Currency} from '../currency'
-
-// order they appear in the dropdown - 'none' (Disabled) first since that's
-// the default/off state, then alphabetical by the same three currencies
-// price.lnbits.com serves directly (see currency.ts)
-const CURRENCY_OPTIONS: Currency[] = ['none', 'eur', 'gbp', 'usd']
 
 const Nav = () => {
   const {state, encrypted, lock} = useWallet()
   const {connectionState} = useDevice()
   const navigate = useNavigate()
   const [menuOpen, setMenuOpen] = createSignal(false)
-  const [currencyMenuOpen, setCurrencyMenuOpen] = createSignal(false)
-  let currencyMenuRef: HTMLDivElement | null = null
-
-  onMount(() => {
-    const onDocClick = (e: MouseEvent) => {
-      if (currencyMenuRef && !currencyMenuRef.contains(e.target as Node)) {
-        setCurrencyMenuOpen(false)
-      }
-    }
-    document.addEventListener('mousedown', onDocClick)
-    onCleanup(() => document.removeEventListener('mousedown', onDocClick))
-  })
 
   const closeMenu = () => setMenuOpen(false)
 
@@ -102,66 +80,21 @@ const Nav = () => {
             <IoHardwareChipSharp />
             &nbsp;Vault
           </A>
-          {/* not gated on state() === 'unlocked' - restoring a backup is
-          exactly what a device with no wallet yet (state() === 'none') needs
-          this link for, and hiding it there was the whole bug: after
-          "Forget this wallet" there was no way back to /backup at all */}
-          <A href="/backup" class="nav-link" title="Backup &amp; restore">
-            <IoSaveSharp />
-            &nbsp;Backup
-          </A>
         </div>
         <div class="nav-persistent">
-          <div class="currency-menu" ref={el => (currencyMenuRef = el)}>
-            <button
-              type="button"
-              class="nav-icon-toggle"
-              classList={{active: currency() !== 'none'}}
-              title="Currency - show a fiat estimate alongside sats, using price.lnbits.com"
-              onClick={() => setCurrencyMenuOpen(v => !v)}
-            >
-              <IoCashSharp />
-              <span class="nav-label">
-                &nbsp;Currency
-                <Show when={currency() !== 'none'}>
-                  &nbsp;(
-                  {CURRENCY_LABEL[currency() as Exclude<Currency, 'none'>]})
-                </Show>
-              </span>
-            </button>
-            <Show when={currencyMenuOpen()}>
-              <div class="currency-menu-panel more-menu-panel">
-                <For each={CURRENCY_OPTIONS}>
-                  {option => (
-                    <button
-                      type="button"
-                      classList={{active: currency() === option}}
-                      onClick={() => {
-                        setCurrency(option)
-                        setCurrencyMenuOpen(false)
-                      }}
-                    >
-                      {option === 'none' ? 'Disabled' : CURRENCY_LABEL[option]}
-                    </button>
-                  )}
-                </For>
-              </div>
-            </Show>
-          </div>
-          <button
-            type="button"
-            class="nav-icon-toggle"
-            classList={{active: offlineMode()}}
-            title={
-              offlineMode()
-                ? 'Offline mode is on - no requests reach any service until you turn it off'
-                : 'Offline mode - block rotate, melt, split, merge and every other service request'
-            }
-            onClick={() => setOfflineMode(!offlineMode())}
+          {/* not gated on state() === 'unlocked' - restoring a backup (now
+          one of the cards on this page) is exactly what a device with no
+          wallet yet (state() === 'none') needs this link for, and hiding it
+          there was the whole bug this comment used to guard against on the
+          old standalone /backup link: after "Forget this wallet" there was
+          no way back to it at all */}
+          <A
+            href="/settings"
+            title="Settings - auto-lock, currency, offline mode, backup &amp; restore"
           >
-            <IoCloudOfflineSharp />
-            <span class="nav-label">&nbsp;Offline mode</span>
-          </button>
+            <IoCogSharp />
+            <span class="nav-label">&nbsp;Settings</span>
+          </A>
           <A href="/docs" title="Documentation">
             <IoBookSharp />
             <span class="nav-label">&nbsp;Docs</span>

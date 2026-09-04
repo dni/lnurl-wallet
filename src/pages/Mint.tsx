@@ -1587,7 +1587,7 @@ const Mint: Component = () => {
                             selectMint(mintAddressFor(mint.server))
                           }
                         >
-                          Mint here
+                          Mint
                         </button>
                       </Show>
                       <button

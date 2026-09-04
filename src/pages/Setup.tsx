@@ -212,7 +212,7 @@ const Setup: Component = () => {
           <p>
             Restoring straight from a backup file instead - no seed phrase
             needed, as long as you still know its password - happens on the{' '}
-            <A href="/backup">Backup &amp; restore</A> page.
+            <A href="/settings">Settings</A> page.
           </p>
         </div>
       </div>

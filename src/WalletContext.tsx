@@ -11,6 +11,7 @@ import {
 import toast from 'solid-toast'
 
 import {notify, NotifyKind} from './helpers'
+import {autoLockMinutes} from './autoLock'
 import {
   deriveWalletLinkingKey,
   deriveStorageRootKey,
@@ -139,11 +140,11 @@ export type WalletContextType = {
 const WalletContext = createContext<WalletContextType>()
 
 // idle-timeout auto-lock: only meaningful for a password-encrypted key (see
-// lock() below, which no-ops otherwise) - 5 minutes with no activity
-// anywhere in the tab locks the wallet, with a 30s warning toast first so a
-// holder who's just reading (not moving the mouse) can stay unlocked
-// instead of getting dropped back to the unlock screen mid-task
-const AUTO_LOCK_MS = 5 * 60 * 1000
+// lock() below, which no-ops otherwise) - autoLockMinutes() (Settings.tsx,
+// default 5) with no activity anywhere in the tab locks the wallet, with a
+// 30s warning toast first so a holder who's just reading (not moving the
+// mouse) can stay unlocked instead of getting dropped back to the unlock
+// screen mid-task. 0 minutes means the holder turned this off entirely.
 const LOCK_WARNING_MS = 30 * 1000
 
 // a wallet's root secret lives in exactly one of two slots at a time - the
@@ -173,7 +174,7 @@ export const WalletProvider = (props: {children: JSX.Element}) => {
   )
   let aesKey: CryptoKey | null = null
 
-  // idle-timeout auto-lock bookkeeping - see AUTO_LOCK_MS/LOCK_WARNING_MS
+  // idle-timeout auto-lock bookkeeping - see autoLockMinutes()/LOCK_WARNING_MS
   let lastActivity = Date.now()
   let warningToastId: string | null = null
   const [warningSecondsLeft, setWarningSecondsLeft] = createSignal<
@@ -482,18 +483,20 @@ export const WalletProvider = (props: {children: JSX.Element}) => {
   // setTimeout, since a backgrounded tab throttles timers but Date.now()
   // still reflects real elapsed time whenever this next gets to run
   createEffect(() => {
-    if (state() !== 'unlocked' || !rootKeyIsEncrypted()) {
+    const minutes = autoLockMinutes()
+    if (state() !== 'unlocked' || !rootKeyIsEncrypted() || minutes === 0) {
       dismissWarning()
       return
     }
+    const autoLockMs = minutes * 60 * 1000
     lastActivity = Date.now()
     const interval = setInterval(() => {
       const elapsed = Date.now() - lastActivity
-      if (elapsed >= AUTO_LOCK_MS) {
+      if (elapsed >= autoLockMs) {
         lock()
         notify('Wallet locked due to inactivity.', NotifyKind.ERROR)
-      } else if (elapsed >= AUTO_LOCK_MS - LOCK_WARNING_MS) {
-        setWarningSecondsLeft(Math.ceil((AUTO_LOCK_MS - elapsed) / 1000))
+      } else if (elapsed >= autoLockMs - LOCK_WARNING_MS) {
+        setWarningSecondsLeft(Math.ceil((autoLockMs - elapsed) / 1000))
         showLockWarning()
       } else if (warningToastId) {
         dismissWarning()

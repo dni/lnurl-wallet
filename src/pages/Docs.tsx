@@ -216,7 +216,7 @@ digest  = sha256(sha256("Lightning Signed Message:" || message))`}</pre>
           from is trusted automatically instead (holding funds there already
           implied trusting it) and can't be removed from the list; anything you
           added yourself - by confirming a lookup or typing it in directly - can
-          be. The list travels with your <A href="/backup">backup</A> file, in
+          be. The list travels with your <A href="/settings">backup</A> file, in
           plain (a signing key isn't a secret).
         </p>
       </div>

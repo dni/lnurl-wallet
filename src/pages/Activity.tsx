@@ -16,13 +16,21 @@ import {
   IoReceiptSharp,
   IoArrowBackSharp,
   IoOpenSharp,
-  IoSearchSharp
+  IoSearchSharp,
+  IoCheckmarkCircleSharp,
+  IoCopySharp
 } from 'solid-icons/io'
 
 import {useWallet} from '../WalletContext'
 import type {ActivityKind} from '../storage'
-import {formatDate, formatRelativeTime} from '../helpers'
+import {
+  fetchInvoiceVerification,
+  verifyMeltPreimage,
+  type VerifyResult
+} from '../lnurlcash'
+import {formatDate, formatRelativeTime, copyToClipboard} from '../helpers'
 import RequireWallet from '../components/RequireWallet'
+import Dialog from '../components/Dialog'
 
 // one icon per ActivityKind, reusing the same icon each action already
 // shows elsewhere in the app (Mint's cash, BearerCard's split/refresh/
@@ -65,6 +73,39 @@ const Activity: Component = () => {
   const clear = () => {
     clearActivity()
     setConfirmClear(false)
+  }
+
+  // the dialog's own state - null url means closed. Checking is a settled
+  // LUD-21 verify response already carries everything needed (the invoice
+  // itself, settled, and an optional preimage), so there's nothing to fetch
+  // beyond that one request - no separate "fetch the invoice" round trip
+  const [verifyDialogUrl, setVerifyDialogUrl] = createSignal<string | null>(
+    null
+  )
+  const [verifying, setVerifying] = createSignal(false)
+  const [verifyResult, setVerifyResult] = createSignal<VerifyResult | null>(
+    null
+  )
+  const [verifyError, setVerifyError] = createSignal<string | null>(null)
+
+  const openVerify = async (url: string) => {
+    setVerifyDialogUrl(url)
+    setVerifyResult(null)
+    setVerifyError(null)
+    setVerifying(true)
+    try {
+      setVerifyResult(await fetchInvoiceVerification(url))
+    } catch (err) {
+      setVerifyError((err as Error).message)
+    } finally {
+      setVerifying(false)
+    }
+  }
+
+  const closeVerify = () => {
+    setVerifyDialogUrl(null)
+    setVerifyResult(null)
+    setVerifyError(null)
   }
 
   return (
@@ -120,16 +161,15 @@ const Activity: Component = () => {
                         {text}
                         <Show when={verifyUrl}>
                           {url => (
-                            <a
+                            <button
+                              type="button"
                               class="activity-verify-link"
-                              href={url()}
-                              target="_blank"
-                              rel="noreferrer"
-                              title="Open the payment verification link"
+                              title="Check whether this payment settled"
+                              onClick={() => openVerify(url())}
                             >
                               <IoOpenSharp />
                               &nbsp;Verify
-                            </a>
+                            </button>
                           )}
                         </Show>
                       </span>
@@ -150,6 +190,73 @@ const Activity: Component = () => {
           </ul>
         </Show>
       </div>
+      <Show when={verifyDialogUrl()}>
+        <Dialog onClose={closeVerify}>
+          <h4>Payment verification</h4>
+          <Show when={verifying()}>
+            <p>
+              <IoRefreshSharp class="spin" />
+              &nbsp;Checking...
+            </p>
+          </Show>
+          <Show when={verifyError()}>
+            {err => <p class="warning">{err()}</p>}
+          </Show>
+          <Show when={verifyResult()}>
+            {result => (
+              <>
+                <p>
+                  {result().settled
+                    ? 'Settled - the service reports this payment went through.'
+                    : 'Not settled yet.'}
+                </p>
+                <label>Invoice</label>
+                <p class="mint-pubkey">{result().pr}</p>
+                <div class="btns">
+                  <button
+                    type="button"
+                    onClick={() => copyToClipboard(result().pr)}
+                  >
+                    <IoCopySharp />
+                    &nbsp;Copy invoice
+                  </button>
+                </div>
+                <Show when={result().settled}>
+                  <Show
+                    when={result().preimage}
+                    fallback={
+                      <p class="warning">
+                        Settled, but the service did not disclose a preimage -
+                        this is only the service's own claim, not independently
+                        checkable.
+                      </p>
+                    }
+                  >
+                    {preimage => (
+                      <Show
+                        when={verifyMeltPreimage(result().pr, preimage())}
+                        fallback={
+                          <p class="warning">
+                            The disclosed preimage does NOT hash to this
+                            invoice's payment hash - this is not valid proof of
+                            payment.
+                          </p>
+                        }
+                      >
+                        <p>
+                          <IoCheckmarkCircleSharp />
+                          &nbsp;Preimage verified - it hashes to exactly this
+                          invoice's payment hash.
+                        </p>
+                      </Show>
+                    )}
+                  </Show>
+                </Show>
+              </>
+            )}
+          </Show>
+        </Dialog>
+      </Show>
     </RequireWallet>
   )
 }

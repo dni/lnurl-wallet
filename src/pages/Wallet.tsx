@@ -61,6 +61,14 @@ import {
 } from '../deviceOrchestration'
 import {useDevice} from '../DeviceContext'
 import {offlineMode} from '../offlineMode'
+import {
+  noteSortKey,
+  setNoteSortKey,
+  noteSortDesc,
+  setNoteSortDesc,
+  noteGroupByMint,
+  setNoteGroupByMint
+} from '../notePrefs'
 import {notify, NotifyKind, msatToSats, pasteFromClipboard} from '../helpers'
 import {takeMeltInvoice} from '../meltHandoff'
 import {receiveIntoWallet} from '../receive'
@@ -97,9 +105,14 @@ const Wallet: Component = () => {
   // ref below, which focuses it the moment it appears)
   const [showSearch, setShowSearch] = createSignal(false)
   let searchInputRef: HTMLInputElement | undefined
-  const [sortKey, setSortKey] = createSignal<'amount' | 'updated'>('updated')
-  const [sortDesc, setSortDesc] = createSignal(true)
-  const [groupByMint, setGroupByMint] = createSignal(false)
+  // remembered across reloads (see notePrefs.ts) instead of always
+  // resetting to Updated/descending/ungrouped
+  const sortKey = noteSortKey
+  const setSortKey = setNoteSortKey
+  const sortDesc = noteSortDesc
+  const setSortDesc = setNoteSortDesc
+  const groupByMint = noteGroupByMint
+  const setGroupByMint = setNoteGroupByMint
   const [combining, setCombining] = createSignal(false)
   const [showSplitInput, setShowSplitInput] = createSignal(false)
   const [splitSats, setSplitSats] = createSignal('')
@@ -132,6 +145,12 @@ const Wallet: Component = () => {
   // one button showing the active choice, a panel for picking the other
   const [showSortMenu, setShowSortMenu] = createSignal(false)
   let sortMenuRef: HTMLDivElement | null = null
+  // Rotate all/Remove all spent - wallet-wide actions that don't depend on
+  // a selection, so they live up here rather than in .selection-toolbar's
+  // own More (which only ever shows once something is selected) - same
+  // collapse-behind-one-button treatment as that one and Sort above
+  const [showListMoreMenu, setShowListMoreMenu] = createSignal(false)
+  let listMoreMenuRef: HTMLDivElement | null = null
   onMount(() => {
     const onDocClick = (e: MouseEvent) => {
       const target = e.target as Node
@@ -140,6 +159,9 @@ const Wallet: Component = () => {
       }
       if (sortMenuRef && !sortMenuRef.contains(target)) {
         setShowSortMenu(false)
+      }
+      if (listMoreMenuRef && !listMoreMenuRef.contains(target)) {
+        setShowListMoreMenu(false)
       }
     }
     document.addEventListener('mousedown', onDocClick)
@@ -319,7 +341,7 @@ const Wallet: Component = () => {
   // nothing; switching to a different key starts it off descending
   // (highest amount / most recently updated first - the more common ask)
   const toggleSort = (key: 'amount' | 'updated') => {
-    if (sortKey() === key) setSortDesc(d => !d)
+    if (sortKey() === key) setSortDesc(!sortDesc())
     else {
       setSortKey(key)
       setSortDesc(true)
@@ -1411,10 +1433,6 @@ const Wallet: Component = () => {
           <div id="unlock" class="page">
             <div class="setup-card">
               <h2>Unlock your wallet</h2>
-              <p>
-                Your linking key is stored encrypted - enter your password to
-                decrypt it and your bearer tokens.
-              </p>
               <form onSubmit={unlockWallet}>
                 <input
                   type="password"
@@ -1787,40 +1805,63 @@ const Wallet: Component = () => {
                   type="button"
                   classList={{active: groupByMint()}}
                   title="Show notes grouped under their issuing mint instead of one flat list"
-                  onClick={() => setGroupByMint(v => !v)}
+                  onClick={() => setGroupByMint(!groupByMint())}
                 >
                   <IoLayersSharp />
                   <span class="btn-label">&nbsp;Group</span>
                 </button>
-                <button
-                  type="button"
-                  disabled={
-                    refreshingAll() ||
-                    offlineMode() ||
-                    spendableBearers().length === 0
-                  }
-                  title={
-                    offlineMode()
-                      ? 'Offline mode is on'
-                      : 'Rotate every unspent note in the wallet, one at a time'
-                  }
-                  onClick={refreshAllNotes}
-                >
-                  <Show when={refreshingAll()} fallback={<IoRefreshSharp />}>
-                    <IoRefreshSharp class="spin" />
-                  </Show>
-                  <span class="btn-label">&nbsp;Rotate all</span>
-                </button>
-                <Show when={spentCount() > 0}>
+                <div class="more-menu" ref={el => (listMoreMenuRef = el)}>
                   <button
                     type="button"
-                    title={`Clear all ${spentCount()} spent note${spentCount() === 1 ? '' : 's'} from the wallet`}
-                    onClick={() => setConfirmClearSpent(true)}
+                    class="icon-btn"
+                    title="More actions - rotate all, remove all spent"
+                    onClick={() => setShowListMoreMenu(v => !v)}
                   >
-                    <IoTrashSharp />
-                    <span class="btn-label">&nbsp;Remove all spent</span>
+                    <IoEllipsisVerticalSharp />
                   </button>
-                </Show>
+                  <Show when={showListMoreMenu()}>
+                    <div class="more-menu-panel">
+                      <button
+                        type="button"
+                        disabled={
+                          refreshingAll() ||
+                          offlineMode() ||
+                          spendableBearers().length === 0
+                        }
+                        title={
+                          offlineMode()
+                            ? 'Offline mode is on'
+                            : 'Rotate every unspent note in the wallet, one at a time'
+                        }
+                        onClick={() => {
+                          refreshAllNotes()
+                          setShowListMoreMenu(false)
+                        }}
+                      >
+                        <Show
+                          when={refreshingAll()}
+                          fallback={<IoRefreshSharp />}
+                        >
+                          <IoRefreshSharp class="spin" />
+                        </Show>
+                        &nbsp;Rotate all
+                      </button>
+                      <Show when={spentCount() > 0}>
+                        <button
+                          type="button"
+                          title={`Clear all ${spentCount()} spent note${spentCount() === 1 ? '' : 's'} from the wallet`}
+                          onClick={() => {
+                            setConfirmClearSpent(true)
+                            setShowListMoreMenu(false)
+                          }}
+                        >
+                          <IoTrashSharp />
+                          &nbsp;Remove all spent
+                        </button>
+                      </Show>
+                    </div>
+                  </Show>
+                </div>
               </div>
             </section>
 
