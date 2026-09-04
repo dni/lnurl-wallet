@@ -1678,7 +1678,7 @@ const Wallet: Component = () => {
                       onClick={() => setShowSearch(true)}
                     >
                       <IoSearchSharp />
-                      &nbsp;Search
+                      <span class="btn-label">&nbsp;Search</span>
                     </button>
                   }
                 >
@@ -1779,7 +1779,7 @@ const Wallet: Component = () => {
                     onClick={() => setShowSpent(v => !v)}
                   >
                     <IoBanSharp />
-                    &nbsp;Show spent
+                    <span class="btn-label">&nbsp;Show spent</span>
                     <Show when={!showSpent()}>&nbsp;({spentCount()})</Show>
                   </button>
                 </Show>
@@ -1790,393 +1790,386 @@ const Wallet: Component = () => {
                   onClick={() => setGroupByMint(v => !v)}
                 >
                   <IoLayersSharp />
-                  &nbsp;Group
+                  <span class="btn-label">&nbsp;Group</span>
                 </button>
-              </div>
-            </section>
-
-            <section class="selection-toolbar">
-              <div class="btns">
                 <button
-                  class="icon-btn refresh-btn"
+                  type="button"
                   disabled={
-                    !canRefreshSelected() || refreshing() || offlineMode()
+                    refreshingAll() ||
+                    offlineMode() ||
+                    spendableBearers().length === 0
                   }
                   title={
                     offlineMode()
                       ? 'Offline mode is on'
-                      : canRefreshSelected()
-                        ? 'Fetch the current value from the service, then rotate (this GET puts k1 on the wire) - one at a time for every selected note'
-                        : 'Select notes to rotate'
+                      : 'Rotate every unspent note in the wallet, one at a time'
                   }
-                  onClick={refreshSelected}
+                  onClick={refreshAllNotes}
                 >
-                  <Show when={refreshing()} fallback={<IoRefreshSharp />}>
+                  <Show when={refreshingAll()} fallback={<IoRefreshSharp />}>
                     <IoRefreshSharp class="spin" />
                   </Show>
-                  <span class="btn-label">
-                    &nbsp;Rotate
-                    <Show when={selectedBearers().length > 1}>
-                      &nbsp;({selectedBearers().length})
-                    </Show>
-                  </span>
+                  <span class="btn-label">&nbsp;Rotate all</span>
                 </button>
-                <button
-                  class="icon-btn split-single-btn"
-                  disabled={!canSplitSingle() || offlineMode()}
-                  title={
-                    offlineMode()
-                      ? 'Offline mode is on'
-                      : canSplitSingle()
-                        ? 'Split the selected note into two'
-                        : 'Select exactly 1 verified, unspent note to split'
-                  }
-                  onClick={() => setShowSplitSingleInput(v => !v)}
-                >
-                  <IoGitBranchSharp />
-                  <span class="btn-label">&nbsp;Split</span>
-                </button>
-                <button
-                  class="icon-btn combine-btn"
-                  disabled={!canCombine() || combining() || offlineMode()}
-                  title={
-                    offlineMode()
-                      ? 'Offline mode is on'
-                      : canCombine()
-                        ? 'Combine the selected notes into one. If this mint charges a fee, combining refunds part of what was already withheld when these notes were minted - you get back all but one base fee.'
-                        : 'Select 2+ verified, unspent notes from the same mint to combine'
-                  }
-                  onClick={combineSelected}
-                >
-                  <Show when={combining()} fallback={<IoGitMergeSharp />}>
-                    <IoRefreshSharp class="spin" />
-                  </Show>
-                  <span class="btn-label">&nbsp;Combine</span>
-                </button>
-                <button
-                  class="icon-btn split-btn"
-                  disabled={!canCombine() || splitting() || offlineMode()}
-                  title={
-                    offlineMode()
-                      ? 'Offline mode is on'
-                      : canCombine()
-                        ? 'Combine the selected notes and split off an amount, leaving the rest as change. If this mint charges a fee, combining refunds part of what was already withheld when these notes were minted - you get back all but one base fee.'
-                        : 'Select 2+ verified, unspent notes from the same mint to combine & split'
-                  }
-                  onClick={() => setShowSplitInput(v => !v)}
-                >
-                  <Show when={splitting()} fallback={<IoGitBranchSharp />}>
-                    <IoRefreshSharp class="spin" />
-                  </Show>
-                  <span class="btn-label">&nbsp;Combine &amp; split</span>
-                </button>
-                <button
-                  class="icon-btn transfer-btn"
-                  disabled={!canTransfer() || offlineMode()}
-                  title={
-                    offlineMode()
-                      ? 'Offline mode is on'
-                      : canTransfer()
-                        ? 'Transfer the selected note to a different mint'
-                        : 'Select exactly 1 note to transfer'
-                  }
-                  onClick={() => setTransferSource(selectedEligible()[0])}
-                >
-                  <IoSwapHorizontalSharp />
-                  <span class="btn-label">&nbsp;Transfer</span>
-                </button>
-                <div class="more-menu" ref={el => (moreMenuRef = el)}>
+                <Show when={spentCount() > 0}>
                   <button
                     type="button"
-                    class="icon-btn more-btn"
-                    title="More actions - rotate all, remove all spent, label, mark spent, export"
-                    onClick={() => setShowMoreMenu(v => !v)}
+                    title={`Clear all ${spentCount()} spent note${spentCount() === 1 ? '' : 's'} from the wallet`}
+                    onClick={() => setConfirmClearSpent(true)}
                   >
-                    <IoEllipsisVerticalSharp />
-                  </button>
-                  <Show when={showMoreMenu()}>
-                    <div class="more-menu-panel">
-                      <button
-                        class="icon-btn label-btn"
-                        disabled={!canLabelSelected()}
-                        title={
-                          canLabelSelected()
-                            ? 'Set a label on every selected note (private, for your own reference)'
-                            : 'Select notes to label'
-                        }
-                        onClick={() => {
-                          openLabelInput()
-                          setShowMoreMenu(false)
-                        }}
-                      >
-                        <IoPencilSharp />
-                        &nbsp;Label
-                        <Show when={selectedBearers().length > 1}>
-                          &nbsp;({selectedBearers().length})
-                        </Show>
-                      </button>
-                      <button
-                        class="icon-btn mark-spent-btn"
-                        disabled={!canMarkSpentSelected()}
-                        title={
-                          canMarkSpentSelected()
-                            ? 'Mark every selected note as spent - locks them without removing them, e.g. if you already handed them out some other way'
-                            : 'Select notes to mark as spent'
-                        }
-                        onClick={() => {
-                          markSpentSelected()
-                          setShowMoreMenu(false)
-                        }}
-                      >
-                        <IoBanSharp />
-                        &nbsp;Mark spent
-                        <Show when={selectedBearers().length > 1}>
-                          &nbsp;({selectedBearers().length})
-                        </Show>
-                      </button>
-                      <button
-                        class="icon-btn export-btn"
-                        disabled={selected().size === 0}
-                        title={
-                          selected().size === 0
-                            ? 'Select notes to export'
-                            : 'Download the selected notes as a text file (bech32-encoded, one per line)'
-                        }
-                        onClick={() => {
-                          exportSelected()
-                          setShowMoreMenu(false)
-                        }}
-                      >
-                        <IoDownloadSharp />
-                        &nbsp;Export
-                        <Show when={selected().size > 0}>
-                          &nbsp;({selected().size})
-                        </Show>
-                      </button>
-                      <button
-                        class="icon-btn qr-export-btn"
-                        disabled={selected().size === 0}
-                        title={
-                          selected().size === 0
-                            ? 'Select notes to download as QR codes'
-                            : 'Download an SVG QR code for each selected note'
-                        }
-                        onClick={() => {
-                          downloadQrSelected()
-                          setShowMoreMenu(false)
-                        }}
-                      >
-                        <IoQrCodeSharp />
-                        &nbsp;QR
-                        <Show when={selected().size > 0}>
-                          &nbsp;({selected().size})
-                        </Show>
-                      </button>
-                      <button
-                        type="button"
-                        disabled={
-                          refreshingAll() ||
-                          offlineMode() ||
-                          spendableBearers().length === 0
-                        }
-                        title={
-                          offlineMode()
-                            ? 'Offline mode is on'
-                            : 'Rotate every unspent note in the wallet, one at a time'
-                        }
-                        onClick={() => {
-                          refreshAllNotes()
-                          setShowMoreMenu(false)
-                        }}
-                      >
-                        <Show
-                          when={refreshingAll()}
-                          fallback={<IoRefreshSharp />}
-                        >
-                          <IoRefreshSharp class="spin" />
-                        </Show>
-                        &nbsp;Rotate all
-                      </button>
-                      <Show when={spentCount() > 0}>
-                        <button
-                          type="button"
-                          title={`Clear all ${spentCount()} spent note${spentCount() === 1 ? '' : 's'} from the wallet`}
-                          onClick={() => {
-                            setConfirmClearSpent(true)
-                            setShowMoreMenu(false)
-                          }}
-                        >
-                          <IoTrashSharp />
-                          &nbsp;Remove all spent
-                        </button>
-                      </Show>
-                    </div>
-                  </Show>
-                </div>
-                <Show when={selected().size > 0}>
-                  <button
-                    type="button"
-                    class="icon-btn clear-selection-btn"
-                    title="Clear selection"
-                    onClick={() => setSelected(new Set<string>())}
-                  >
-                    <IoCloseCircleSharp />
-                    <span class="btn-label">&nbsp;Clear selection</span>
-                    &nbsp;({selected().size})
+                    <IoTrashSharp />
+                    <span class="btn-label">&nbsp;Remove all spent</span>
                   </button>
                 </Show>
               </div>
-              <Show when={showSplitInput() && canCombine()}>
-                <Dialog
-                  onClose={() => {
-                    setShowSplitInput(false)
-                    setSplitSats('')
-                  }}
-                >
-                  <h4>Combine &amp; split</h4>
-                  <label>
-                    Split off (sats, of{' '}
-                    {msatToSats(
-                      selectedEligible().reduce((s, b) => s + b.amount, 0)
-                    )}
-                    )
-                  </label>
-                  <input
-                    type="number"
-                    min="1"
-                    step="1"
-                    placeholder="amount in sats"
-                    value={splitSats()}
-                    onInput={e => setSplitSats(e.currentTarget.value)}
-                  />
-                  <p class="bearer-hint">
-                    Burns the {selectedEligible().length} selected notes and
-                    mints two: this amount, and a change note for the rest. If
-                    this mint charges a fee, it's deducted from the change, not
-                    the amount split off.
-                  </p>
-                  <div class="btns">
-                    <button
-                      disabled={splitting() || offlineMode()}
-                      onClick={combineAndSplit}
-                    >
-                      <Show when={splitting()}>
-                        <IoRefreshSharp class="spin" />
-                        &nbsp;
-                      </Show>
-                      Split
-                    </button>
-                    <button
-                      onClick={() => {
-                        setShowSplitInput(false)
-                        setSplitSats('')
-                      }}
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </Dialog>
-              </Show>
-              <Show when={showLabelInput() && canLabelSelected()}>
-                <Dialog
-                  onClose={() => {
-                    setShowLabelInput(false)
-                    setLabelInputValue('')
-                  }}
-                >
-                  <h4>Label</h4>
-                  <label>
-                    Label {selectedBearers().length} note
-                    {selectedBearers().length === 1 ? '' : 's'} (private, for
-                    your own reference)
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="e.g. rent, gift for Alex"
-                    value={labelInputValue()}
-                    onInput={e => setLabelInputValue(e.currentTarget.value)}
-                    onKeyDown={e => e.key === 'Enter' && saveLabelSelected()}
-                  />
-                  <div class="btns">
-                    <button onClick={saveLabelSelected}>Save</button>
-                    <button
-                      onClick={() => {
-                        setShowLabelInput(false)
-                        setLabelInputValue('')
-                      }}
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </Dialog>
-              </Show>
-              <Show when={showSplitSingleInput() && canSplitSingle()}>
-                <Dialog
-                  onClose={() => {
-                    setShowSplitSingleInput(false)
-                    setSplitSingleSats('')
-                    setSplitSingleTimes('1')
-                  }}
-                >
-                  <h4>Split</h4>
-                  <label>
-                    Split off (sats, of{' '}
-                    {msatToSats(selectedBearers()[0].amount)})
-                  </label>
-                  <input
-                    type="number"
-                    min="1"
-                    step="1"
-                    placeholder="amount in sats"
-                    value={splitSingleSats()}
-                    onInput={e => setSplitSingleSats(e.currentTarget.value)}
-                  />
-                  <label>How many times</label>
-                  <input
-                    type="number"
-                    min="1"
-                    step="1"
-                    placeholder="1"
-                    value={splitSingleTimes()}
-                    onInput={e => setSplitSingleTimes(e.currentTarget.value)}
-                  />
-                  <p class="bearer-hint">
-                    If this mint charges a fee, it's deducted from the
-                    remainder, not the amount split off - splitting fails if too
-                    little would be left over to cover it.
-                  </p>
-                  <Show when={Number(splitSingleTimes()) > 1}>
-                    <p class="bearer-hint">
-                      Chains {Number(splitSingleTimes())} split requests one
-                      after another - if one fails partway through, whichever
-                      notes already came back are kept, and you'd need to try
-                      again for the rest.
-                    </p>
-                  </Show>
-                  <div class="btns">
-                    <button
-                      disabled={splittingSingle() || offlineMode()}
-                      onClick={splitSingleSelected}
-                    >
-                      <Show when={splittingSingle()}>
-                        <IoRefreshSharp class="spin" />
-                        &nbsp;
-                      </Show>
-                      Split
-                    </button>
-                    <button
-                      onClick={() => {
-                        setShowSplitSingleInput(false)
-                        setSplitSingleSats('')
-                        setSplitSingleTimes('1')
-                      }}
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </Dialog>
-              </Show>
             </section>
+
+            <Show when={selected().size > 0}>
+              <section class="selection-toolbar">
+                <div class="btns">
+                  <button
+                    class="icon-btn refresh-btn"
+                    disabled={
+                      !canRefreshSelected() || refreshing() || offlineMode()
+                    }
+                    title={
+                      offlineMode()
+                        ? 'Offline mode is on'
+                        : canRefreshSelected()
+                          ? 'Fetch the current value from the service, then rotate (this GET puts k1 on the wire) - one at a time for every selected note'
+                          : 'Select notes to rotate'
+                    }
+                    onClick={refreshSelected}
+                  >
+                    <Show when={refreshing()} fallback={<IoRefreshSharp />}>
+                      <IoRefreshSharp class="spin" />
+                    </Show>
+                    <span class="btn-label">
+                      &nbsp;Rotate
+                      <Show when={selectedBearers().length > 1}>
+                        &nbsp;({selectedBearers().length})
+                      </Show>
+                    </span>
+                  </button>
+                  <button
+                    class="icon-btn split-single-btn"
+                    disabled={!canSplitSingle() || offlineMode()}
+                    title={
+                      offlineMode()
+                        ? 'Offline mode is on'
+                        : canSplitSingle()
+                          ? 'Split the selected note into two'
+                          : 'Select exactly 1 verified, unspent note to split'
+                    }
+                    onClick={() => setShowSplitSingleInput(v => !v)}
+                  >
+                    <IoGitBranchSharp />
+                    <span class="btn-label">&nbsp;Split</span>
+                  </button>
+                  <button
+                    class="icon-btn combine-btn"
+                    disabled={!canCombine() || combining() || offlineMode()}
+                    title={
+                      offlineMode()
+                        ? 'Offline mode is on'
+                        : canCombine()
+                          ? 'Combine the selected notes into one. If this mint charges a fee, combining refunds part of what was already withheld when these notes were minted - you get back all but one base fee.'
+                          : 'Select 2+ verified, unspent notes from the same mint to combine'
+                    }
+                    onClick={combineSelected}
+                  >
+                    <Show when={combining()} fallback={<IoGitMergeSharp />}>
+                      <IoRefreshSharp class="spin" />
+                    </Show>
+                    <span class="btn-label">&nbsp;Combine</span>
+                  </button>
+                  <button
+                    class="icon-btn split-btn"
+                    disabled={!canCombine() || splitting() || offlineMode()}
+                    title={
+                      offlineMode()
+                        ? 'Offline mode is on'
+                        : canCombine()
+                          ? 'Combine the selected notes and split off an amount, leaving the rest as change. If this mint charges a fee, combining refunds part of what was already withheld when these notes were minted - you get back all but one base fee.'
+                          : 'Select 2+ verified, unspent notes from the same mint to combine & split'
+                    }
+                    onClick={() => setShowSplitInput(v => !v)}
+                  >
+                    <Show when={splitting()} fallback={<IoGitBranchSharp />}>
+                      <IoRefreshSharp class="spin" />
+                    </Show>
+                    <span class="btn-label">&nbsp;Combine &amp; split</span>
+                  </button>
+                  <button
+                    class="icon-btn transfer-btn"
+                    disabled={!canTransfer() || offlineMode()}
+                    title={
+                      offlineMode()
+                        ? 'Offline mode is on'
+                        : canTransfer()
+                          ? 'Transfer the selected note to a different mint'
+                          : 'Select exactly 1 note to transfer'
+                    }
+                    onClick={() => setTransferSource(selectedEligible()[0])}
+                  >
+                    <IoSwapHorizontalSharp />
+                    <span class="btn-label">&nbsp;Transfer</span>
+                  </button>
+                  <div class="more-menu" ref={el => (moreMenuRef = el)}>
+                    <button
+                      type="button"
+                      class="icon-btn more-btn"
+                      title="More actions - label, mark spent, export"
+                      onClick={() => setShowMoreMenu(v => !v)}
+                    >
+                      <IoEllipsisVerticalSharp />
+                    </button>
+                    <Show when={showMoreMenu()}>
+                      <div class="more-menu-panel">
+                        <button
+                          class="icon-btn label-btn"
+                          disabled={!canLabelSelected()}
+                          title={
+                            canLabelSelected()
+                              ? 'Set a label on every selected note (private, for your own reference)'
+                              : 'Select notes to label'
+                          }
+                          onClick={() => {
+                            openLabelInput()
+                            setShowMoreMenu(false)
+                          }}
+                        >
+                          <IoPencilSharp />
+                          &nbsp;Label
+                          <Show when={selectedBearers().length > 1}>
+                            &nbsp;({selectedBearers().length})
+                          </Show>
+                        </button>
+                        <button
+                          class="icon-btn mark-spent-btn"
+                          disabled={!canMarkSpentSelected()}
+                          title={
+                            canMarkSpentSelected()
+                              ? 'Mark every selected note as spent - locks them without removing them, e.g. if you already handed them out some other way'
+                              : 'Select notes to mark as spent'
+                          }
+                          onClick={() => {
+                            markSpentSelected()
+                            setShowMoreMenu(false)
+                          }}
+                        >
+                          <IoBanSharp />
+                          &nbsp;Mark spent
+                          <Show when={selectedBearers().length > 1}>
+                            &nbsp;({selectedBearers().length})
+                          </Show>
+                        </button>
+                        <button
+                          class="icon-btn export-btn"
+                          disabled={selected().size === 0}
+                          title={
+                            selected().size === 0
+                              ? 'Select notes to export'
+                              : 'Download the selected notes as a text file (bech32-encoded, one per line)'
+                          }
+                          onClick={() => {
+                            exportSelected()
+                            setShowMoreMenu(false)
+                          }}
+                        >
+                          <IoDownloadSharp />
+                          &nbsp;Export
+                          <Show when={selected().size > 0}>
+                            &nbsp;({selected().size})
+                          </Show>
+                        </button>
+                        <button
+                          class="icon-btn qr-export-btn"
+                          disabled={selected().size === 0}
+                          title={
+                            selected().size === 0
+                              ? 'Select notes to download as QR codes'
+                              : 'Download an SVG QR code for each selected note'
+                          }
+                          onClick={() => {
+                            downloadQrSelected()
+                            setShowMoreMenu(false)
+                          }}
+                        >
+                          <IoQrCodeSharp />
+                          &nbsp;QR
+                          <Show when={selected().size > 0}>
+                            &nbsp;({selected().size})
+                          </Show>
+                        </button>
+                      </div>
+                    </Show>
+                  </div>
+                  <Show when={selected().size > 0}>
+                    <button
+                      type="button"
+                      class="icon-btn clear-selection-btn"
+                      title="Clear selection"
+                      onClick={() => setSelected(new Set<string>())}
+                    >
+                      <IoCloseCircleSharp />
+                      <span class="btn-label">&nbsp;Clear selection</span>
+                      &nbsp;({selected().size})
+                    </button>
+                  </Show>
+                </div>
+                <Show when={showSplitInput() && canCombine()}>
+                  <Dialog
+                    onClose={() => {
+                      setShowSplitInput(false)
+                      setSplitSats('')
+                    }}
+                  >
+                    <h4>Combine &amp; split</h4>
+                    <label>
+                      Split off (sats, of{' '}
+                      {msatToSats(
+                        selectedEligible().reduce((s, b) => s + b.amount, 0)
+                      )}
+                      )
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      step="1"
+                      placeholder="amount in sats"
+                      value={splitSats()}
+                      onInput={e => setSplitSats(e.currentTarget.value)}
+                    />
+                    <p class="bearer-hint">
+                      Burns the {selectedEligible().length} selected notes and
+                      mints two: this amount, and a change note for the rest. If
+                      this mint charges a fee, it's deducted from the change,
+                      not the amount split off.
+                    </p>
+                    <div class="btns">
+                      <button
+                        disabled={splitting() || offlineMode()}
+                        onClick={combineAndSplit}
+                      >
+                        <Show when={splitting()}>
+                          <IoRefreshSharp class="spin" />
+                          &nbsp;
+                        </Show>
+                        Split
+                      </button>
+                      <button
+                        onClick={() => {
+                          setShowSplitInput(false)
+                          setSplitSats('')
+                        }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </Dialog>
+                </Show>
+                <Show when={showLabelInput() && canLabelSelected()}>
+                  <Dialog
+                    onClose={() => {
+                      setShowLabelInput(false)
+                      setLabelInputValue('')
+                    }}
+                  >
+                    <h4>Label</h4>
+                    <label>
+                      Label {selectedBearers().length} note
+                      {selectedBearers().length === 1 ? '' : 's'} (private, for
+                      your own reference)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. rent, gift for Alex"
+                      value={labelInputValue()}
+                      onInput={e => setLabelInputValue(e.currentTarget.value)}
+                      onKeyDown={e => e.key === 'Enter' && saveLabelSelected()}
+                    />
+                    <div class="btns">
+                      <button onClick={saveLabelSelected}>Save</button>
+                      <button
+                        onClick={() => {
+                          setShowLabelInput(false)
+                          setLabelInputValue('')
+                        }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </Dialog>
+                </Show>
+                <Show when={showSplitSingleInput() && canSplitSingle()}>
+                  <Dialog
+                    onClose={() => {
+                      setShowSplitSingleInput(false)
+                      setSplitSingleSats('')
+                      setSplitSingleTimes('1')
+                    }}
+                  >
+                    <h4>Split</h4>
+                    <label>
+                      Split off (sats, of{' '}
+                      {msatToSats(selectedBearers()[0].amount)})
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      step="1"
+                      placeholder="amount in sats"
+                      value={splitSingleSats()}
+                      onInput={e => setSplitSingleSats(e.currentTarget.value)}
+                    />
+                    <label>How many times</label>
+                    <input
+                      type="number"
+                      min="1"
+                      step="1"
+                      placeholder="1"
+                      value={splitSingleTimes()}
+                      onInput={e => setSplitSingleTimes(e.currentTarget.value)}
+                    />
+                    <p class="bearer-hint">
+                      If this mint charges a fee, it's deducted from the
+                      remainder, not the amount split off - splitting fails if
+                      too little would be left over to cover it.
+                    </p>
+                    <Show when={Number(splitSingleTimes()) > 1}>
+                      <p class="bearer-hint">
+                        Chains {Number(splitSingleTimes())} split requests one
+                        after another - if one fails partway through, whichever
+                        notes already came back are kept, and you'd need to try
+                        again for the rest.
+                      </p>
+                    </Show>
+                    <div class="btns">
+                      <button
+                        disabled={splittingSingle() || offlineMode()}
+                        onClick={splitSingleSelected}
+                      >
+                        <Show when={splittingSingle()}>
+                          <IoRefreshSharp class="spin" />
+                          &nbsp;
+                        </Show>
+                        Split
+                      </button>
+                      <button
+                        onClick={() => {
+                          setShowSplitSingleInput(false)
+                          setSplitSingleSats('')
+                          setSplitSingleTimes('1')
+                        }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </Dialog>
+                </Show>
+              </section>
+            </Show>
 
             <Show
               when={groupByMint()}

@@ -72,6 +72,26 @@ footer {
   }
 }
 
+// version/Website/Github grouped onto their own row (see Footer.tsx) -
+// .footer-row is itself a .footer-item (gets the "|" after it, dropped on
+// mobile same as any other), while its own children keep their "|"
+// separators unconditionally, mobile included, since they're always meant
+// to read as one line rather than stack
+.footer-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.footer-row-item {
+  display: flex;
+  align-items: center;
+  &:not(:last-child)::after {
+    content: '|';
+    margin: 0 8px;
+    opacity: 0.5;
+  }
+}
+
 @media (max-width: 700px) {
   body {
     padding: 12px;
@@ -1142,9 +1162,24 @@ nav {
   // a narrow viewport into wrapping several lines deep; the icon plus each
   // button's own title tooltip (a long-press on mobile) still says what it
   // does. Padding drops from the row's normal 18px sides to match, so a
-  // hidden label doesn't leave a wide button around a small icon.
-  .selection-toolbar .btn-label {
+  // hidden label doesn't leave a wide button around a small icon. Search/
+  // Group above them (.list-controls-row) get the same treatment, same
+  // reasoning
+  .selection-toolbar .btn-label,
+  .list-controls-row .btn-label {
     display: none;
+  }
+  // stays reachable while scrolling a long note list on a small screen,
+  // right under the fixed nav (top matches its own 64px reserved above,
+  // see body's padding-top) - only rendered at all while something is
+  // selected (see Wallet.tsx), so it comes and goes with the selection
+  // instead of permanently eating scroll space
+  .selection-toolbar {
+    position: sticky;
+    top: 64px;
+    z-index: 1;
+    background: rgba($bg, 0.95);
+    padding: 8px 0;
   }
   .refresh-btn,
   .split-single-btn,
@@ -1475,6 +1510,13 @@ nav {
 @media (max-width: 700px) {
   .two-columns {
     grid-template-columns: 1fr;
+  }
+  // Mint keeps its 66/33 split even on a narrow screen instead of
+  // collapsing to the generic single-column stack above - both columns
+  // are still worth seeing side by side rather than one pushing the
+  // other far down the page
+  #mint .two-columns {
+    grid-template-columns: 2fr 1fr;
   }
 }
 

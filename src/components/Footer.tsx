@@ -39,25 +39,31 @@ const ludHref = (lud: string) =>
 const Footer = () => {
   return (
     <footer class="footer">
-      <span class="footer-item">LNURLwallet {__APP_VERSION__}</span>
-      <a
-        class="footer-item"
-        href="https://lnurlcash.com"
-        target="_blank"
-        rel="noreferrer"
-      >
-        <IoGlobeSharp />
-        &nbsp;Website
-      </a>
-      <a
-        class="footer-item"
-        href="https://github.com/dni/lnurl-wallet"
-        target="_blank"
-        rel="noreferrer"
-      >
-        <AiFillGithub />
-        &nbsp;Github
-      </a>
+      {/* grouped as one line even on mobile (where every top-level
+      .footer-item otherwise gets its own line) - version/Website/Github
+      read fine together, unlike the longer privacy note and LUD list
+      below them */}
+      <div class="footer-item footer-row">
+        <span class="footer-row-item">LNURLwallet {__APP_VERSION__}</span>
+        <a
+          class="footer-row-item"
+          href="https://lnurlcash.com"
+          target="_blank"
+          rel="noreferrer"
+        >
+          <IoGlobeSharp />
+          &nbsp;Website
+        </a>
+        <a
+          class="footer-row-item"
+          href="https://github.com/dni/lnurl-wallet"
+          target="_blank"
+          rel="noreferrer"
+        >
+          <AiFillGithub />
+          &nbsp;Github
+        </a>
+      </div>
       <A class="footer-item" href="/docs">
         <IoLockClosedSharp />
         &nbsp;keys never leave your browser
