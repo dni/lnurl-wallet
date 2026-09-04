@@ -11,21 +11,10 @@ import {MdSharpKeyboard} from 'solid-icons/md'
 
 import {useWallet} from '../WalletContext'
 import {useDevice} from '../DeviceContext'
-import {
-  isValidNoteInput,
-  isBolt11Invoice,
-  requireNoteK1,
-  serverOf,
-  noteEndpointOf,
-  withNewK1,
-  probeBurnedNote,
-  PendingNoteError,
-  AmbiguousMutationError
-} from '../lnurlcash'
-import {receiveNote, secureReceivedNote} from '../receive'
-import {deviceReceive} from '../deviceOrchestration'
+import {isValidNoteInput, isBolt11Invoice} from '../lnurlcash'
+import {receiveIntoWallet as doReceiveIntoWallet} from '../receive'
 import {handoffMeltInvoice} from '../meltHandoff'
-import {notify, NotifyKind, msatToSats, pasteFromClipboard} from '../helpers'
+import {notify, NotifyKind, pasteFromClipboard} from '../helpers'
 import {offlineMode} from '../offlineMode'
 import ScanToggle from './ScanToggle'
 import NfcToggle from './NfcToggle'
@@ -72,120 +61,20 @@ const ReceiveDialog: Component<ReceiveDialogProps> = props => {
   // a valid bearer note. Re-entrancy-guarded: Enter-key and confirm-click
   // landing together (or a scanner double-fire) must not run two receives
   // for the same k1 - both would pass receiveNote's duplicate check before
-  // either addBearer landed, leaving a dead duplicate behind
+  // either addBearer landed, leaving a dead duplicate behind. The actual
+  // orchestration lives in receive.ts, shared with Wallet.tsx's hero widget.
   const receiveIntoWallet = async (noteValue: string) => {
     if (busy()) return
     setBusy(true)
     try {
-      const received = await receiveNote(noteValue, bearers())
-      const bearer = await addBearer(received)
+      await doReceiveIntoWallet(noteValue, {
+        bearers: bearers(),
+        addBearer,
+        updateBearer,
+        logActivity,
+        deviceClient: deviceClient()
+      })
       setValue('')
-      if (!received.verified) {
-        notify(
-          'Note stored, but its service could not be reached - refresh it later.',
-          NotifyKind.LOADING
-        )
-        props.onClose()
-        return
-      }
-      // rotate immediately: whoever handed this note over still knows the
-      // old secret until it is burned. If a vault is connected, that fresh
-      // secret is generated and held there instead of in this browser.
-      try {
-        const client = deviceClient()
-        if (client) {
-          const result = await deviceReceive(
-            client,
-            received.url,
-            received.callback,
-            noteEndpointOf(received.url),
-            requireNoteK1(received.url),
-            received.amount
-          )
-          await updateBearer(bearer.id, {
-            url: result.url,
-            callback: result.callback,
-            deviceId: result.deviceId,
-            deviceHash: result.deviceHash
-          })
-        } else {
-          const url = await secureReceivedNote(received)
-          await updateBearer(bearer.id, {url})
-        }
-        logActivity(
-          'receive',
-          `Received ${msatToSats(received.amount)} sats from ${serverOf(received.url)}.`
-        )
-        notify(
-          `Received ${msatToSats(received.amount)} sats - secret rotated, previous copies are burned.`,
-          NotifyKind.SUCCESS
-        )
-      } catch (err) {
-        if (err instanceof AmbiguousMutationError) {
-          // the rotate request may have landed despite the failure - the
-          // fresh secret it carried is then the only copy of this note
-          const outcome = await probeBurnedNote(received.url)
-          if (outcome === 'gone') {
-            // the burn landed - adopt the fresh secret as the note
-            const url = withNewK1(
-              received.url,
-              err.newSecrets[0],
-              received.amount
-            )
-            await updateBearer(bearer.id, {url})
-            logActivity(
-              'receive',
-              `Received ${msatToSats(received.amount)} sats from ${serverOf(received.url)} (rotated - confirmed on re-check after an uncertain response).`
-            )
-            notify(
-              `Received ${msatToSats(received.amount)} sats - secret rotated, previous copies are burned.`,
-              NotifyKind.SUCCESS
-            )
-            props.onClose()
-            return
-          }
-          if (outcome === 'unknown') {
-            // can't tell: keep the stored original AND track the possible
-            // rotated copy, rather than gamble either way
-            await addBearer({
-              url: withNewK1(received.url, err.newSecrets[0], received.amount),
-              callback: received.callback,
-              amount: received.amount,
-              verified: false,
-              mintPubkey: received.mintPubkey
-            })
-            logActivity(
-              'receive',
-              `Received ${msatToSats(received.amount)} sats from ${serverOf(received.url)} (rotation outcome uncertain - the possible rotated copy is stored unverified).`
-            )
-            notify(
-              `Received ${msatToSats(received.amount)} sats, but the rotation's outcome is uncertain - the possible new copy is stored unverified alongside the original; refresh both to reconcile.`,
-              NotifyKind.ERROR
-            )
-            props.onClose()
-            return
-          }
-          // 'live': the rotate never landed - the messages below fit as-is
-        }
-        // a PendingNoteError here means this exact k1 has some other
-        // operation in flight on the service right now (e.g. the sender's
-        // own melt/rotate hasn't settled yet) - temporary, and the note
-        // is already stored (addBearer above), so it'll simply rotate on
-        // the next refresh. Reporting it the same as every other failure
-        // ("the service refused to rotate") reads as a permanent
-        // limitation instead of "try again shortly" (see issue #3).
-        const pending = err instanceof PendingNoteError
-        logActivity(
-          'receive',
-          `Received ${msatToSats(received.amount)} sats from ${serverOf(received.url)} (${pending ? 'rotate pending - will retry on next refresh' : 'not rotated - sender may still hold a copy'}).`
-        )
-        notify(
-          pending
-            ? `Received ${msatToSats(received.amount)} sats, but couldn't rotate yet - this note has another operation in progress on the service. It'll rotate automatically next time you refresh it.`
-            : `Received ${msatToSats(received.amount)} sats, but the service refused to rotate - the sender may still hold a spendable copy.`,
-          NotifyKind.ERROR
-        )
-      }
       props.onClose()
     } catch (err) {
       notify((err as Error).message, NotifyKind.ERROR)

@@ -64,7 +64,11 @@ const Setup: Component = () => {
     }
     setBusy(true)
     try {
-      await setup(phrase, encrypt() ? setupPassword() : undefined)
+      await setup(
+        phrase,
+        encrypt() ? setupPassword() : undefined,
+        tab() === 'create'
+      )
       notify('Wallet ready.', NotifyKind.SUCCESS)
       // a restored seed may have notes at mints this device doesn't know
       // about yet - offer to scan for them before landing in an empty
