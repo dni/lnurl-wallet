@@ -8,10 +8,10 @@ browser's local storage, and every network request goes directly from your
 browser to the LNURLcash service that issued a note.
 
 Built with the same stack as
-[lnurl_server](https://github.com/dni/lnurl_server)'s frontend: Vite,
+[lnurl_server](https://github.com/lnurlcash/lnurl_server)'s frontend: Vite,
 SolidJS, TypeScript, sass, `@scure`/`@noble` crypto, `solid-qr-code`,
 `solid-toast`, `solid-icons`. Works against any spec-compliant service,
-e.g. [lnurl-mint](https://github.com/dni/lnurl-mint).
+e.g. [lnurl-mint](https://github.com/lnurlcash/lnurl-mint).
 
 ## LNURLcash (LUD-25)
 
@@ -204,7 +204,7 @@ what you hold.
 
 ## Note on lnurl-mint
 
-[lnurl-mint](https://github.com/dni/lnurl-mint) tracks this spec closely and
+[lnurl-mint](https://github.com/lnurlcash/lnurl-mint) tracks this spec closely and
 implements mandatory offline verification through the funding node's
 `signmessage` support for lnd/cln or a persistent seed-derived SERVICE key for
 Spark, and melt proof
@@ -231,7 +231,7 @@ npm run tsc     # typecheck
 npm run build   # static build in dist/
 ```
 
-For an end-to-end local loop, run [lnurl-mint](https://github.com/dni/lnurl-mint)
+For an end-to-end local loop, run [lnurl-mint](https://github.com/lnurlcash/lnurl-mint)
 (`uv run fastapi dev lnurl_mint/server.py`) and point the Mint page at
 `localhost:8000` - insecure hosts (localhost, 127.0.0.1, .onion) are
 resolved as http automatically.
