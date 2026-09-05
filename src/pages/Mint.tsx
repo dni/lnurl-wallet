@@ -1258,19 +1258,18 @@ const Mint: Component = () => {
                         </Show>
                         {node().nodeAlias || 'Mint node'}
                       </h4>
-                      <Show when={node().nodeCapacityMsat !== undefined}>
-                        <p>
+                      <p>
+                        <Show when={node().nodeCapacityMsat !== undefined}>
                           Channel capacity:{' '}
                           {msatToSats(node().nodeCapacityMsat!)} sats
-                        </p>
-                      </Show>
-                      <Show
-                        when={
-                          node().nodeNumChannels !== undefined ||
-                          node().nodeNumPeers !== undefined
-                        }
-                      >
-                        <p>
+                          <br />
+                        </Show>
+                        <Show
+                          when={
+                            node().nodeNumChannels !== undefined ||
+                            node().nodeNumPeers !== undefined
+                          }
+                        >
                           <Show when={node().nodeNumChannels !== undefined}>
                             {node().nodeNumChannels} channels
                           </Show>
@@ -1285,21 +1284,19 @@ const Mint: Component = () => {
                           <Show when={node().nodeNumPeers !== undefined}>
                             {node().nodeNumPeers} peers
                           </Show>
-                        </p>
-                      </Show>
-                      <p>
+                          <br />
+                        </Show>
                         Mint limits: {msatToSats(node().minWithdrawable)} -{' '}
                         {msatToSats(node().maxWithdrawable)} sats
-                      </p>
-                      <Show when={node().outstandingNotesMsat !== undefined}>
-                        <p>
+                        <Show when={node().outstandingNotesMsat !== undefined}>
+                          <br />
                           Outstanding notes:{' '}
                           {Math.round(
                             node().outstandingNotesMsat! / 1000
                           ).toLocaleString()}{' '}
                           sats
-                        </p>
-                      </Show>
+                        </Show>
+                      </p>
                       <Show when={node().nodeUri}>
                         <p class="mint-pubkey">{node().nodeUri}</p>
                       </Show>
@@ -1577,19 +1574,18 @@ const Mint: Component = () => {
                         ? `${mint.username}@${serverOf(mint.server)}`
                         : serverOf(mint.server)}
                     </p>
-                    <Show when={mint.nodeCapacityMsat !== undefined}>
-                      <p class="mint-date">
+                    <p class="mint-date">
+                      <Show when={mint.nodeCapacityMsat !== undefined}>
                         Channel capacity: {msatToSats(mint.nodeCapacityMsat!)}{' '}
                         sats
-                      </p>
-                    </Show>
-                    <Show
-                      when={
-                        mint.nodeNumChannels !== undefined ||
-                        mint.nodeNumPeers !== undefined
-                      }
-                    >
-                      <p class="mint-date">
+                        <br />
+                      </Show>
+                      <Show
+                        when={
+                          mint.nodeNumChannels !== undefined ||
+                          mint.nodeNumPeers !== undefined
+                        }
+                      >
                         <Show when={mint.nodeNumChannels !== undefined}>
                           {mint.nodeNumChannels} channels
                         </Show>
@@ -1604,18 +1600,18 @@ const Mint: Component = () => {
                         <Show when={mint.nodeNumPeers !== undefined}>
                           {mint.nodeNumPeers} peers
                         </Show>
-                      </p>
-                    </Show>
-                    <Show when={mint.outstandingNotesMsat !== undefined}>
-                      <p class="mint-date">
+                        <br />
+                      </Show>
+                      <Show when={mint.outstandingNotesMsat !== undefined}>
                         Outstanding notes:{' '}
                         {Math.round(
                           mint.outstandingNotesMsat! / 1000
                         ).toLocaleString()}{' '}
                         sats
-                      </p>
-                    </Show>
-                    <p class="mint-date">added {formatDate(mint.addedAt)}</p>
+                        <br />
+                      </Show>
+                      added {formatDate(mint.addedAt)}
+                    </p>
                     {/* advance warning of a planned shutdown (see
                     trustedMints.ts's TrustedMint.sunsetDate) - shown for any
                     mint this wallet holds notes from, prompting a move
