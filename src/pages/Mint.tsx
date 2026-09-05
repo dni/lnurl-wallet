@@ -1117,8 +1117,10 @@ const Mint: Component = () => {
       // the full https://... origin (see serviceOriginOf), which that parser
       // rejects outright ("Not a recognizable mint address or LNURL."), so
       // this needs the bare host serverOf() strips it down to
-      const result = await scanMintForNotes(serverOf(mint.server), index =>
-        setRescanIndex(index)
+      const result = await scanMintForNotes(
+        serverOf(mint.server),
+        index => setRescanIndex(index),
+        bearers()
       )
       for (const note of result.recovered) {
         await addBearer(note)

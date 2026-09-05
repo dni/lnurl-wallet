@@ -293,7 +293,7 @@ const EncryptChoice: Component<{
 // nothing here is a one-shot chance - the same seed can scan the same mint
 // again later.
 const MintRecovery: Component<{onDone: () => void}> = props => {
-  const {addBearer, logActivity} = useWallet()
+  const {bearers, addBearer, logActivity} = useWallet()
   const [selected, setSelected] = createSignal<string[]>([])
   const [customInput, setCustomInput] = createSignal('')
   const [customMints, setCustomMints] = createSignal<string[]>([])
@@ -348,9 +348,13 @@ const MintRecovery: Component<{onDone: () => void}> = props => {
           ...prev,
           [mint]: {status: 'scanning', index: 0, foundCount: 0}
         }))
-        const result = await scanMintForNotes(mint, index => {
-          setResults(prev => ({...prev, [mint]: {...prev[mint], index}}))
-        })
+        const result = await scanMintForNotes(
+          mint,
+          index => {
+            setResults(prev => ({...prev, [mint]: {...prev[mint], index}}))
+          },
+          bearers()
+        )
         for (const note of result.recovered) {
           await addBearer(note)
           logActivity(
