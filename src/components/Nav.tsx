@@ -88,13 +88,6 @@ const Nav = () => {
           there was the whole bug this comment used to guard against on the
           old standalone /backup link: after "Forget this wallet" there was
           no way back to it at all */}
-          <A
-            href="/settings"
-            title="Settings - auto-lock, currency, offline mode, backup &amp; restore"
-          >
-            <IoCogSharp />
-            <span class="nav-label">&nbsp;Settings</span>
-          </A>
           <A href="/docs" title="Documentation">
             <IoBookSharp />
             <span class="nav-label">&nbsp;Docs</span>
@@ -108,6 +101,13 @@ const Nav = () => {
               <span class="nav-label">&nbsp;Activity</span>
             </A>
           </Show>
+          <A
+            href="/settings"
+            title="Settings - auto-lock, currency, offline mode, backup &amp; restore"
+          >
+            <IoCogSharp />
+            <span class="nav-label">&nbsp;Settings</span>
+          </A>
           <Show when={state() === 'unlocked' && encrypted()}>
             <a href="#lock" title="Lock wallet" onClick={lock_action}>
               <IoLockClosedSharp />

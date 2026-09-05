@@ -1808,27 +1808,6 @@ const Wallet: Component = () => {
                   <IoLayersSharp />
                   <span class="btn-label">&nbsp;Group</span>
                 </button>
-                <button
-                  type="button"
-                  disabled={
-                    refreshingAll() ||
-                    offlineMode() ||
-                    spendableBearers().length === 0
-                  }
-                  title={
-                    offlineMode()
-                      ? 'Offline mode is on'
-                      : canRefreshSelected()
-                        ? 'Fetch the current value by note hash, then rotate - one at a time for every selected note'
-                        : 'Select notes to rotate'
-                  }
-                  onClick={refreshAllNotes}
-                >
-                  <Show when={refreshingAll()} fallback={<IoRefreshSharp />}>
-                    <IoRefreshSharp class="spin" />
-                  </Show>
-                  <span class="btn-label">&nbsp;Rotate all</span>
-                </button>
                 <div class="more-menu" ref={el => (listMoreMenuRef = el)}>
                   <button
                     type="button"

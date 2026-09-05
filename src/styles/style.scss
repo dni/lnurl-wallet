@@ -362,6 +362,18 @@ a:where(.icon-btn, .link-btn) {
   row-gap: 8px;
 }
 
+// Settings' auto-lock/currency/offline-mode option buttons (classList
+// active={...}, same pattern as .list-controls-row > button.active below) -
+// without this they carried the "active" class but no visual to show it
+.setup-card .btns button.active {
+  opacity: 1;
+  box-shadow: inset 0 0 0 1px $font-color;
+  background-color: rgba(
+    color.adjust($accent-base, $lightness: -10%),
+    $transparency
+  );
+}
+
 @keyframes spin {
   to {
     transform: rotate(360deg);
