@@ -56,7 +56,7 @@ const Footer = () => {
         </a>
         <a
           class="footer-row-item"
-          href="https://github.com/dni/lnurl-wallet"
+          href="https://github.com/lnurlcash/lnurl-wallet"
           target="_blank"
           rel="noreferrer"
         >
