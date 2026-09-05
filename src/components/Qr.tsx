@@ -1,5 +1,5 @@
 import type {Component} from 'solid-js'
-import {Show} from 'solid-js'
+import {Show, onMount} from 'solid-js'
 import {IoDownloadSharp} from 'solid-icons/io'
 
 import {copyToClipboard} from '../helpers'
@@ -23,6 +23,21 @@ const Qr: Component<QrProps> = (props: QrProps) => {
   const width = props.width || 256
   const height = props.height || 256
   let frameRef: HTMLDivElement | undefined
+
+  // the library sets width/height as plain attributes with no viewBox (see
+  // the comment above) - without one, CSS resizing the box (.qrcode's own
+  // width: 100%) doesn't scale the drawn modules at all, it just resizes the
+  // *viewport* and leaves the code pinned at its native width x height in
+  // the corner (blank space padding out the rest, or clipped if CSS shrinks
+  // it below that). A viewBox maps that native coordinate space onto
+  // whatever box CSS ends up giving the element, the same as every other
+  // scalable inline SVG - fixes it for every Qr instance/size, not just
+  // whichever one happened to get noticed
+  onMount(() => {
+    frameRef
+      ?.querySelector('svg')
+      ?.setAttribute('viewBox', `0 0 ${width} ${height}`)
+  })
 
   // QRCodeSVG renders straight into the DOM with no ref of its own, so the
   // rendered <svg> is pulled back out of frameRef rather than built again

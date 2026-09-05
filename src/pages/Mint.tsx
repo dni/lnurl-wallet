@@ -1112,7 +1112,12 @@ const Mint: Component = () => {
     setRescanningServer(mint.server)
     setRescanIndex(0)
     try {
-      const result = await scanMintForNotes(mint.server, index =>
+      // scanMintForNotes resolves input the same narrow way resolveMintInput
+      // does (bech32/Lightning Address/bare domain) - mint.server itself is
+      // the full https://... origin (see serviceOriginOf), which that parser
+      // rejects outright ("Not a recognizable mint address or LNURL."), so
+      // this needs the bare host serverOf() strips it down to
+      const result = await scanMintForNotes(serverOf(mint.server), index =>
         setRescanIndex(index)
       )
       for (const note of result.recovered) {
