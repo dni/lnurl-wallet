@@ -1795,7 +1795,7 @@ const Wallet: Component = () => {
                     onClick={() => setShowSpent(v => !v)}
                   >
                     <IoBanSharp />
-                    <span class="btn-label">&nbsp;Show spent</span>
+                    <span class="btn-label">&nbsp;Spent</span>
                     <Show when={!showSpent()}>&nbsp;({spentCount()})</Show>
                   </button>
                 </Show>

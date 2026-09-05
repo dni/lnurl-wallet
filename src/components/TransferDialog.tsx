@@ -567,7 +567,7 @@ const TransferDialog: Component<TransferDialogProps> = props => {
                     disabled={busy() || offlineMode()}
                     onClick={() => selectMint(`mint@${serverOf(mint.server)}`)}
                   >
-                    {mint.server}
+                    {serverOf(mint.server)}
                   </button>
                 )}
               </For>
