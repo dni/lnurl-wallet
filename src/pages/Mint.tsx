@@ -1289,7 +1289,10 @@ const Mint: Component = () => {
                       <Show when={node().outstandingNotesMsat !== undefined}>
                         <p>
                           Outstanding notes:{' '}
-                          {msatToSats(node().outstandingNotesMsat!)} sats
+                          {Math.round(
+                            node().outstandingNotesMsat! / 1000
+                          ).toLocaleString()}{' '}
+                          sats
                         </p>
                       </Show>
                       <Show when={node().nodeUri}>
@@ -1555,16 +1558,19 @@ const Mint: Component = () => {
                           style={{'background-color': mint.nodeColor!}}
                         />
                       </Show>
-                      {mint.nodeAlias || mint.server}
+                      {mint.nodeAlias || serverOf(mint.server)}
                     </h4>
                     {/* always shown, same prominence .mint-pubkey used to
                     give the signing key before that moved to a copy button
                     in .btns below - the URL is what's left to visually
-                    anchor on here, alias or not */}
+                    anchor on here, alias or not. serverOf(), not mint.server
+                    directly - the latter retains the scheme (see
+                    serviceOriginOf's own comment), which reads fine as a
+                    security identity but not appended after "username@" */}
                     <p class="mint-pubkey">
                       {mint.username
-                        ? `${mint.username}@${mint.server}`
-                        : mint.server}
+                        ? `${mint.username}@${serverOf(mint.server)}`
+                        : serverOf(mint.server)}
                     </p>
                     <Show when={mint.nodeCapacityMsat !== undefined}>
                       <p class="mint-date">
@@ -1598,7 +1604,10 @@ const Mint: Component = () => {
                     <Show when={mint.outstandingNotesMsat !== undefined}>
                       <p class="mint-date">
                         Outstanding notes:{' '}
-                        {msatToSats(mint.outstandingNotesMsat!)} sats
+                        {Math.round(
+                          mint.outstandingNotesMsat! / 1000
+                        ).toLocaleString()}{' '}
+                        sats
                       </p>
                     </Show>
                     <p class="mint-date">added {formatDate(mint.addedAt)}</p>
