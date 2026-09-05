@@ -20,8 +20,8 @@ const Qr: Component<QrProps> = (props: QrProps) => {
   // space the library draws into, so a higher default gives denser codes
   // (e.g. a long bolt11 invoice vs. a short LNURL) more sub-pixel
   // precision before that scaling, instead of looking uneven/blurry
-  const width = props.width || 256
-  const height = props.height || 256
+  const width = props.width || 340
+  const height = props.height || 340
   let frameRef: HTMLDivElement | undefined
 
   // the library sets width/height as plain attributes with no viewBox (see

@@ -594,12 +594,10 @@ pre {
   border: 6px solid white;
   display: flex;
   cursor: pointer;
-  // the underlying SVG has no viewBox - it's just a WxH pixel grid, so a
-  // long value (a bolt11 invoice vs. a short LNURL) crammed into a small
-  // fixed size renders with visibly uneven/blurry modules. Scaling the
-  // whole (still-vector, still-crisp) SVG to fill its box via CSS instead
-  // of relying on the library's own fixed width/height keeps it sharp at
-  // any size, capped so it doesn't balloon on a wide desktop card.
+  // the underlying SVG's own width/height attrs are just its drawing
+  // resolution, not its on-screen size (Qr.tsx stamps a matching viewBox on
+  // it so this scales the whole, still-crisp vector to fill its box)
+  // capped so it doesn't balloon on a wide desktop card.
   width: 100%;
   aspect-ratio: 1 / 1;
   svg {
@@ -616,7 +614,7 @@ pre {
 .qr-frame {
   position: relative;
   width: 100%;
-  max-width: 266px;
+  max-width: 340px;
 }
 .qr-download-btn {
   position: absolute;
@@ -628,7 +626,7 @@ pre {
 // BearerCard's tap-to-reveal gate around an embedded Qr (Unveil to hand
 // over) - kept separate from .qr-frame (Qr's own internal sizing) so the
 // overlay covers the whole revealed area, download button included. Sized
-// well past .qr-frame's own 266px cap: this is the one QR in the app meant
+// well past .qr-frame's own 340px cap: this is the one QR in the app meant
 // to be scanned by someone else's camera across a table, not just glanced
 // at, so it gets the room to be scanned easily rather than sharing the
 // same modest default every other embedded QR uses.
