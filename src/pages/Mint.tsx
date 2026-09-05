@@ -1745,7 +1745,9 @@ const Mint: Component = () => {
                       </Show>
                     </div>
                     <Show when={rescanningServer() === mint.server}>
-                      <p class="bearer-hint">checking index {rescanIndex()}...</p>
+                      <p class="bearer-hint">
+                        checking index {rescanIndex()}...
+                      </p>
                     </Show>
                     <Show when={hasNotesFrom(mint.server)}>
                       <p class="mint-locked">
