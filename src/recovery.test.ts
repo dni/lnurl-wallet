@@ -1,5 +1,6 @@
 import {beforeEach, describe, expect, it, vi} from 'vitest'
 import {hashK1 as sha256Hex} from './lnurlcash'
+import type {Bearer} from './storage'
 
 // same in-memory localStorage stand-in as cashSecrets.test.ts/storage.test.ts -
 // cashSecrets.ts persists per-SERVICE indices there, and a fresh module
@@ -132,6 +133,28 @@ describe('scanMintForNotes', () => {
     expect(result.recovered).toHaveLength(0)
     expect(result.highestUsedIndex).toBeNull()
     expect(result.error).toBeUndefined()
+  })
+
+  it('does not re-recover a note already held locally, but still counts it used', async () => {
+    vi.stubGlobal('fetch', fakeMint(0, null) as unknown as typeof fetch)
+    const liveSecret = cashSecrets.cashSecretAtIndex(SERVER, 0)!
+    const alreadyHeld: Bearer = {
+      id: 'existing',
+      url: `${WITHDRAW_CALLBACK}?k1=${liveSecret}&amount=21000`,
+      callback: WITHDRAW_CALLBACK,
+      amount: 21000,
+      verified: true,
+      createdAt: 0,
+      updatedAt: 0
+    }
+    const result = await recovery.scanMintForNotes(
+      `mint@${SERVER}`,
+      undefined,
+      [alreadyHeld]
+    )
+    expect(result.error).toBeUndefined()
+    expect(result.recovered).toHaveLength(0)
+    expect(result.highestUsedIndex).toBe(0)
   })
 
   it('reports an unresolvable address without ever calling fetch', async () => {

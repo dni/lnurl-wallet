@@ -5,9 +5,11 @@ import {
   fetchNoteInfo,
   buildNoteUrl,
   serverOf,
+  noteK1,
   NoteSpentError,
   NoteUnknownError
 } from './lnurlcash'
+import type {Bearer} from './storage'
 
 // LUD-25 "Seed-recoverable note secrets" recovery: cashSecrets.ts already
 // derives every note secret_i this wallet ever mints/rotates/splits/merges
@@ -66,10 +68,15 @@ export type MintScanResult = {
 // notes is exactly the kind of thing that shouldn't be parallelized against
 // a service that didn't ask for a burst of requests. onProgress, when
 // given, is called with each index right before it's probed, so a caller
-// can show live scanning progress.
+// can show live scanning progress. existing (the wallet's current bearers,
+// same shape as receive.ts's own dedup) is checked so an index still held
+// under this wallet's own record for it isn't handed back to the caller as
+// "recovered" a second time - it still counts toward highestUsedIndex
+// exactly as if it had been, since the index really was used.
 export const scanMintForNotes = async (
   input: string,
-  onProgress?: (index: number) => void
+  onProgress?: (index: number) => void,
+  existing: Bearer[] = []
 ): Promise<MintScanResult> => {
   const payUrl = resolveMintInput(input)
   if (!payUrl) {
@@ -121,15 +128,20 @@ export const scanMintForNotes = async (
     onProgress?.(index)
     try {
       const note = await fetchNoteInfo(buildNoteUrl(withdrawLink, secret))
-      recovered.push({
-        url: buildNoteUrl(withdrawLink, secret, note.maxWithdrawable),
-        callback: note.callback,
-        amount: note.maxWithdrawable,
-        verified: true,
-        mintPubkey: note.mintPubkey
-      })
       highestUsedIndex = index
       consecutiveUnknown = 0
+      const alreadyHeld = existing.some(
+        b => serverOf(b.url) === server && noteK1(b.url) === secret
+      )
+      if (!alreadyHeld) {
+        recovered.push({
+          url: buildNoteUrl(withdrawLink, secret, note.maxWithdrawable),
+          callback: note.callback,
+          amount: note.maxWithdrawable,
+          verified: true,
+          mintPubkey: note.mintPubkey
+        })
+      }
     } catch (err) {
       if (err instanceof NoteSpentError) {
         // proves this index was used at some point, even though there's
